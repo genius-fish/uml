@@ -1,6 +1,7 @@
 package fish.genius.uml
 
 import fish.genius.lorem.SampleText
+import fish.genius.uml.Renderer.SpecificationRenderer
 import fish.genius.uml.model.Specification
 import fish.genius.uml.model.archimate.ActivityDiagram.activityDiagram
 import fish.genius.uml.model.archimate.SequenceDiagram.sequenceDiagram
@@ -8,7 +9,7 @@ import org.scalatest.flatspec.AnyFlatSpec
 
 class SequenceDiagramSpec extends AnyFlatSpec with CanPreview {
   it should "render sequence diagrams" in {
-    val diagram = new Specification {
+    val eps = new Specification {
       uml {
         sequenceDiagram { sequence =>
           sequence.autonumber()
@@ -29,9 +30,8 @@ class SequenceDiagramSpec extends AnyFlatSpec with CanPreview {
           sequence.step(SampleText.title)(actor)(control)
         }
       }
-    }
+    }.renderedAsEps()
 
-    val eps = Renderer.eps(diagram)
     eps.map(_.getAbsolutePath).foreach(println)
     assert(eps.nonEmpty)
     eps.foreach(preview)

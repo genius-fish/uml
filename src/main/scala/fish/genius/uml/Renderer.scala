@@ -59,4 +59,11 @@ object Renderer extends Loggable {
         None
     }
 
+  implicit class SpecificationRenderer(specification: Specification) {
+    def renderedAsEps(filename: String = "diagram"): Option[File] =
+      eps(specification, filename)
+    def renderedAsSvg(filename: String = "diagram"): Option[File] =
+      svg(specification, filename)
+  }
+
 }
