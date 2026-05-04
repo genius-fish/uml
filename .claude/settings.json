@@ -1,0 +1,10 @@
+{
+  "extraKnownMarketplaces": {
+    "genius-fish": {
+      "source": {
+        "source": "github",
+        "repo": "genius-fish/claude-marketplace"
+      }
+    }
+  }
+}
