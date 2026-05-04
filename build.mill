@@ -1,0 +1,152 @@
+//| repositories:
+//| - https://repo.genius.fish/releases
+//| - https://repo.genius.fish/snapshots
+//| mvnDeps:
+//| - com.goyeau::mill-scalafix::0.6.0
+
+package build
+
+import coursier.core.Authentication
+import coursier.maven.MavenRepository
+import mill.*
+import mill.scalalib.*
+import mill.scalalib.publish.*
+import mill.scalalib.scalafmt.*
+
+import com.goyeau.mill.scalafix.ScalafixModule
+
+// ---------------------------------------------------------------------------
+// Version catalog
+// ---------------------------------------------------------------------------
+object V:
+  val scala      = "3.8.3"
+  val zio        = "2.1.25"
+  val zioProcess = "0.8.0"
+  val osLib      = "0.11.8"
+  val sourcecode = "0.4.4"
+  val plantuml   = "1.2025.2"
+
+// ---------------------------------------------------------------------------
+// Shared publishing settings
+// ---------------------------------------------------------------------------
+trait GeniusFishPublishSettings extends PublishModule:
+  def publishVersion = "0.1.0-SNAPSHOT"
+
+  def pomSettings = PomSettings(
+    description = "Composable, type-safe PlantUML DSL and renderer for Scala 3",
+    organization = "fish.genius",
+    url = "https://github.com/genius-fish/uml",
+    licenses = Seq(License.MIT),
+    versionControl = VersionControl.github("genius-fish", "uml"),
+    developers = Seq(
+      Developer("jlust", "Jurgen Lust", "https://genius.fish")
+    ),
+  )
+
+  def geniusFishRepositories: Seq[MavenRepository] =
+    val auth =
+      for
+        user  <- sys.env.get("REPO_USERNAME")
+        token <- sys.env.get("REPO_TOKEN")
+      yield Authentication(user, token)
+
+    Seq(
+      MavenRepository("https://repo.genius.fish/releases", authentication = auth),
+      MavenRepository("https://repo.genius.fish/snapshots", authentication = auth),
+    )
+
+end GeniusFishPublishSettings
+
+// ---------------------------------------------------------------------------
+// Base trait for all modules
+// ---------------------------------------------------------------------------
+trait GeniusFishModule
+  extends ScalaModule
+    with ScalafmtModule
+    with ScalafixModule
+    with GeniusFishPublishSettings:
+  def scalaVersion = V.scala
+
+  def scalacOptions = Seq(
+    "-Wunused:all",
+    "-unchecked",
+    "-deprecation",
+    "-feature",
+    "-Xmax-inlines:128",
+  )
+
+  def repositoriesTask = Task.Anon {
+    super.repositoriesTask() ++ geniusFishRepositories
+  }
+
+  trait GeniusFishTests extends ScalaTests with ScalafmtModule with ScalafixModule:
+    def testFramework = "zio.test.sbt.ZTestFramework"
+
+    def forkArgs = Seq(
+      "-Xmx4G",
+      "-Xms2G",
+      "-Xss16M",
+      "-XX:+UseG1GC",
+      "-XX:MaxGCPauseMillis=200",
+    )
+
+    def mvnDeps = Seq(
+      mvn"dev.zio::zio-test:${V.zio}",
+      mvn"dev.zio::zio-test-sbt:${V.zio}",
+    )
+
+  end GeniusFishTests
+
+end GeniusFishModule
+
+// ---------------------------------------------------------------------------
+// Module: core (pure DSL + AST, no ZIO, no os-lib, no PlantUML jar)
+// ---------------------------------------------------------------------------
+object core extends GeniusFishModule:
+  def artifactName = "genius-uml-core"
+
+  def mvnDeps = Seq(
+    mvn"com.lihaoyi::sourcecode:${V.sourcecode}"
+  )
+
+  object test extends GeniusFishTests
+
+// ---------------------------------------------------------------------------
+// Module: render (ZIO 2 service: AST -> SVG/PNG/EPS/LaTeX via PlantUML)
+// ---------------------------------------------------------------------------
+object render extends GeniusFishModule:
+  def artifactName = "genius-uml-render"
+  def moduleDeps   = Seq(core)
+
+  def mvnDeps = Seq(
+    mvn"dev.zio::zio:${V.zio}",
+    mvn"dev.zio::zio-process:${V.zioProcess}",
+    mvn"com.lihaoyi::os-lib:${V.osLib}",
+    mvn"net.sourceforge.plantuml:plantuml:${V.plantuml}",
+  )
+
+  object test extends GeniusFishTests:
+    def moduleDeps = super.moduleDeps ++ Seq(testkit)
+
+// ---------------------------------------------------------------------------
+// Module: testkit (golden-file + structural assertions for ZIO Test)
+// ---------------------------------------------------------------------------
+object testkit extends GeniusFishModule:
+  def artifactName = "genius-uml-testkit"
+  def moduleDeps   = Seq(core)
+
+  def mvnDeps = Seq(
+    mvn"dev.zio::zio:${V.zio}",
+    mvn"dev.zio::zio-test:${V.zio}",
+    mvn"com.lihaoyi::os-lib:${V.osLib}",
+  )
+
+  object test extends GeniusFishTests
+end testkit
+
+// ---------------------------------------------------------------------------
+// Module: examples (runnable end-to-end showcases, not published)
+// ---------------------------------------------------------------------------
+object examples extends GeniusFishModule:
+  def artifactName = "genius-uml-examples"
+  def moduleDeps   = Seq(core, render)
