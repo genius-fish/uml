@@ -1,6 +1,6 @@
 SHELL = /bin/bash
 
-.PHONY: clean fix fmt compile prepare build test validate deps publishLocal \
+.PHONY: clean fix fmt compile prepare build test validate deps publishLocal publish \
         examples examples-eps examples-png examples-latex examples-clean
 
 # ---------------------------------------------------------------------------
@@ -73,3 +73,15 @@ examples-clean:
 
 publishLocal:
 	./mill __.publishLocal
+
+# Publishes every PublishModule to the Genius Fish Maven repo.
+# Requires REPO_USERNAME and REPO_TOKEN in the environment.
+publish:
+	@if [ -z "$$REPO_USERNAME" ] || [ -z "$$REPO_TOKEN" ]; then \
+		echo "[ERROR] REPO_USERNAME and REPO_TOKEN must be set"; exit 1; \
+	fi
+	./mill mill.javalib.MavenPublishModule/ \
+		--username "$$REPO_USERNAME" \
+		--password "$$REPO_TOKEN" \
+		--releaseUri https://repo.genius.fish/releases \
+		--snapshotUri https://repo.genius.fish/snapshots
