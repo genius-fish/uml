@@ -14,26 +14,23 @@ object SequenceExample extends ZIOAppDefault:
         autonumber()
         teozRenderingEngine()
 
-        val user = actor("User")
-        box("Front-end", Some("#DAEEFF")):
-          val _ = participant("Browser")
-        val api  = participant("API")
-        box("Back-end", Some("#DDFFDD")):
-          val _ = control("Service")
-          val _ = database("Postgres")
+        val user             = actor("User")
+        val browser          = box("Front-end", Some("#DAEEFF")):
+          participant("Browser")
+        val api              = participant("API")
+        val (service, db)    = box("Back-end", Some("#DDFFDD")):
+          (control("Service"), database("Postgres"))
 
-        val service = control("Service")
-        val db      = database("Postgres")
-
-        step("Click checkout")(user)(api)
+        step("Open store")(user)(browser)
+        step("Click checkout")(browser)(api)
         loopGroup(Some("for each item"))
         step("Reserve inventory")(api)(service)
         step("Update stock")(service)(db)
         endGroup()
         altGroup(Some("payment ok"))
-        step("Confirm order")(api)(user)
+        step("Confirm order")(api)(browser)
         elseGroup(Some("payment failed"))
-        step("Show error")(api)(user)
+        step("Show error")(api)(browser)
         endGroup()
 
   def run: ZIO[Any, Throwable, Any] = Renderer.run("sequence-example", doc)

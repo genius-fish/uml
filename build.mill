@@ -24,7 +24,7 @@ object V:
   val zioProcess = "0.8.0"
   val osLib      = "0.11.8"
   val sourcecode = "0.4.4"
-  val plantuml   = "1.2025.2"
+  val plantuml   = "1.2025.4"
 
 // ---------------------------------------------------------------------------
 // Shared publishing settings

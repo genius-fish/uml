@@ -1,6 +1,5 @@
 package fish.genius.uml.dsl.sequence
 
-import fish.genius.uml.ast.PUmlNode
 import fish.genius.uml.dsl.*
 import fish.genius.uml.dsl.markers.*
 
@@ -129,27 +128,32 @@ def participant(
   participantOf("participant", title, color)
 
 /**
- * Group multiple participants under a coloured `box` header. Body code can
- * declare further participants which become members of the box.
+ * Group multiple participants under a coloured `box` header. PlantUML's box
+ * is delimited by `box "title" color` ... `end box` (not braces); the body
+ * runs in the same buffer as the parent so participant aliases declared
+ * inside remain available to surrounding code.
+ *
+ * Returns whatever the body returns — typically the alias of one or more
+ * participants, e.g.:
+ * {{{
+ *   val (browser, api) = box("Front-end", Some("#DAEEFF")):
+ *     (participant("Browser"), participant("API"))
+ * }}}
  */
-def box(
+def box[A](
   title: String,
   color: Option[String] = None,
 )(
-  body: (PUmlCtx, InSequence, InBox) ?=> Unit
+  body: (PUmlCtx, InSequence, InBox) ?=> A
 )(
   using PUmlCtx,
   InSequence,
-): Unit =
-  emit(
-    PUmlNode.Block(
-      s"box \"${escape(title)}\" ${color.getOrElse("")}".stripTrailing,
-      childBlock:
-        given InBox = markers.InBox
-        given InSequence = summon[InSequence]
-        body,
-    )
-  )
+): A =
+  statement(s"box \"${escape(title)}\" ${color.getOrElse("")}".stripTrailing)
+  given InBox = markers.InBox
+  val result = body
+  statement("end box")
+  result
 
 /**
  * Open one of the PlantUML sequence-diagram control structures

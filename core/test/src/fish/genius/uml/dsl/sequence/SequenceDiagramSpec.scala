@@ -44,17 +44,34 @@ object SequenceDiagramSpec extends ZIOSpecDefault:
         output.contains("Notify"),
       )
     ,
-    test("box emits a `box \"title\" color { ... }` block"):
+    test("box emits `box \"title\" color` ... `end box` around the body"):
       val n      = block:
         uml:
           sequenceDiagram:
-            box("Front-end", Some("#1234AB")):
-              val _ = participant("Web")
+            val _ = box("Front-end", Some("#1234AB")):
+              participant("Web")
       val output = Emit.emit(n)
       assertTrue(
-        output.contains("box \"Front-end\" #1234AB {"),
+        output.contains("box \"Front-end\" #1234AB"),
+        !output.contains("box \"Front-end\" #1234AB {"),
         output.contains("participant \"Web\""),
-        output.contains("}"),
+        output.contains("end box"),
+      )
+    ,
+    test("box returns the body's result so participants can be captured"):
+      val n      = block:
+        uml:
+          sequenceDiagram:
+            val web = box("Front-end"):
+              participant("Web")
+            val api = participant("API")
+            step("Hello")(web)(api)
+      val output = Emit.emit(n)
+      assertTrue(
+        output.contains("box \"Front-end\""),
+        output.contains("participant \"Web\""),
+        output.contains("end box"),
+        output.contains("participant \"API\""),
       ),
   )
 
