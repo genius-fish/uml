@@ -4,6 +4,10 @@ out/
 # Example artifacts produced by ./mill examples.run with PLANTUML_AVAILABLE=1
 *-example.svg
 *-example.png
+*-example.eps
+*-example.tex
+*-example.atxt
+*-example.utxt
 
 # Build / IDE metadata
 .bsp/
