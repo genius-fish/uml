@@ -1,0 +1,70 @@
+name: Sync skill docs to claude-marketplace
+
+# On every release tag (v1.2.3), regenerate the `library-genius-uml` skill in the
+# gf-standards plugin from docs/skill/ and push it straight to the marketplace's
+# main branch. Keeps the published plugin's documentation in lock-step with each
+# release, with no manual step.
+#
+# Requires a repository secret MARKETPLACE_SYNC_TOKEN: a token (fine-grained PAT
+# or GitHub App installation token) with **Contents: write** on
+# genius-fish/claude-marketplace. The default GITHUB_TOKEN cannot push to another
+# repo. If the marketplace main blocks direct pushes, switch the final step to
+# open a PR instead.
+#
+# This workflow is repo-agnostic: the skill name is derived from the repo
+# (library-genius-<repo>), so it can be copied verbatim to other GF libraries.
+# See the playbook in claude-marketplace:
+#   plugins/gf-standards/docs/playbooks/library-skill-docs.md
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'   # release tags only (skips legacy/v* and pre-releases)
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'library ref to sync docs from (branch or tag)'
+        required: false
+        default: 'main'
+
+jobs:
+  sync:
+    name: Vendor skill docs into the plugin
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout library (at the release tag)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+
+      - name: Checkout claude-marketplace (main, writable)
+        uses: actions/checkout@v4
+        with:
+          repository: genius-fish/claude-marketplace
+          ref: main
+          path: marketplace
+          token: ${{ secrets.MARKETPLACE_SYNC_TOKEN }}
+          persist-credentials: true
+
+      - name: Sync docs/skill/ into the plugin
+        run: |
+          chmod +x scripts/sync-skill-docs.sh
+          GF_MARKETPLACE="${GITHUB_WORKSPACE}/marketplace" ./scripts/sync-skill-docs.sh
+
+      - name: Commit & push if the skill changed
+        working-directory: marketplace
+        run: |
+          skill_path="plugins/gf-standards/skills/library-genius-${GITHUB_REPOSITORY##*/}"
+          if [ -z "$(git status --porcelain -- "${skill_path}")" ]; then
+            echo "Skill docs already up to date — nothing to push."
+            exit 0
+          fi
+          tag="${GITHUB_REF_NAME:-manual}"
+          git config user.name  "genius-fish-bot"
+          git config user.email "team@genius.fish"
+          git add "${skill_path}"
+          git commit -m "docs(gf-standards): sync ${skill_path##*/} for ${tag}" \
+                     -m "Auto-synced from genius-fish/${GITHUB_REPOSITORY##*/} docs/skill/ on release ${tag}."
+          git push origin main
+          echo "Pushed updated ${skill_path##*/} to claude-marketplace (release ${tag})."
