@@ -1,0 +1,68 @@
+name: genius-uml CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  JAVA_VERSION: '25'
+  # Credentials for the private Genius Fish Maven repo (repo.genius.fish), used to
+  # bootstrap the mill-release plugin. Empty when the secrets are unset, in which
+  # case the credentials step below is skipped.
+  REPO_USERNAME: ${{ secrets.REPO_USERNAME }}
+  REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+
+jobs:
+  validate:
+    name: Validate (Format, Lint, Compile, Test)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Cache Mill and dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/mill
+            ~/.ivy2/cache
+            ~/.cache/coursier
+          key: mill-${{ runner.os }}-${{ hashFiles('build.mill', '.mill-version') }}
+          restore-keys: |
+            mill-${{ runner.os }}-
+
+      # Authenticate coursier to repo.genius.fish so Mill can fetch the
+      # fish.genius::mill-release plugin during build bootstrap. Skipped when the
+      # REPO_USERNAME/REPO_TOKEN secrets are not set.
+      - name: Configure coursier credentials (repo.genius.fish)
+        if: ${{ env.REPO_USERNAME != '' }}
+        run: |
+          mkdir -p ~/.config/coursier
+          printf 'genius.host=repo.genius.fish\ngenius.username=%s\ngenius.password=%s\ngenius.auto=true\n' \
+            "$REPO_USERNAME" "$REPO_TOKEN" > ~/.config/coursier/credentials.properties
+
+      - name: Check formatting
+        run: ./mill __.checkFormat
+
+      - name: Check linting (scalafix)
+        run: ./mill __.fix --check
+
+      - name: Compile all modules
+        run: ./mill __.compile
+
+      - name: Run all tests
+        run: ./mill __.test.testForked
