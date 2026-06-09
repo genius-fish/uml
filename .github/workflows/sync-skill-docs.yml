@@ -52,19 +52,21 @@ jobs:
           chmod +x scripts/sync-skill-docs.sh
           GF_MARKETPLACE="${GITHUB_WORKSPACE}/marketplace" ./scripts/sync-skill-docs.sh
 
-      - name: Commit & push if the skill changed
+      - name: Commit, release the plugin & push if the skill changed
         working-directory: marketplace
         run: |
           skill_path="plugins/gf-standards/skills/library-genius-${GITHUB_REPOSITORY##*/}"
           if [ -z "$(git status --porcelain -- "${skill_path}")" ]; then
-            echo "Skill docs already up to date — nothing to push."
+            echo "Skill docs already up to date — nothing to release."
             exit 0
           fi
+          # the skill changed → cut a fresh plugin release (bump plugin.json)
+          new_version="$(bash scripts/release-plugin.sh gf-standards patch)"
           tag="${GITHUB_REF_NAME:-manual}"
           git config user.name  "genius-fish-bot"
           git config user.email "team@genius.fish"
-          git add "${skill_path}"
-          git commit -m "docs(gf-standards): sync ${skill_path##*/} for ${tag}" \
-                     -m "Auto-synced from genius-fish/${GITHUB_REPOSITORY##*/} docs/skill/ on release ${tag}."
+          git add "${skill_path}" plugins/gf-standards/.claude-plugin/plugin.json
+          git commit -m "gf-standards ${new_version}: sync ${skill_path##*/} for ${tag}" \
+                     -m "Auto-synced from genius-fish/${GITHUB_REPOSITORY##*/} docs/skill/ on release ${tag}; bumped plugin to ${new_version}."
           git push origin main
-          echo "Pushed updated ${skill_path##*/} to claude-marketplace (release ${tag})."
+          echo "Released gf-standards ${new_version} (skill ${skill_path##*/}, from ${GITHUB_REPOSITORY} ${tag})."
