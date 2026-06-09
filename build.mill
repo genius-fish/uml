@@ -3,6 +3,7 @@
 //| - https://repo.genius.fish/snapshots
 //| mvnDeps:
 //| - com.goyeau::mill-scalafix::0.6.0
+//| - fish.genius::mill-release::0.4.0
 
 package build
 
@@ -14,6 +15,7 @@ import mill.scalalib.publish.*
 import mill.scalalib.scalafmt.*
 
 import com.goyeau.mill.scalafix.ScalafixModule
+import fish.genius.mill.release.GeniusFishReleaseModule
 
 // ---------------------------------------------------------------------------
 // Version catalog
@@ -27,29 +29,15 @@ object V:
   val plantuml   = "1.2026.2"
 
 // ---------------------------------------------------------------------------
-// Git-based versioning: on a tagged commit publish that exact tag (with the
-// leading `v` stripped); otherwise append `-SNAPSHOT` so two builds at the
-// same SHA always agree on a version, but in-flight work cannot accidentally
-// overwrite a released artefact.
+// Release module (git-tag versioning, release workflow, AI release notes)
 // ---------------------------------------------------------------------------
-private val wsRoot: os.Path =
-  os.Path(sys.env.getOrElse("MILL_WORKSPACE_ROOT", os.pwd.toString))
-
-private def computeGitVersion(): String =
-  val described = os.proc("git", "describe", "--tags", "--abbrev=0")
-    .call(cwd = wsRoot, check = false)
-  if described.exitCode != 0 then "0.0.0-SNAPSHOT"
-  else
-    val version  = described.out.trim().stripPrefix("v")
-    val exactTag = os.proc("git", "describe", "--tags", "--exact-match")
-      .call(cwd = wsRoot, check = false).exitCode == 0
-    if exactTag then version else s"$version-SNAPSHOT"
+object release extends GeniusFishReleaseModule
 
 // ---------------------------------------------------------------------------
 // Shared publishing settings
 // ---------------------------------------------------------------------------
 trait GeniusFishPublishSettings extends PublishModule:
-  def publishVersion = Task.Input(computeGitVersion())
+  def publishVersion = release.gitVersion()
 
   def pomSettings = PomSettings(
     description = "Composable, type-safe PlantUML DSL and renderer for Scala 3",

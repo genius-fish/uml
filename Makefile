@@ -1,6 +1,7 @@
 SHELL = /bin/bash
 
 .PHONY: clean fix fmt compile prepare build test validate deps publishLocal publish \
+        release-prepare release-finalize release-abort release-status \
         examples examples-eps examples-png examples-latex examples-clean
 
 # ---------------------------------------------------------------------------
@@ -85,3 +86,33 @@ publish:
 		--password "$$REPO_TOKEN" \
 		--releaseUri https://repo.genius.fish/releases \
 		--snapshotUri https://repo.genius.fish/snapshots
+
+# ---------------------------------------------------------------------------
+# Release (delegated to mill-release plugin)
+# Validation and publishing run as separate Mill processes (cannot nest).
+# Usage: make release-prepare TYPE=patch|minor|major
+#        (review RELEASE_x_y_z.md)
+#        make release-finalize
+# ---------------------------------------------------------------------------
+
+release-prepare:
+	@if [ -z "$(TYPE)" ]; then \
+		echo "[ERROR] Usage: make release-prepare TYPE=patch|minor|major"; exit 1; \
+	fi
+	./mill clean
+	$(MAKE) validate
+	@if [ -n "$$(git status --porcelain | grep -v '^??')" ]; then \
+		echo "[WARN] Validation made formatting changes, staging them"; \
+		git add -u; \
+	fi
+	./mill release.releasePrepare --releaseType $(TYPE)
+
+release-finalize:
+	./mill release.releaseFinalize
+	$(MAKE) publishLocal
+
+release-abort:
+	./mill release.releaseAbort
+
+release-status:
+	./mill release.releaseStatus
