@@ -57,6 +57,47 @@ Unsafe.unsafe(implicit u => Runtime.default.unsafe.run(
 ))
 ```
 
+## Rendered output
+
+`PUmlEngine.render` writes into a scoped temp workspace that is deleted when
+the `Scope` closes — copy the file out if you want to keep it. `DiagramOutput`
+does exactly that, persisting renders to a stable, well-known location:
+
+```
+out/<format>/<category>/<name>.<suffix>
+```
+
+- `<format>` — the file suffix without the dot: `svg`, `png`, `eps`, `tex`.
+- `<category>` — `test` for diagrams produced by the test suites,
+  `examples` for the runnable examples (`DiagramOutput.Test` /
+  `DiagramOutput.Examples`).
+- `<root>` — the Mill workspace root (`MILL_WORKSPACE_ROOT`), falling back to
+  the current working directory.
+
+```scala
+import fish.genius.uml.render.{DiagramOutput, PUmlEngine}
+import net.sourceforge.plantuml.FileFormat
+import zio.*
+
+// Renders and persists to <root>/out/svg/examples/web-store.svg
+val program = ZIO.scoped(
+  DiagramOutput.save(diagram, DiagramOutput.Examples, "web-store", FileFormat.SVG)
+)
+```
+
+So the test suites leave their diagrams under `out/svg/test`, `out/png/test`,
+`out/eps/test`, … and the examples under `out/svg/examples`,
+`out/png/examples`, …. The whole `out/` tree is git-ignored.
+
+Run an example and have it render (needs the PlantUML jar, which ships with the
+`render` module):
+
+```sh
+PLANTUML_AVAILABLE=1 ./mill examples.runMain \
+  fish.genius.uml.examples.ArchimateExample
+# PLANTUML_FORMAT=png|eps|svg|latex|latex_no_preamble selects the format
+```
+
 ## Testing
 
 Add `testkit` to a test module's deps and you get:
