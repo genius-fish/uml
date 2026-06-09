@@ -56,7 +56,35 @@ object RendererSpec extends ZIOSpecDefault:
     test("renderBytes returns a non-empty byte stream"):
       PUmlEngine
         .renderBytes(sequenceDoc, FileFormat.SVG)
-        .map(b => assertTrue(b.nonEmpty)),
+        .map(b => assertTrue(b.nonEmpty))
+    ,
+    test("path lays out out/<format>/<category>/<name><suffix>"):
+      val svg = DiagramOutput.path(DiagramOutput.Examples, "web-store", FileFormat.SVG)
+      val eps = DiagramOutput.path(DiagramOutput.Test, "diagram", FileFormat.EPS)
+      assertTrue(
+        DiagramOutput.formatDir(FileFormat.SVG) == "svg",
+        DiagramOutput.formatDir(FileFormat.PNG) == "png",
+        DiagramOutput.formatDir(FileFormat.LATEX) == "tex",
+        svg.segments.toList.endsWith(List("out", "svg", "examples", "web-store.svg")),
+        eps.segments.toList.endsWith(List("out", "eps", "test", "diagram.eps")),
+        DiagramOutput.dir(DiagramOutput.Test, FileFormat.EPS) == eps / os.up,
+      )
+    ,
+    test("save surfaces filesystem failures as PUmlError.Internal"):
+      ZIO.scoped:
+        for
+          tmp <- ZIO.acquireRelease(ZIO.attempt(os.temp.dir()))(d =>
+            ZIO.attempt(os.remove.all(d)).orDie
+          ).orDie
+          src     = tmp / "src.svg"
+          // A regular file where `copyOut` will need a directory, so makeDir.all fails.
+          blocker = tmp / "blocker"
+          _   <- ZIO.attempt(os.write(src, "data")).orDie
+          _   <- ZIO.attempt(os.write(blocker, "x")).orDie
+          res <- DiagramOutput.copyOut(src, blocker / "sub" / "out.svg").either
+        yield assertTrue(res match
+          case Left(PUmlError.Internal(_)) => true
+          case _                           => false),
   ).provide(PUmlEngine.test)
 
 end RendererSpec

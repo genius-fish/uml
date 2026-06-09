@@ -63,12 +63,19 @@ object DiagramOutput:
   ): ZIO[PUmlEngine & Scope, PUmlError, os.Path] =
     for
       rendered <- PUmlEngine.render(doc, name, format)
-      dest = path(category, name, format)
-      _ <- ZIO
-        .attempt:
-          os.makeDir.all(dest / os.up)
-          os.copy.over(rendered, dest)
-        .mapError(PUmlError.Internal.apply)
+      dest     <- copyOut(rendered, path(category, name, format))
     yield dest
+
+  /**
+   * Copy `rendered` to `dest`, creating parent directories, and return `dest`.
+   * Filesystem failures surface as [[PUmlError.Internal]].
+   */
+  private[render] def copyOut(rendered: os.Path, dest: os.Path): IO[PUmlError, os.Path] =
+    ZIO
+      .attemptBlocking:
+        os.makeDir.all(dest / os.up)
+        os.copy.over(rendered, dest)
+        dest
+      .mapError(PUmlError.Internal.apply)
 
 end DiagramOutput
