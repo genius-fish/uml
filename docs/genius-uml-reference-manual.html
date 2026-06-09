@@ -1,0 +1,1140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>genius-uml Reference Manual - Genius Fish Platform</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,300;0,400;0,700;0,900;1,400&family=Nunito:wght@400;600;700;800&family=Lora:ital,wght@1,400;1,700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --highlight-color: #F8B22F;
+      --secondary-fg: #276B9A;
+      --primary-fg: #3F341E;
+      --inverse-fg: #FFFFFF;
+      --bg-color: #EFEDED;
+      --inverse-bg: #276B9A;
+      --border-color: #B2B1AD;
+      --white: #FFFFFF;
+      --accent-green: #23AA5D;
+      --accent-pink: #E38DBB;
+      --accent-red: #E64849;
+      --accent-blue: #87CDD8;
+      --font-primary: 'Lato', sans-serif;
+      --font-secondary: 'Nunito', sans-serif;
+      --font-serif: 'Lora', serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font-primary);
+      background-color: var(--bg-color);
+      color: var(--primary-fg);
+      line-height: 1.6;
+    }
+
+    header {
+      background: linear-gradient(135deg, var(--inverse-bg), #1a4d6e);
+      color: var(--inverse-fg);
+      padding: 3rem 2rem;
+      text-align: center;
+    }
+
+    header h1 {
+      font-family: var(--font-secondary);
+      font-size: 2.5rem;
+      font-weight: 800;
+      margin-bottom: 0.5rem;
+    }
+
+    header .subtitle {
+      font-family: var(--font-serif);
+      font-style: italic;
+      font-size: 1.2rem;
+      opacity: 0.9;
+    }
+
+    header .fish-icon { width: 80px; height: auto; margin-bottom: 1rem; }
+
+    header .meta-line {
+      margin-top: 1rem;
+      font-family: var(--font-secondary);
+      font-size: 0.9rem;
+      opacity: 0.85;
+    }
+
+    nav {
+      background: var(--white);
+      border-bottom: 3px solid var(--highlight-color);
+      padding: 1rem 2rem;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+
+    nav ul {
+      list-style: none;
+      display: flex;
+      gap: 1.5rem;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    nav a {
+      color: var(--secondary-fg);
+      text-decoration: none;
+      font-weight: 600;
+      font-family: var(--font-secondary);
+      transition: color 0.2s;
+    }
+
+    nav a:hover { color: var(--highlight-color); }
+
+    main { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+
+    section {
+      background: var(--white);
+      border-radius: 8px;
+      padding: 2rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      scroll-margin-top: 5rem;
+    }
+
+    h2 {
+      font-family: var(--font-secondary);
+      color: var(--secondary-fg);
+      font-size: 1.8rem;
+      margin-bottom: 1.5rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 2px solid var(--highlight-color);
+    }
+
+    h3 {
+      font-family: var(--font-secondary);
+      color: var(--primary-fg);
+      font-size: 1.3rem;
+      margin: 1.5rem 0 1rem 0;
+    }
+
+    h4 {
+      font-family: var(--font-secondary);
+      color: var(--secondary-fg);
+      font-size: 1.1rem;
+      margin: 1.2rem 0 0.8rem 0;
+    }
+
+    p { margin-bottom: 1rem; }
+
+    pre {
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 1.5rem;
+      border-radius: 6px;
+      overflow-x: auto;
+      font-size: 0.9rem;
+      line-height: 1.5;
+      margin: 1rem 0;
+    }
+
+    code { font-family: 'JetBrains Mono', 'Fira Code', monospace; }
+
+    :not(pre) > code {
+      background: rgba(39, 107, 154, 0.1);
+      color: var(--secondary-fg);
+      padding: 0.2rem 0.4rem;
+      border-radius: 3px;
+      font-size: 0.9em;
+    }
+
+    .keyword { color: #569cd6; }
+    .type { color: #4ec9b0; }
+    .string { color: #ce9178; }
+    .comment { color: #6a9955; }
+    .function { color: #dcdcaa; }
+    .number { color: #b5cea8; }
+    .annotation { color: #c586c0; }
+
+    table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+
+    th, td {
+      padding: 0.75rem 1rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border-color);
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--inverse-bg);
+      color: var(--inverse-fg);
+      font-family: var(--font-secondary);
+      font-weight: 600;
+    }
+
+    tr:hover { background: rgba(248, 178, 47, 0.1); }
+
+    td code, th code { white-space: nowrap; }
+
+    ul, ol { margin: 1rem 0 1rem 2rem; }
+    li { margin-bottom: 0.5rem; }
+
+    .info-box {
+      padding: 1rem 1.5rem;
+      border-radius: 6px;
+      margin: 1rem 0;
+    }
+
+    .info-box.tip {
+      background: rgba(35, 170, 93, 0.1);
+      border-left: 4px solid var(--accent-green);
+    }
+
+    .info-box.warning {
+      background: rgba(248, 178, 47, 0.15);
+      border-left: 4px solid var(--highlight-color);
+    }
+
+    .info-box.note {
+      background: rgba(39, 107, 154, 0.1);
+      border-left: 4px solid var(--secondary-fg);
+    }
+
+    .info-box.danger {
+      background: rgba(230, 72, 73, 0.1);
+      border-left: 4px solid var(--accent-red);
+    }
+
+    .info-box strong {
+      display: block;
+      margin-bottom: 0.5rem;
+      color: var(--primary-fg);
+    }
+
+    .file-tree {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.9rem;
+      background: #fafafa;
+      padding: 1rem 1.5rem;
+      border-radius: 6px;
+      border: 1px solid var(--border-color);
+      line-height: 1.7;
+    }
+
+    .file-tree .folder { color: var(--secondary-fg); font-weight: bold; }
+    .file-tree .file { color: var(--primary-fg); }
+    .file-tree .new { color: var(--accent-green); font-weight: bold; }
+
+    .checklist { list-style: none; margin-left: 0; }
+    .checklist li { padding: 0.3rem 0; }
+
+    .audience-badge {
+      display: inline-block;
+      padding: 0.2rem 0.7rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      font-family: var(--font-secondary);
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      vertical-align: middle;
+      margin-left: 0.6rem;
+    }
+
+    .audience-users { background: var(--accent-green); color: var(--white); }
+    .audience-contributors { background: var(--secondary-fg); color: var(--white); }
+
+    .pill {
+      display: inline-block;
+      padding: 0.15rem 0.55rem;
+      border-radius: 4px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      font-family: var(--font-secondary);
+      background: rgba(39, 107, 154, 0.12);
+      color: var(--secondary-fg);
+    }
+
+    .lead {
+      font-size: 1.05rem;
+      color: var(--primary-fg);
+    }
+
+    .layered-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1rem;
+      margin: 1.5rem 0;
+    }
+
+    .layer-card {
+      border: 1px solid var(--border-color);
+      border-top: 4px solid var(--highlight-color);
+      border-radius: 6px;
+      padding: 1rem 1.25rem;
+      background: #fcfcfc;
+    }
+
+    .layer-card h4 { margin-top: 0; }
+    .layer-card p { margin-bottom: 0.3rem; font-size: 0.92rem; }
+
+    .toc-columns {
+      column-count: 2;
+      column-gap: 2rem;
+    }
+    .toc-columns ol { margin-top: 0; }
+    @media (max-width: 768px) {
+      header h1 { font-size: 1.8rem; }
+      nav ul { gap: 1rem; }
+      main { padding: 1rem; }
+      section { padding: 1.5rem; }
+      pre { font-size: 0.8rem; padding: 1rem; }
+      .toc-columns { column-count: 1; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="fish-icon"><svg version="1.1" viewBox="0 0 477.819 341.75001" xmlns="http://www.w3.org/2000/svg"><style>.st0{fill:#276B9A;}.st1{fill:#FFFFFF;}.st2{fill:#3F341E;}.st3{fill:#F8B22F;}</style><g transform="matrix(1.7932109,0,0,1.7932109,-135.89706,-135.75916)"><g><g><path class="st0" d="m 342.31,202.12 c 0,-15.18 -5.27,-29.12 -14.07,-40.12 0.19,-2.24 0.31,-4.51 0.31,-6.8 0,-43.82 -35.53,-79.35 -79.35,-79.35 -20.86,0 -39.82,8.06 -53.98,21.21 -7.99,-6.06 -17.94,-9.67 -28.74,-9.67 -26.27,0 -47.57,21.3 -47.57,47.57 0,16.99 8.92,31.9 22.32,40.31 -2.59,-0.45 -5.25,-0.7 -7.97,-0.7 -25.36,0 -45.93,20.56 -45.93,45.93 0,25.36 20.56,45.93 45.93,45.93 h 149.13 l -0.04,-0.16 c 33.48,-2.24 59.96,-30.09 59.96,-64.15 z"/><circle class="st0" cx="99.129997" cy="134.7" r="9.25"/><path class="st0" d="m 90.01,109.2 c 0,-3.9 -3.17,-7.09 -7.09,-7.09 -3.9,0 -7.07,3.18 -7.07,7.09 0,3.92 3.17,7.09 7.07,7.09 3.92,-0.01 7.09,-3.17 7.09,-7.09 z"/><path class="st0" d="m 103.06,96.53 c 2.94,0 5.32,-2.38 5.32,-5.32 0,-2.94 -2.38,-5.32 -5.32,-5.32 -2.94,0 -5.32,2.38 -5.32,5.32 0,2.94 2.38,5.32 5.32,5.32 z"/></g><path class="st1" d="m 304.47,146.66 c -17.36,-0.09 -29.32,8.65 -36.65,16.69 -5.19,-10.4 -16.05,-19.84 -29.2,-27.6 4.29,-10.35 13.73,-21.41 8.14,-32.29 -6.34,-12.34 -35.97,3.5 -53.28,14.19 -9.2,-2.23 -17.85,-3.45 -25.02,-3.45 -34.41,0 -62.3,27.89 -62.3,62.3 0,34.41 27.89,62.3 62.3,62.3 4.23,0 8.97,-0.42 14.03,-1.23 11.86,7.63 37.94,22.84 43.12,12.76 4.09,-7.97 -2.65,-16.06 -5.9,-23.66 21.08,-8.86 40.58,-21.92 48.12,-37.03 7.33,8.04 19.29,16.79 36.65,16.69 17.36,-0.09 -3.16,-29.84 -3.16,-29.84 0,0 20.51,-29.73 3.15,-29.83 z"/><circle class="st2" cx="137.38" cy="161.57001" r="6.4400001"/><g><path class="st3" d="m 219.48,145.69 c -17.03,0 -30.84,13.81 -30.84,30.84 0,17.03 13.81,30.84 30.84,30.84 17.03,0 47.54,-13.81 47.54,-30.84 0,-17.03 -30.5,-30.84 -47.54,-30.84 z"/><path class="st3" d="m 269.6,167.07 c -0.48,0.27 -0.65,0.88 -0.37,1.36 1.53,2.7 2.31,5.42 2.31,8.09 0,2.67 -0.78,5.39 -2.31,8.09 -0.27,0.48 -0.11,1.09 0.37,1.36 0.16,0.09 0.32,0.13 0.49,0.13 0.35,0 0.68,-0.18 0.87,-0.5 1.7,-3 2.57,-6.05 2.57,-9.07 0,-3.02 -0.86,-6.07 -2.57,-9.07 -0.27,-0.49 -0.88,-0.66 -1.36,-0.39 z"/><path class="st3" d="m 275.54,167.07 c -0.48,0.27 -0.65,0.88 -0.37,1.36 1.53,2.7 2.31,5.42 2.31,8.09 0,2.67 -0.78,5.39 -2.31,8.09 -0.27,0.48 -0.11,1.09 0.37,1.36 0.16,0.09 0.32,0.13 0.49,0.13 0.35,0 0.68,-0.18 0.87,-0.5 1.7,-3 2.57,-6.05 2.57,-9.07 0,-3.02 -0.86,-6.07 -2.57,-9.07 -0.28,-0.49 -0.88,-0.66 -1.36,-0.39 z"/><path class="st3" d="m 282.44,167.45 c -0.27,-0.48 -0.88,-0.64 -1.36,-0.37 -0.48,0.27 -0.65,0.88 -0.37,1.36 1.53,2.7 2.31,5.42 2.31,8.09 0,2.67 -0.78,5.39 -2.31,8.09 -0.27,0.48 -0.11,1.09 0.37,1.36 0.16,0.09 0.32,0.13 0.49,0.13 0.35,0 0.68,-0.18 0.87,-0.5 1.7,-3 2.57,-6.05 2.57,-9.07 0,-3.04 -0.86,-6.09 -2.57,-9.09 z"/></g></g></g></svg></div>
+    <h1>genius-uml Reference Manual</h1>
+    <p class="subtitle">A composable, type-safe PlantUML DSL and renderer for Scala 3</p>
+    <p class="meta-line">Library version derived from git tags &middot; Scala 3.8.3 &middot; ZIO 2.1.25 &middot; PlantUML 1.2026.2</p>
+  </header>
+
+  <nav>
+    <ul>
+      <li><a href="#overview">Overview</a></li>
+      <li><a href="#concepts">Concepts</a></li>
+      <li><a href="#quickstart">Quick Start</a></li>
+      <li><a href="#entrypoints">Entry Points</a></li>
+      <li><a href="#primitives">Primitives</a></li>
+      <li><a href="#aliases">Aliases</a></li>
+      <li><a href="#skin">Skins &amp; Sprites</a></li>
+      <li><a href="#archimate">ArchiMate</a></li>
+      <li><a href="#sequence">Sequence</a></li>
+      <li><a href="#activity">Activity</a></li>
+      <li><a href="#rendering">Rendering</a></li>
+      <li><a href="#output">Output Layout</a></li>
+      <li><a href="#testing">Testing</a></li>
+      <li><a href="#internals">Internals</a></li>
+      <li><a href="#extending">Extending</a></li>
+      <li><a href="#patterns">Patterns</a></li>
+    </ul>
+  </nav>
+
+  <main>
+
+    <!-- ============================================================ -->
+    <section id="overview">
+      <h2>Overview</h2>
+      <p class="lead">
+        <code>genius-uml</code> lets you author PlantUML diagrams as ordinary,
+        type-checked Scala 3 code. A diagram is a <em>value</em>: pure code goes in,
+        an immutable <code>PUmlNode</code> AST comes out, and that AST renders to
+        PlantUML source &mdash; and from there to SVG, PNG, EPS, or LaTeX.
+      </p>
+
+      <p>This manual is split for two audiences. Each section is tagged:</p>
+      <p>
+        <span class="audience-badge audience-users">Users</span>
+        write diagrams with the DSL &mdash; emphasis on imports, helpers, examples, and gotchas.
+        <br>
+        <span class="audience-badge audience-contributors">Contributors</span>
+        extend the library &mdash; emphasis on internals, invariants, and how to add a dialect.
+      </p>
+
+      <h3>How a diagram flows through the system</h3>
+      <pre><code><span class="comment">// DSL helpers (context functions)  →  PUmlNode AST  →  PlantUML source  →  rendered file</span>
+block { uml { … } }                 Emit.emit          PUmlEngine.live</code></pre>
+
+      <div class="layered-grid">
+        <div class="layer-card">
+          <h4>core</h4>
+          <p><span class="pill">no ZIO &middot; no os-lib &middot; no PlantUML</span></p>
+          <p>The DSL, the <code>PUmlNode</code> AST, and the pure <code>Emit</code> renderer. Depends only on <code>sourcecode</code>.</p>
+        </div>
+        <div class="layer-card">
+          <h4>render</h4>
+          <p><span class="pill">depends on core</span></p>
+          <p>ZIO&nbsp;2 service turning the AST into SVG/PNG/EPS/LaTeX via the PlantUML jar.</p>
+        </div>
+        <div class="layer-card">
+          <h4>testkit</h4>
+          <p><span class="pill">depends on core</span></p>
+          <p>Golden-file and structural assertions for ZIO Test &mdash; no renderer required.</p>
+        </div>
+        <div class="layer-card">
+          <h4>examples</h4>
+          <p><span class="pill">depends on core + render</span></p>
+          <p>Runnable end-to-end showcases (ArchiMate, sequence, activity).</p>
+        </div>
+      </div>
+
+      <div class="info-box note">
+        <strong>The one architectural rule</strong>
+        <code>core</code> has zero runtime dependencies. Anything touching the filesystem,
+        ZIO, or PlantUML belongs in <code>render</code>. This keeps source generation
+        (<code>Emit.emit</code>) cheap, pure, and usable in tests without the rendering pipeline.
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <section id="concepts">
+      <h2>Concepts <span class="audience-badge audience-users">Users</span></h2>
+      <p>Four ideas carry the whole library.</p>
+
+      <h3><code>PUmlCtx</code> — the per-block buffer</h3>
+      <p>
+        A mutable buffer that DSL helpers append to. You never construct or pass one
+        explicitly &mdash; it lives in the context-function scope and is supplied as a
+        <code>given</code>. Every <code>block { … }</code> gets a fresh one, so diagrams
+        are independent and concurrent renders are race-free by construction.
+      </p>
+
+      <h3><code>PUmlNode</code> — the AST</h3>
+      <p>The rendered diagram is one of five constructors:</p>
+      <table>
+        <thead><tr><th>Constructor</th><th>Renders as</th></tr></thead>
+        <tbody>
+          <tr><td><code>Statement(value: String)</code></td><td>a literal line</td></tr>
+          <tr><td><code>Sequence(children: Vector[PUmlNode])</code></td><td>flat siblings</td></tr>
+          <tr><td><code>Block(header: String, body: PUmlNode)</code></td><td><code>header { body }</code></td></tr>
+          <tr><td><code>Diagram(kind: String, body: PUmlNode)</code></td><td><code>@startKIND … @endKIND</code></td></tr>
+          <tr><td><code>Comment(text: String)</code></td><td><code>' text</code></td></tr>
+        </tbody>
+      </table>
+
+      <h3><code>Emit.emit(node): String</code> — the pure renderer</h3>
+      <p>
+        A total fold over the AST. This is the only renderer-free way to inspect a
+        diagram's source &mdash; ideal for hashing, golden tests, or piping PlantUML
+        somewhere else.
+      </p>
+
+      <h3>Markers — compile-time capabilities</h3>
+      <p>
+        Sealed-trait capabilities (<code>InUml</code>, <code>InArchimate</code>,
+        <code>InSequence</code>, <code>InActivity</code>, …) are injected as
+        <code>given</code>s by the parent block and required as <code>using</code> by
+        domain helpers. Calling <code>shape(…)</code> outside an
+        <code>archimateDiagram { … }</code> is a <em>compile</em> error, not a runtime
+        surprise.
+      </p>
+
+      <div class="info-box tip">
+        <strong>Diagrams are values</strong>
+        A <code>PUmlNode</code> has no side effects. It is safe to compose, log, snapshot,
+        reuse, or pass around like any other immutable data.
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <section id="quickstart">
+      <h2>Quick Start <span class="audience-badge audience-users">Users</span></h2>
+
+      <h3>Imports</h3>
+      <pre><code><span class="keyword">import</span> fish.genius.uml.dsl.*                       <span class="comment">// block, uml, primitives, skin, Alias</span>
+<span class="keyword">import</span> fish.genius.uml.dsl.archimate.*             <span class="comment">// archimate DSL + types</span>
+<span class="keyword">import</span> fish.genius.uml.dsl.archimate.ShapeType.*   <span class="comment">// bare shape constants</span>
+<span class="keyword">import</span> fish.genius.uml.dsl.archimate.Edge.*        <span class="comment">// NoDirection, Up, Down, Left, Right</span>
+<span class="keyword">import</span> fish.genius.uml.dsl.sequence.*              <span class="comment">// sequence DSL</span>
+<span class="keyword">import</span> fish.genius.uml.dsl.activity.*              <span class="comment">// activity DSL</span>
+
+<span class="comment">// Only when you want bytes / files:</span>
+<span class="keyword">import</span> fish.genius.uml.render.{Emit, PUmlEngine, Renderer, PUmlViewer, PUmlError}
+
+<span class="comment">// In tests:</span>
+<span class="keyword">import</span> fish.genius.uml.testkit.{Golden, PUmlAssertions}
+<span class="keyword">import</span> fish.genius.uml.testkit.PUmlAssertions.*</code></pre>
+
+      <h3>A first diagram</h3>
+      <pre><code><span class="keyword">given</span> <span class="type">ArchimateConfiguration</span> = <span class="type">ArchimateConfiguration</span>()
+
+<span class="keyword">val</span> doc = <span class="function">block</span>:
+  <span class="function">uml</span>:
+    <span class="function">archimateDiagram</span>:
+      <span class="keyword">val</span> customer = <span class="function">shape</span>(<span class="type">BusinessActor</span>, <span class="function">label</span>(<span class="string">"Customer"</span>))
+      <span class="keyword">val</span> store    = <span class="function">shape</span>(<span class="type">ApplicationComponent</span>, <span class="function">label</span>(<span class="string">"Web store"</span>))
+      <span class="function">relationship</span>(<span class="type">RelationshipType</span>.Serving)(store)(customer)
+
+<span class="function">println</span>(<span class="type">Emit</span>.<span class="function">emit</span>(doc))</code></pre>
+
+      <p>Produces (abridged):</p>
+      <pre><code><span class="annotation">@startuml</span>
+!define TECHN_FONT_SIZE 12
+…
+rectangle #BUSINESS <span class="string">"Customer"</span> &lt;&lt;$archimate/business-actor&gt;&gt; as a0
+rectangle #APPLICATION <span class="string">"Web store"</span> &lt;&lt;$archimate/application-component&gt;&gt; as a1
+a1 -- a0 : <span class="string">""</span>
+<span class="annotation">@enduml</span></code></pre>
+
+      <div class="info-box note">
+        <strong>Run it live</strong>
+        <code>PLANTUML_AVAILABLE=1 ./mill examples.runMain fish.genius.uml.examples.ArchimateExample</code>
+        renders a real file. Without the env var the examples only print source to stdout.
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <section id="entrypoints">
+      <h2>Top-Level Entry Points <span class="audience-badge audience-users">Users</span></h2>
+
+      <h3><code>block(body): PUmlNode</code></h3>
+      <p>
+        Allocates a fresh <code>PUmlCtx</code>, runs <code>body</code>, and returns the
+        produced AST. The <em>only</em> user-facing entry point that allocates a top-level
+        context. Every nested capture (<code>childBlock</code>, <code>archimateDiagram</code>,
+        <code>box</code>, …) inherits counters from the surrounding context, keeping
+        auto-generated aliases unique across scopes.
+      </p>
+      <pre><code><span class="keyword">val</span> doc: <span class="type">PUmlNode</span> = <span class="function">block</span>:
+  <span class="function">uml</span>:
+    <span class="function">statement</span>(<span class="string">"Alice -> Bob: hi"</span>)</code></pre>
+
+      <h3><code>uml(body): Unit</code> <span class="pill">requires PUmlCtx</span></h3>
+      <p>
+        Wraps <code>body</code> in <code>@startuml … @enduml</code> and injects
+        <code>InUml</code>, which is what makes the domain DSLs
+        (<code>archimateDiagram</code>, <code>sequenceDiagram</code>,
+        <code>activityDiagram</code>) callable.
+      </p>
+
+      <h3><code>diagram(kind: String)(body): Unit</code> <span class="pill">requires PUmlCtx</span></h3>
+      <p>Same as <code>uml</code> but with a custom kind, for non-UML PlantUML diagrams (<code>gantt</code>, <code>mindmap</code>, <code>wbs</code>, <code>salt</code>, …).</p>
+      <pre><code><span class="function">block</span>:
+  <span class="function">diagram</span>(<span class="string">"gantt"</span>):
+    <span class="function">statement</span>(<span class="string">"[Design]  lasts 2 weeks"</span>)
+    <span class="function">statement</span>(<span class="string">"[Develop] lasts 6 weeks and starts at [Design]'s end"</span>)</code></pre>
+    </section>
+
+    <!-- ============================================================ -->
+    <section id="primitives">
+      <h2>Primitives <span class="audience-badge audience-users">Users</span></h2>
+      <p>
+        All primitives live in <code>fish.genius.uml.dsl</code> and require
+        <code>PUmlCtx</code>. They are intentionally low-level &mdash; the domain helpers
+        compose them.
+      </p>
+      <table>
+        <thead><tr><th>Helper</th><th>Effect</th></tr></thead>
+        <tbody>
+          <tr><td><code>statement(value: String)</code></td><td>Emit a single literal line.</td></tr>
+          <tr><td><code>statements(text: String)</code></td><td>Emit each non-empty line of <code>text</code> as its own statement.</td></tr>
+          <tr><td><code>comment(text: String)</code></td><td>Emit <code>' text</code> (PlantUML single-line comment).</td></tr>
+          <tr><td><code>expression(build: Alias =&gt; String): Alias</code></td><td>Allocate a fresh alias, build a line from it, emit, return the alias.</td></tr>
+          <tr><td><code>expressionWithBody(build: Alias =&gt; String)(body): Alias</code></td><td>Like <code>expression</code>, but the built line becomes a <code>Block</code> header over <code>body</code>.</td></tr>
+          <tr><td><code>headerBlock(header: String)(body)</code></td><td>Emit <code>header { body }</code> without allocating an alias.</td></tr>
+          <tr><td><code>when(cond: Boolean)(body)</code></td><td>Sugar for <code>if cond then body</code>.</td></tr>
+          <tr><td><code>emit(node: PUmlNode)</code></td><td>Lowest-level escape hatch: append the node verbatim. Prefer a typed helper when one exists.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ============================================================ -->
+    <section id="aliases">
+      <h2>Aliases <span class="audience-badge audience-users">Users</span></h2>
+      <p>
+        <code>Alias</code> is an opaque type wrapping a sanitised, lower-case alphanumeric
+        identifier safe to splice into PlantUML source. Three constructors:
+      </p>
+      <table>
+        <thead><tr><th>Constructor</th><th>Purpose</th></tr></thead>
+        <tbody>
+          <tr><td><code>Alias.fresh(using PUmlCtx)</code></td><td>Auto-allocate a unique alias from the context's <code>Counters</code>.</td></tr>
+          <tr><td><code>Alias(raw: String)</code></td><td>Sanitise an arbitrary string (strip non-alnum, lowercase, replace digits with English words).</td></tr>
+          <tr><td><code>Alias.unsafe(value: String)</code></td><td>Wrap a string verbatim (caller's responsibility).</td></tr>
+        </tbody>
+      </table>
+      <p>
+        You'll mostly <em>receive</em> aliases from consuming helpers &mdash;
+        <code>shape</code>, <code>actor</code>, <code>participant</code>,
+        <code>boundary</code> all return their newly allocated alias. Use them as references
+        in later calls; <code>Alias.value</code> extracts the underlying <code>String</code>.
+      </p>
+      <div class="info-box tip">
+        <strong>Globally unique by default</strong>
+        Auto-allocated aliases are unique across nested scopes within a single
+        <code>block { … }</code>: the <code>PUmlCtx</code> shares its counter with every
+        child block it spawns. You will not see two <code>as a0</code> lines unless you
+        mint them yourself with <code>Alias.unsafe</code>.
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <section id="skin">
+      <h2>Skinparams &amp; SVG Sprites <span class="audience-badge audience-users">Users</span></h2>
+
+      <h3><code>skinParam(stereotype, properties*)</code> <span class="pill">requires InUml</span></h3>
+      <p>Emits <code>skinparam &lt;stereotype&gt; { &lt;props&gt; }</code>. With no properties it emits nothing.</p>
+      <pre><code><span class="keyword">import</span> fish.genius.uml.dsl.SkinParamProperty.*
+
+<span class="function">skinParam</span>(
+  <span class="string">"Activity"</span>,
+  <span class="function">FontColor</span>(<span class="string">"black"</span>),
+  <span class="function">BorderColor</span>(<span class="string">"steelblue"</span>),
+  <span class="function">BorderThickness</span>(<span class="number">2</span>),
+)</code></pre>
+
+      <h3><code>SkinParamProperty</code></h3>
+      <p>A typed enum covering common PlantUML skinparam values. Each case knows its property name and value rendering.</p>
+      <table>
+        <thead><tr><th>Cases</th><th>Rendered name</th></tr></thead>
+        <tbody>
+          <tr><td><code>FontColor</code>, <code>BorderColor</code>, <code>BackgroundColor</code>, <code>Color</code></td><td>same as case</td></tr>
+          <tr><td><code>FontSize</code>, <code>StereotypeFontSize</code>, <code>BorderThickness</code></td><td>same as case</td></tr>
+          <tr><td><code>Shadowing(true/false)</code></td><td><code>Shadowing</code></td></tr>
+          <tr><td><code>BorderDashed</code>, <code>BorderDotted</code>, <code>BorderPlain</code>, <code>BorderBold</code></td><td><code>BorderStyle</code></td></tr>
+          <tr><td><code>StereoTypeAlignmentRight/Left/Center</code></td><td><code>StereotypeAlignment</code></td></tr>
+          <tr><td><code>RoundCorner(int)</code>, <code>DiagonalCorner(int)</code></td><td>same as case</td></tr>
+          <tr><td><code>EntrySeparatorColor(hex)</code></td><td><code>EntrySeparator</code></td></tr>
+          <tr><td><code>SkinProp(name, value)</code></td><td><code>name</code> (escape hatch)</td></tr>
+        </tbody>
+      </table>
+      <p><code>SkinProp</code> exists for properties not yet modelled &mdash; supply the literal PlantUML name and value.</p>
+
+      <h3><code>svgIcon(svg, name = None, description = None): SvgIcon</code> <span class="pill">requires InUml</span></h3>
+      <p>
+        Registers a <code>&lt;svg&gt;</code> sprite under an alias and returns an
+        <code>SvgIcon</code> handle for use in <code>legend(tags = …)</code> and
+        <code>ShapeLabel(tags = …)</code>. Emits <code>sprite $api &lt;svg&gt;…&lt;/svg&gt;</code>.
+      </p>
+      <pre><code><span class="keyword">val</span> api = <span class="function">svgIcon</span>(<span class="string">"&lt;svg&gt;...&lt;/svg&gt;"</span>, name = <span class="type">Some</span>(<span class="string">"api"</span>), description = <span class="type">Some</span>(<span class="string">"Has an API"</span>))</code></pre>
+    </section>
+
+    <!-- ============================================================ -->
+    <section id="archimate">
+      <h2>ArchiMate DSL <span class="audience-badge audience-users">Users</span></h2>
+
+      <h3>Configuration</h3>
+      <pre><code><span class="keyword">final case class</span> <span class="type">ArchimateConfiguration</span>(
+  technicalFontSize: <span class="type">Int</span> = <span class="number">12</span>,
+  descriptionFontSize: <span class="type">Int</span> = <span class="number">10</span>,
+)
+<span class="keyword">object</span> <span class="type">ArchimateConfiguration</span>:
+  <span class="keyword">given</span> default: <span class="type">ArchimateConfiguration</span> = <span class="type">ArchimateConfiguration</span>()</code></pre>
+      <p>A given <code>ArchimateConfiguration</code> must be in scope when you call <code>archimateDiagram</code>. The default is provided automatically; override it to tune label-line font sizes.</p>
+
+      <h3>Entry point</h3>
+      <pre><code><span class="keyword">def</span> <span class="function">archimateDiagram</span>(
+  body: (<span class="type">PUmlCtx</span>, <span class="type">InArchimate</span>, <span class="type">ArchimateConfiguration</span>) ?=&gt; <span class="type">Unit</span>
+)(<span class="keyword">using</span> <span class="type">PUmlCtx</span>, <span class="type">InUml</span>, <span class="type">ArchimateConfiguration</span>): <span class="type">Unit</span></code></pre>
+      <p>Emits the canonical ArchiMate skinparam preamble and runs <code>body</code> with <code>InArchimate</code> in scope. Named <code>archimateDiagram</code> (not <code>archimate</code>) to avoid colliding with the surrounding <code>fish.genius.uml.dsl.archimate</code> package.</p>
+
+      <h3>Shapes</h3>
+      <pre><code><span class="keyword">def</span> <span class="function">shape</span>(
+  shapeType: <span class="type">ShapeType</span>,
+  label: <span class="type">ShapeLabel</span>,
+  color: <span class="type">ShapeColor</span> = <span class="type">ShapeColor</span>(),
+  stereoType: <span class="type">Option</span>[<span class="type">ShapeStereoType</span>] = <span class="type">None</span>,
+): <span class="type">Alias</span></code></pre>
+      <p>Emits one <code>rectangle &lt;fill&gt; "&lt;label&gt;" &lt;&lt;archimate/…&gt;&gt; as &lt;alias&gt;</code> line. Mass-objects (<code>ApplicationDataObject</code>, <code>BusinessObject</code>, <code>BusinessContract</code>, <code>BusinessRepresentation</code>, <code>TechnologyArtifact</code>, <code>PhysicalMaterial</code>) automatically get the ArchiMate top-edge separator prefix in their label.</p>
+
+      <h3><code>ShapeLabel</code> and <code>label(...)</code></h3>
+      <pre><code><span class="keyword">final case class</span> <span class="type">ShapeLabel</span>(
+  name: <span class="type">String</span>,
+  componentType: <span class="type">Option</span>[<span class="type">String</span>] = <span class="type">None</span>,
+  componentTypeDetails: <span class="type">Option</span>[<span class="type">String</span>] = <span class="type">None</span>,
+  description: <span class="type">Option</span>[<span class="type">String</span>] = <span class="type">None</span>,
+  tags: <span class="type">List</span>[<span class="type">SvgIcon</span>] = <span class="type">Nil</span>,
+)(<span class="keyword">using</span> config: <span class="type">ArchimateConfiguration</span>)</code></pre>
+      <p>The composite caption rendered inside a shape. Use the <code>label(...)</code> helper as a shorter alternative to the case class:</p>
+      <pre><code><span class="keyword">val</span> l = <span class="function">label</span>(
+  <span class="string">"Order management"</span>,
+  componentType = <span class="type">Some</span>(<span class="string">"IT system"</span>),
+  description   = <span class="type">Some</span>(<span class="string">"primary OMS"</span>),
+)</code></pre>
+
+      <h3><code>ShapeColor</code> and <code>color(...)</code></h3>
+      <pre><code><span class="keyword">final case class</span> <span class="type">ShapeColor</span>(hex: <span class="type">Option</span>[<span class="type">String</span>] = <span class="type">None</span>)
+<span class="keyword">def</span> <span class="function">color</span>(hex: <span class="type">String</span>): <span class="type">ShapeColor</span></code></pre>
+      <p><code>color("FF0000")</code> and <code>color("#FF0000")</code> are equivalent. The default falls back to the layer's group default colour.</p>
+
+      <h3><code>ShapeType</code> — the catalogue (61 cases across 7 layers)</h3>
+      <table>
+        <thead><tr><th>Layer</th><th>Cases</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Application</strong></td><td><code>ApplicationComponent</code>, <code>ApplicationService</code>, <code>ApplicationCollaboration</code>, <code>ApplicationInterface</code>, <code>ApplicationFunction</code>, <code>ApplicationInteraction</code>, <code>ApplicationProcess</code>, <code>ApplicationEvent</code>, <code>ApplicationDataObject</code></td></tr>
+          <tr><td><strong>Strategy</strong></td><td><code>StrategyResource</code>, <code>StrategyCapability</code>, <code>StrategyValueStream</code>, <code>StrategyCourseOfAction</code></td></tr>
+          <tr><td><strong>Business</strong></td><td><code>BusinessActor</code>, <code>BusinessRole</code>, <code>BusinessCollaboration</code>, <code>BusinessInterface</code>, <code>BusinessProcess</code>, <code>BusinessFunction</code>, <code>BusinessInteraction</code>, <code>BusinessEvent</code>, <code>BusinessService</code>, <code>BusinessObject</code>, <code>BusinessContract</code>, <code>BusinessRepresentation</code>, <code>BusinessProduct</code>, <code>BusinessLocation</code></td></tr>
+          <tr><td><strong>Technology</strong></td><td><code>TechnologyNode</code>, <code>TechnologyDevice</code>, <code>TechnologySystemSoftware</code>, <code>TechnologyCollaboration</code>, <code>TechnologyInterface</code>, <code>TechnologyPath</code>, <code>TechnologyCommunicationNetwork</code>, <code>TechnologyFunction</code>, <code>TechnologyProcess</code>, <code>TechnologyInteraction</code>, <code>TechnologyEvent</code>, <code>TechnologyService</code>, <code>TechnologyArtifact</code></td></tr>
+          <tr><td><strong>Physical</strong></td><td><code>PhysicalFacility</code>, <code>PhysicalEquipment</code>, <code>PhysicalDistributionNetwork</code>, <code>PhysicalMaterial</code></td></tr>
+          <tr><td><strong>Motivation</strong></td><td><code>MotivationStakeholder</code>, <code>MotivationDriver</code>, <code>MotivationAssessment</code>, <code>MotivationGoal</code>, <code>MotivationOutcome</code>, <code>MotivationPrinciple</code>, <code>MotivationRequirement</code>, <code>MotivationConstraint</code>, <code>MotivationMeaning</code>, <code>MotivationValue</code></td></tr>
+          <tr><td><strong>Implementation</strong></td><td><code>ImplementationWorkPackage</code>, <code>ImplementationDeliverable</code>, <code>ImplementationPlateau</code>, <code>ImplementationEvent</code>, <code>ImplementationGap</code></td></tr>
+        </tbody>
+      </table>
+      <p>Static accessors: <code>ShapeType.application</code> / <code>.strategy</code> / <code>.business</code> / <code>.technology</code> / <code>.physical</code> / <code>.motivation</code> / <code>.implementation</code> (per-layer lists), and <code>ShapeType.*</code> (the flat list of all 61).</p>
+
+      <h3><code>ShapeGroup</code> — layers</h3>
+      <p><code>Application</code>, <code>Strategy</code>, <code>Business</code>, <code>Technology</code>, <code>Physical</code>, <code>Motivation</code>, <code>Implementation</code>. Each declares its <code>defaultColor</code> (e.g. <code>#APPLICATION</code>) and sprite-pack <code>prefix</code> (e.g. <code>application</code>).</p>
+
+      <h3>Boundaries</h3>
+      <pre><code><span class="keyword">def</span> <span class="function">boundary</span>(
+  label: <span class="type">String</span>,
+  boundaryType: <span class="type">Option</span>[<span class="type">String</span>] = <span class="type">None</span>,
+  shapeType: <span class="type">Option</span>[<span class="type">ShapeType</span>] = <span class="type">None</span>,
+  color: <span class="type">ShapeColor</span> = <span class="type">ShapeColor</span>(),
+  stereoType: <span class="type">Option</span>[<span class="type">ShapeStereoType</span>] = <span class="type">None</span>,
+)(body: (<span class="type">PUmlCtx</span>, <span class="type">InArchimate</span>, <span class="type">InBoundary</span>, <span class="type">ArchimateConfiguration</span>) ?=&gt; <span class="type">Unit</span>): <span class="type">Alias</span></code></pre>
+      <p>Emits a <code>rectangle "==&lt;label&gt;" &lt;&lt;…&gt;&gt; as &lt;alias&gt; { … }</code> block. Boundaries nest; the body keeps <code>InArchimate</code> available and also sees <code>InBoundary</code>.</p>
+
+      <h3>Stereotypes</h3>
+      <pre><code><span class="keyword">def</span> <span class="function">defineStereoType</span>(
+  name: <span class="type">String</span>,
+  description: <span class="type">Option</span>[<span class="type">String</span>],
+  legendColor: <span class="type">Option</span>[<span class="type">String</span>],
+  skinParameters: <span class="type">SkinParamProperty</span>*,
+): <span class="type">ShapeStereoType</span></code></pre>
+      <p>Registers a stereotype, emits the matching <code>skinparam rectangle&lt;&lt;NAME&gt;&gt;</code> block, and returns a handle you pass to <code>shape(…, stereoType = …)</code> or <code>legend(stereoTypes = …)</code>. The name is uppercased.</p>
+
+      <h3>Legends</h3>
+      <pre><code><span class="keyword">def</span> <span class="function">legend</span>(
+  title: <span class="type">String</span> = <span class="string">"Legend"</span>,
+  backgroundColorHexOrName: <span class="type">String</span> = <span class="string">"#GhostWhite"</span>,
+  stereoTypes: <span class="type">List</span>[<span class="type">ShapeStereoType</span>] = <span class="type">Nil</span>,
+  tags: <span class="type">List</span>[<span class="type">SvgIcon</span>] = <span class="type">Nil</span>,
+): <span class="type">Unit</span></code></pre>
+      <p>Emits a <code>legend bottom right … endlegend</code> block: a header row, one row per stereotype, and one row per SVG-icon tag.</p>
+
+      <h3>Relationships</h3>
+      <pre><code><span class="keyword">def</span> <span class="function">relationship</span>(
+  ofType: <span class="type">RelationshipType</span>,
+  edge: <span class="type">Edge</span> = <span class="type">Edge</span>.NoDirection,
+  label: <span class="type">Option</span>[<span class="type">String</span>] = <span class="type">None</span>,
+): <span class="type">Alias</span> =&gt; <span class="type">Alias</span> =&gt; <span class="type">Unit</span></code></pre>
+      <p>Curried, so a relationship template can be applied to many <code>(source, target)</code> pairs:</p>
+      <pre><code><span class="keyword">val</span> composes = <span class="function">relationship</span>(<span class="type">RelationshipType</span>.Composition, <span class="type">Edge</span>.Down, <span class="type">Some</span>(<span class="string">"composes"</span>))
+<span class="function">composes</span>(parent)(childA)
+<span class="function">composes</span>(parent)(childB)</code></pre>
+
+      <h4><code>RelationshipType</code> — 15 cases</h4>
+      <table>
+        <thead><tr><th>Type</th><th>Connector</th><th>Type</th><th>Connector</th></tr></thead>
+        <tbody>
+          <tr><td><code>Composition</code></td><td><code>*-…-</code></td><td><code>Realization</code></td><td><code>~…~|&gt;</code></td></tr>
+          <tr><td><code>Aggregation</code></td><td><code>o-…-</code></td><td><code>Triggering</code></td><td><code>-…-&gt;&gt;</code></td></tr>
+          <tr><td><code>Assignment</code></td><td><code>@@-…-&gt;&gt;</code></td><td><code>Access</code></td><td><code>~…~</code></td></tr>
+          <tr><td><code>Serving</code></td><td><code>-…-&gt;</code></td><td><code>ReadAccess</code></td><td><code>&lt;-…~</code></td></tr>
+          <tr><td><code>Flow</code></td><td><code>.….&gt;&gt;</code></td><td><code>WriteAccess</code></td><td><code>~…-&gt;</code></td></tr>
+          <tr><td><code>Specialization</code></td><td><code>-…-|&gt;</code></td><td><code>ReadWriteAccess</code></td><td><code>&lt;~…~&gt;</code></td></tr>
+          <tr><td><code>Association</code></td><td><code>=…=</code></td><td><code>Influence</code></td><td><code>.….&gt;</code></td></tr>
+          <tr><td><code>DirectedAssociation</code></td><td><code>=…=&gt;</code></td><td colspan="2"><code>RelationshipType.*</code> is the flat list.</td></tr>
+        </tbody>
+      </table>
+
+      <h4><code>Edge</code> — 5 directions</h4>
+      <p><code>NoDirection</code> (empty), <code>Up</code>, <code>Down</code>, <code>Left</code>, <code>Right</code> &mdash; rendered into the middle of a connector token (e.g. <code>*-DOWN-</code>).</p>
+
+      <h3>Helpers</h3>
+      <ul>
+        <li><code>archimateSkinParam(stereotype, props*)</code> — typed shortcut equivalent to <code>skinParam</code>, callable from inside an <code>archimateDiagram</code> body without re-summoning <code>InUml</code>.</li>
+        <li><code>archimatePreamble</code> — the full canonical preamble, exposed in case you want to re-apply it after a custom theme.</li>
+      </ul>
+    </section>
+
+    <!-- ============================================================ -->
+    <section id="sequence">
+      <h2>Sequence Diagram DSL <span class="audience-badge audience-users">Users</span></h2>
+
+      <h3>Entry point</h3>
+      <pre><code><span class="keyword">def</span> <span class="function">sequenceDiagram</span>(body: (<span class="type">PUmlCtx</span>, <span class="type">InSequence</span>) ?=&gt; <span class="type">Unit</span>)(<span class="keyword">using</span> <span class="type">PUmlCtx</span>, <span class="type">InUml</span>): <span class="type">Unit</span></code></pre>
+
+      <h3>Pragmas</h3>
+      <table>
+        <thead><tr><th>Helper</th><th>Emits</th></tr></thead>
+        <tbody>
+          <tr><td><code>autonumber()</code></td><td><code>autonumber</code></td></tr>
+          <tr><td><code>teozRenderingEngine()</code></td><td><code>!pragma teoz true</code></td></tr>
+        </tbody>
+      </table>
+
+      <h3>Participants</h3>
+      <p>All eight constructors share the signature <code>(title: String, color: Option[String] = None): Alias</code>:</p>
+      <table>
+        <thead><tr><th>Helper</th><th>PlantUML type</th><th>Helper</th><th>PlantUML type</th></tr></thead>
+        <tbody>
+          <tr><td><code>actor</code></td><td><code>actor</code></td><td><code>database</code></td><td><code>database</code></td></tr>
+          <tr><td><code>boundary</code></td><td><code>boundary</code></td><td><code>collections</code></td><td><code>collections</code></td></tr>
+          <tr><td><code>control</code></td><td><code>control</code></td><td><code>queue</code></td><td><code>queue</code></td></tr>
+          <tr><td><code>entity</code></td><td><code>entity</code></td><td><code>participant</code></td><td><code>participant</code></td></tr>
+        </tbody>
+      </table>
+      <p>Pass a colour as <code>Some("#1234AB")</code> to tint one participant. The underlying <code>participantOf(participantType, title, color)</code> is also public for custom PlantUML participant types.</p>
+
+      <h3>Boxes</h3>
+      <pre><code><span class="keyword">def</span> <span class="function">box</span>[<span class="type">A</span>](
+  title: <span class="type">String</span>,
+  color: <span class="type">Option</span>[<span class="type">String</span>] = <span class="type">None</span>,
+)(body: (<span class="type">PUmlCtx</span>, <span class="type">InSequence</span>, <span class="type">InBox</span>) ?=&gt; <span class="type">A</span>): <span class="type">A</span></code></pre>
+      <p>Emits <code>box "&lt;title&gt;" &lt;color&gt;</code> … <code>end box</code> (no braces &mdash; PlantUML rejects brace-delimited boxes). Returns the body's value, so you can capture aliases declared inside:</p>
+      <pre><code><span class="keyword">val</span> (browser, api) = <span class="function">box</span>(<span class="string">"Front-end"</span>, <span class="type">Some</span>(<span class="string">"#DAEEFF"</span>)):
+  (<span class="function">participant</span>(<span class="string">"Browser"</span>), <span class="function">participant</span>(<span class="string">"API"</span>))</code></pre>
+
+      <h3>Steps</h3>
+      <pre><code><span class="keyword">def</span> <span class="function">step</span>(title: <span class="type">String</span>)(from: <span class="type">Alias</span>)(to: <span class="type">Alias</span>): <span class="type">Unit</span></code></pre>
+      <p>Emits <code>&lt;from&gt;-&gt;&lt;to&gt;: &lt;title&gt;</code>. Quotes and newlines in the title are escaped (<code>"</code> is stripped, <code>\n</code> becomes <code>\\n</code>).</p>
+
+      <h3>Control structures</h3>
+      <table>
+        <thead><tr><th>Helper</th><th>Emits</th><th>Helper</th><th>Emits</th></tr></thead>
+        <tbody>
+          <tr><td><code>altGroup(title)</code></td><td><code>alt …</code></td><td><code>parGroup(title)</code></td><td><code>par …</code></td></tr>
+          <tr><td><code>elseGroup(title)</code></td><td><code>else …</code></td><td><code>breakGroup(title)</code></td><td><code>break …</code></td></tr>
+          <tr><td><code>loopGroup(title)</code></td><td><code>loop …</code></td><td><code>criticalGroup(title)</code></td><td><code>critical …</code></td></tr>
+          <tr><td><code>optGroup(title)</code></td><td><code>opt …</code></td><td><code>group(title)</code></td><td><code>group …</code></td></tr>
+          <tr><td colspan="2"></td><td><code>endGroup()</code></td><td><code>end</code></td></tr>
+        </tbody>
+      </table>
+      <div class="info-box warning">
+        <strong>No auto-closing</strong>
+        All eight openers take <code>Option[String] = None</code>. Pair every opener with
+        <code>endGroup()</code> exactly as in PlantUML. Misnesting produces a malformed
+        diagram, <em>not</em> a compile error &mdash; the markers gate <em>where</em> you can
+        call group helpers, not whether you balanced them.
+      </div>
+
+      <h3>Example</h3>
+      <pre><code><span class="function">sequenceDiagram</span>:
+  <span class="function">autonumber</span>()
+  <span class="keyword">val</span> user = <span class="function">actor</span>(<span class="string">"User"</span>)
+  <span class="keyword">val</span> (browser, api) = <span class="function">box</span>(<span class="string">"Front-end"</span>, <span class="type">Some</span>(<span class="string">"#DAEEFF"</span>)):
+    (<span class="function">participant</span>(<span class="string">"Browser"</span>), <span class="function">participant</span>(<span class="string">"API"</span>))
+
+  <span class="function">step</span>(<span class="string">"Open store"</span>)(user)(browser)
+  <span class="function">step</span>(<span class="string">"Click checkout"</span>)(browser)(api)
+  <span class="function">loopGroup</span>(<span class="type">Some</span>(<span class="string">"for each item"</span>))
+  <span class="function">step</span>(<span class="string">"Reserve inventory"</span>)(api)(browser)
+  <span class="function">endGroup</span>()</code></pre>
+    </section>
+
+    <!-- ============================================================ -->
+    <section id="activity">
+      <h2>Activity Diagram DSL <span class="audience-badge audience-users">Users</span></h2>
+
+      <h3>Entry point</h3>
+      <pre><code><span class="keyword">def</span> <span class="function">activityDiagram</span>(body: (<span class="type">PUmlCtx</span>, <span class="type">InActivity</span>) ?=&gt; <span class="type">Unit</span>)(<span class="keyword">using</span> <span class="type">PUmlCtx</span>, <span class="type">InUml</span>): <span class="type">Unit</span></code></pre>
+
+      <h3>Helpers</h3>
+      <table>
+        <thead><tr><th>Helper</th><th>Emits</th></tr></thead>
+        <tbody>
+          <tr><td><code>title(value)</code></td><td><code>title &lt;value&gt;</code></td></tr>
+          <tr><td><code>start()</code></td><td><code>start</code></td></tr>
+          <tr><td><code>stop()</code></td><td><code>stop</code></td></tr>
+          <tr><td><code>end()</code></td><td><code>end</code></td></tr>
+          <tr><td><code>action(name)</code></td><td><code>:name;</code></td></tr>
+          <tr><td><code>note(side, body)</code></td><td><code>note &lt;side&gt;</code> / <code>&lt;body&gt;</code> / <code>end note</code></td></tr>
+        </tbody>
+      </table>
+
+      <h3>Example</h3>
+      <pre><code><span class="function">activityDiagram</span>:
+  <span class="function">title</span>(<span class="string">"Order checkout"</span>)
+  <span class="function">start</span>()
+  <span class="function">action</span>(<span class="string">"Add items to basket"</span>)
+  <span class="function">action</span>(<span class="string">"Click checkout"</span>)
+  <span class="function">action</span>(<span class="string">"Confirm payment"</span>)
+  <span class="function">stop</span>()</code></pre>
+    </section>
+
+    <!-- ============================================================ -->
+    <section id="rendering">
+      <h2>Rendering <span class="audience-badge audience-users">Users</span></h2>
+
+      <h3><code>Emit.emit(node: PUmlNode): String</code></h3>
+      <p>Pure source-level renderer. Use it to inspect, hash, golden-test, or pipe PlantUML source without invoking the engine. Lives in <code>core</code>.</p>
+
+      <h3><code>PUmlEngine</code> — the ZIO 2 service</h3>
+      <pre><code><span class="keyword">trait</span> <span class="type">PUmlEngine</span>:
+  <span class="keyword">def</span> <span class="function">render</span>(doc: <span class="type">PUmlNode</span>, filename: <span class="type">String</span>, format: <span class="type">FileFormat</span>): <span class="type">ZIO</span>[<span class="type">Scope</span>, <span class="type">PUmlError</span>, os.<span class="type">Path</span>]
+  <span class="keyword">def</span> <span class="function">renderBytes</span>(doc: <span class="type">PUmlNode</span>, format: <span class="type">FileFormat</span>): <span class="type">ZIO</span>[<span class="type">Any</span>, <span class="type">PUmlError</span>, <span class="type">Array</span>[<span class="type">Byte</span>]]</code></pre>
+      <p>Two layers:</p>
+      <ul>
+        <li><code>PUmlEngine.live</code> — wraps PlantUML's <code>SourceStringReader.outputImage</code>. The output file lives inside a <code>Scope</code>-managed temp workspace and is deleted when the scope closes.</li>
+        <li><code>PUmlEngine.test</code> — captures the <code>.puml</code> source to a scoped temp dir with a placeholder for the requested format. For unit tests that don't want the renderer on the classpath.</li>
+      </ul>
+      <p><code>liveWith(config: PUmlConfig)</code> swaps in a custom config (currently just <code>defaultFormat</code> and <code>workspaceRoot</code>).</p>
+
+      <h4>Format accessors</h4>
+      <ul>
+        <li><code>PUmlEngine.renderSvg(doc, filename = "diagram")</code></li>
+        <li><code>.renderPng(...)</code>, <code>.renderEps(...)</code></li>
+        <li><code>.renderLatex(...)</code> — LaTeX without preamble</li>
+        <li><code>.renderLatexFull(...)</code> — LaTeX with full preamble</li>
+      </ul>
+
+      <h3><code>Renderer</code> — the façade</h3>
+      <pre><code><span class="keyword">import</span> fish.genius.uml.render.<span class="type">Renderer</span>
+
+<span class="type">ZIO</span>.<span class="function">scoped</span>(<span class="type">Renderer</span>.<span class="function">svg</span>(doc))   <span class="comment">// also: .png, .eps, .latex, .latexFull, .render(format)</span>
+
+<span class="comment">// Plus extension methods on PUmlNode:</span>
+doc.<span class="function">renderedAsSvg</span>()
+doc.<span class="function">renderedAsPng</span>()
+doc.<span class="function">renderedAsEps</span>()
+doc.<span class="function">renderedAsLatex</span>()</code></pre>
+
+      <h3><code>PUmlError</code></h3>
+      <pre><code><span class="keyword">enum</span> <span class="type">PUmlError</span> <span class="keyword">extends</span> <span class="type">Throwable</span>:
+  <span class="keyword">case</span> <span class="function">RenderFailed</span>(cause: <span class="type">Throwable</span>)   <span class="comment">// PlantUML threw while parsing/rendering</span>
+  <span class="keyword">case</span> <span class="function">ViewerFailed</span>(cause: <span class="type">Throwable</span>)   <span class="comment">// external preview command failed</span>
+  <span class="keyword">case</span> <span class="function">Internal</span>(cause: <span class="type">Throwable</span>)       <span class="comment">// filesystem / IO / JVM-side</span></code></pre>
+
+      <h3><code>PUmlViewer.open(file: os.Path)</code></h3>
+      <p>Opens a rendered file with the OS default viewer (<code>xdg-open</code> on Linux, <code>open</code> on macOS, <code>explorer</code> on Windows). Handy for example apps and eyeballing during development.</p>
+
+      <h3>Example</h3>
+      <pre><code><span class="keyword">val</span> program: <span class="type">ZIO</span>[<span class="type">PUmlEngine</span>, <span class="type">PUmlError</span>, <span class="type">Array</span>[<span class="type">Byte</span>]] =
+  <span class="type">PUmlEngine</span>.<span class="function">renderBytes</span>(doc, <span class="type">FileFormat</span>.SVG)
+
+<span class="keyword">val</span> live = program.<span class="function">provide</span>(<span class="type">PUmlEngine</span>.live)</code></pre>
+    </section>
+
+    <!-- ============================================================ -->
+    <section id="output">
+      <h2>Output Layout <span class="audience-badge audience-users">Users</span> <span class="audience-badge audience-contributors">Contributors</span></h2>
+      <p>
+        The raw engine renders into a scoped temp workspace that is deleted when the
+        <code>Scope</code> closes &mdash; copy a render out if you want to keep it.
+        <code>DiagramOutput</code> does exactly that, persisting to a stable, git-ignored
+        location:
+      </p>
+      <pre><code>out/&lt;format&gt;/&lt;category&gt;/&lt;name&gt;.&lt;suffix&gt;</code></pre>
+      <ul>
+        <li><code>&lt;format&gt;</code> — file suffix without the dot: <code>svg</code>, <code>png</code>, <code>eps</code>, <code>tex</code>.</li>
+        <li><code>&lt;category&gt;</code> — <code>DiagramOutput.Test</code> (<code>"test"</code>) or <code>DiagramOutput.Examples</code> (<code>"examples"</code>).</li>
+        <li><code>&lt;root&gt;</code> — <code>MILL_WORKSPACE_ROOT</code>, falling back to the current working directory.</li>
+      </ul>
+      <pre><code><span class="keyword">import</span> fish.genius.uml.render.{DiagramOutput, PUmlEngine}
+<span class="keyword">import</span> net.sourceforge.plantuml.<span class="type">FileFormat</span>
+
+<span class="comment">// Renders and persists to &lt;root&gt;/out/svg/examples/web-store.svg</span>
+<span class="keyword">val</span> program = <span class="type">ZIO</span>.<span class="function">scoped</span>(
+  <span class="type">DiagramOutput</span>.<span class="function">save</span>(diagram, <span class="type">DiagramOutput</span>.Examples, <span class="string">"web-store"</span>, <span class="type">FileFormat</span>.SVG)
+)</code></pre>
+
+      <div class="file-tree">
+        <span class="folder">out/</span><br>
+        ├── <span class="folder">svg/</span><br>
+        │&nbsp;&nbsp;&nbsp;├── <span class="folder">test/</span> <span class="file">integration.svg, archimate-test.svg, diagram.svg</span><br>
+        │&nbsp;&nbsp;&nbsp;└── <span class="folder">examples/</span> <span class="file">activity-example.svg</span><br>
+        ├── <span class="folder">png/</span> <span class="file">test/ · examples/</span><br>
+        ├── <span class="folder">eps/</span> <span class="file">test/ · examples/</span><br>
+        └── <span class="folder">tex/</span> <span class="file">test/ · examples/</span>
+      </div>
+      <p>Test suites leave their diagrams under <code>out/&lt;format&gt;/test</code>; the examples under <code>out/&lt;format&gt;/examples</code>. The whole <code>out/</code> tree is git-ignored.</p>
+    </section>
+
+    <!-- ============================================================ -->
+    <section id="testing">
+      <h2>Testing Helpers <span class="audience-badge audience-users">Users</span></h2>
+
+      <h3><code>Golden.assertMatches</code></h3>
+      <pre><code><span class="keyword">def</span> <span class="function">assertMatches</span>(
+  id: <span class="type">String</span>,
+  actual: <span class="type">String</span>,
+  resourcesDir: os.<span class="type">Path</span>,
+  extension: <span class="type">String</span> = <span class="string">"puml"</span>,
+  update: <span class="type">Boolean</span> = shouldUpdate,
+): <span class="type">ZIO</span>[<span class="type">Any</span>, <span class="type">IOException</span>, <span class="type">TestResult</span>]</code></pre>
+      <p>
+        Compares <code>actual</code> to <code>&lt;resourcesDir&gt;/golden/&lt;id&gt;.&lt;extension&gt;</code>.
+        When <code>update</code> is true (or <code>ZIO_TEST_UPDATE_GOLDEN</code> is set), the
+        file is created/overwritten and the assertion passes vacuously. When the file is
+        missing and <code>update</code> is false, the test fails with a hint to set the env var.
+      </p>
+      <p><code>Golden.moduleResources("core")</code> resolves to <code>&lt;workspace&gt;/core/test/resources</code> (uses <code>MILL_WORKSPACE_ROOT</code> if set, otherwise <code>os.pwd</code>).</p>
+
+      <h3><code>PUmlAssertions</code></h3>
+      <p>Two flavours, both from <code>PUmlAssertions.*</code>:</p>
+      <h4>Assertion combinators — for <code>assert(value)(assertion)</code></h4>
+      <ul>
+        <li><code>containsStatement(needle)</code></li>
+        <li><code>containsBlock(headerNeedle)</code></li>
+        <li><code>statementCountIs(needle, expected)</code></li>
+        <li><code>hasDiagramKind(kind)</code></li>
+      </ul>
+      <h4>Extension methods on <code>PUmlNode</code> — for <code>assertTrue</code></h4>
+      <ul>
+        <li><code>n.countStatement(needle: String): Int</code></li>
+        <li><code>n.hasBlock(headerNeedle: String): Boolean</code></li>
+        <li><code>n.statements: List[String]</code></li>
+        <li><code>n.statementsContaining(needle: String): List[String]</code></li>
+        <li><code>n.diagramKinds: List[String]</code></li>
+      </ul>
+      <pre><code><span class="keyword">import</span> fish.genius.uml.testkit.PUmlAssertions.*
+
+<span class="function">assertTrue</span>(
+  doc.<span class="function">countStatement</span>(<span class="string">"Alice"</span>) == <span class="number">2</span>,
+  doc.<span class="function">hasBlock</span>(<span class="string">"rectangle"</span>),
+  doc.diagramKinds == <span class="type">List</span>(<span class="string">"uml"</span>),
+)</code></pre>
+      <div class="info-box tip">
+        <strong>Skip the renderer in tests</strong>
+        For round-trip tests, assert on the AST directly with <code>PUmlAssertions</code>, or
+        compare <code>Emit.emit(doc)</code> against a checked-in golden. Both are pure and
+        fast &mdash; no PlantUML jar, no filesystem.
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <section id="internals">
+      <h2>Internals <span class="audience-badge audience-contributors">Contributors</span></h2>
+      <p>The DSL is built from three mechanisms. Understanding them is enough to extend any part of the library.</p>
+
+      <h3>1. Context functions carry the builder</h3>
+      <p>
+        The DSL type is <code>PUml[A] = PUmlCtx ?=&gt; A</code>. <code>block(body)</code>
+        allocates a fresh <code>PUmlCtx</code> &mdash; a mutable
+        <code>ArrayBuffer[PUmlNode]</code> plus a <code>Counters</code> for alias allocation
+        &mdash; supplies it as a <code>given</code>, runs <code>body</code>, then collapses the
+        buffer into a single <code>PUmlNode</code> (a lone child, or a <code>Sequence</code>).
+        Every helper takes the <code>PUmlCtx</code> implicitly and appends to its buffer via
+        <code>emit(node)</code>. No global state; each <code>block</code> is its own arena.
+      </p>
+
+      <h3>2. Markers enforce nesting at compile time</h3>
+      <p>
+        Marker capabilities are sealed traits in <code>dsl/markers.scala</code>. A wrapper
+        (<code>uml</code>, <code>archimateDiagram</code>, …) introduces its marker as a
+        <code>given</code> inside the body's context-function type; the helpers that belong to
+        that scope demand it with <code>using</code>. A misplaced call fails to compile:
+      </p>
+      <pre><code>no given instance of type fish.genius.uml.dsl.markers.<span class="type">InArchimate</span> was found</code></pre>
+      <p>That is the <em>entire</em> enforcement model &mdash; there is no runtime check.</p>
+      <table>
+        <thead><tr><th>Marker</th><th>Introduced by</th><th>Required by</th></tr></thead>
+        <tbody>
+          <tr><td><code>InUml</code></td><td><code>uml</code>, <code>diagram</code></td><td>every domain entry-point</td></tr>
+          <tr><td><code>InArchimate</code></td><td><code>archimateDiagram</code></td><td><code>shape</code>, <code>boundary</code>, <code>relationship</code>, <code>defineStereoType</code>, <code>legend</code>, <code>archimateSkinParam</code>, <code>archimatePreamble</code></td></tr>
+          <tr><td><code>InBoundary</code></td><td><code>boundary</code> body</td><td>informational (no helpers gate on it yet)</td></tr>
+          <tr><td><code>InSequence</code></td><td><code>sequenceDiagram</code></td><td>participant constructors, <code>step</code>, <code>box</code>, <code>autonumber</code>, <code>teozRenderingEngine</code>, all group helpers</td></tr>
+          <tr><td><code>InBox</code></td><td><code>box</code> body</td><td>informational</td></tr>
+          <tr><td><code>InGroup</code></td><td>reserved</td><td>&mdash;</td></tr>
+          <tr><td><code>InActivity</code></td><td><code>activityDiagram</code></td><td><code>title</code>, <code>start</code>, <code>action</code>, <code>stop</code>, <code>end</code>, <code>note</code></td></tr>
+        </tbody>
+      </table>
+
+      <h3>3. Counters keep aliases unique &amp; deterministic</h3>
+      <p>
+        Each top-level <code>PUmlCtx</code> owns a <code>Counters</code> instance; child
+        contexts inherit it. <code>Alias.fresh</code> pulls the next index, producing a
+        deterministic ascending sequence (<code>a0</code>, <code>a1</code>, …) that is stable
+        across reruns &mdash; which is what makes golden tests on <code>Emit.emit</code>
+        output reproducible.
+      </p>
+
+      <h3>The render path end to end</h3>
+      <ol>
+        <li><code>Emit.emit(doc)</code> folds the AST into a PlantUML <code>String</code> (pure, in <code>core</code>).</li>
+        <li><code>PUmlEngine.Live</code> hands that string to PlantUML's <code>SourceStringReader</code>, writing the chosen <code>FileFormat</code> into a <code>Workspace</code> (temp dir managed by <code>ZIO.acquireRelease</code>).</li>
+        <li><code>PUmlConfig</code> supplies the default format and optional workspace root.</li>
+        <li><code>DiagramOutput.save</code> copies the scoped render out to <code>out/&lt;format&gt;/&lt;category&gt;</code> via a package-private <code>copyOut</code> seam, so filesystem failures surface as <code>PUmlError.Internal</code>.</li>
+      </ol>
+
+      <div class="file-tree">
+        <span class="folder">core/src/fish/genius/uml/</span><br>
+        ├── <span class="folder">dsl/</span> <span class="file">builders.scala · document.scala · primitives.scala · markers.scala · PUmlCtx.scala · Alias.scala · Counters.scala · skin.scala</span><br>
+        │&nbsp;&nbsp;&nbsp;├── <span class="folder">archimate/</span> · <span class="folder">sequence/</span> · <span class="folder">activity/</span><br>
+        ├── <span class="folder">ast/</span> <span class="file">PUmlNode.scala</span><br>
+        └── <span class="folder">render/</span> <span class="file">Emit.scala</span><br>
+        <span class="folder">render/src/fish/genius/uml/render/</span><br>
+        └── <span class="file">PUmlEngine.scala · Renderer.scala · Workspace.scala · PUmlConfig.scala · DiagramOutput.scala · PUmlError.scala</span><br>
+        <span class="folder">testkit/src/fish/genius/uml/testkit/</span><br>
+        └── <span class="file">Golden.scala · PUmlAssertions.scala</span>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <section id="extending">
+      <h2>Extending the Library <span class="audience-badge audience-contributors">Contributors</span></h2>
+
+      <h3>Add a new diagram dialect</h3>
+      <p>To add, say, a state-machine DSL, follow the pattern the three existing dialects share:</p>
+      <ol>
+        <li><strong>Define a marker.</strong> Add <code>sealed trait InState</code> to <code>dsl/markers.scala</code>.</li>
+        <li><strong>Write an entry point</strong> that requires <code>InUml</code> and introduces <code>InState</code> in the body's context-function type:
+          <pre><code><span class="keyword">def</span> <span class="function">stateDiagram</span>(body: (<span class="type">PUmlCtx</span>, <span class="type">InState</span>) ?=&gt; <span class="type">Unit</span>)(<span class="keyword">using</span> <span class="type">PUmlCtx</span>, <span class="type">InUml</span>): <span class="type">Unit</span> =
+  <span class="function">given</span> <span class="type">InState</span> = <span class="keyword">new</span> <span class="type">InState</span> {}
+  body</code></pre>
+        </li>
+        <li><strong>Write helpers</strong> that require <code>InState</code> and call the existing primitives (<code>statement</code>, <code>expression</code>, <code>headerBlock</code>, …) rather than touching the buffer directly.</li>
+        <li><strong>Return aliases</strong> from any helper that declares a node a later call will reference &mdash; reuse <code>Alias.fresh</code> so uniqueness is automatic.</li>
+      </ol>
+
+      <h3>Wrap recurring snippets — no library change needed</h3>
+      <p>The DSL is just functions; users and contributors alike compose new helpers with the same compile-time guarantees:</p>
+      <pre><code><span class="keyword">def</span> <span class="function">microservice</span>(name: <span class="type">String</span>, language: <span class="type">String</span>)(<span class="keyword">using</span> <span class="type">PUmlCtx</span>, <span class="type">InArchimate</span>, <span class="type">ArchimateConfiguration</span>): <span class="type">Alias</span> =
+  <span class="function">shape</span>(
+    <span class="type">ApplicationComponent</span>,
+    <span class="function">label</span>(name, componentType = <span class="type">Some</span>(language), description = <span class="type">Some</span>(<span class="string">"microservice"</span>)),
+  )</code></pre>
+      <p><code>microservice("OrderService", "Scala 3")</code> is now one line with <code>shape</code>'s guarantees.</p>
+
+      <div class="info-box note">
+        <strong>Conventions enforced in CI</strong>
+        <code>.scalafmt.conf</code> (maxColumn 100; 120 for <code>**/test/**</code> and
+        <code>*Spec.scala</code>) and <code>.scalafix.conf</code> (<code>OrganizeImports</code>,
+        <code>RemoveUnused</code>, …) are enforced. Run <code>make validate</code> (fix + fmt +
+        compile + test) before committing. New files usually need
+        <code>./mill &lt;module&gt;.reformat</code>.
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <section id="patterns">
+      <h2>Patterns &amp; Tips <span class="audience-badge audience-users">Users</span></h2>
+
+      <h3>Capture aliases out of nested blocks</h3>
+      <p><code>block</code>, <code>boundary</code>, <code>box</code>, and <code>expressionWithBody</code> all return values &mdash; use them to lift aliases out of the body:</p>
+      <pre><code><span class="keyword">val</span> (browser, api) = <span class="function">box</span>(<span class="string">"Front-end"</span>):
+  (<span class="function">participant</span>(<span class="string">"Browser"</span>), <span class="function">participant</span>(<span class="string">"API"</span>))</code></pre>
+
+      <h3>Reuse a relationship template</h3>
+      <pre><code><span class="keyword">val</span> composes = <span class="function">relationship</span>(<span class="type">RelationshipType</span>.Composition)
+<span class="function">composes</span>(parent)(childA)
+<span class="function">composes</span>(parent)(childB)
+<span class="function">composes</span>(parent)(childC)</code></pre>
+
+      <h3>Custom skinparam blocks</h3>
+      <pre><code><span class="keyword">import</span> fish.genius.uml.dsl.SkinParamProperty.*
+
+<span class="function">skinParam</span>(<span class="string">"Activity"</span>,
+  <span class="function">SkinProp</span>(<span class="string">"DiamondBackgroundColor"</span>, <span class="string">"#FFD"</span>),
+  <span class="function">FontColor</span>(<span class="string">"black"</span>),
+)</code></pre>
+
+      <h3>Non-UML PlantUML diagrams</h3>
+      <p><code>uml { … }</code> is just <code>diagram("uml") { … }</code>. For Gantt charts, mind maps, or salt mockups, switch the kind:</p>
+      <pre><code><span class="function">diagram</span>(<span class="string">"salt"</span>):
+  <span class="function">statement</span>(<span class="string">"{"</span>)
+  <span class="function">statement</span>(<span class="string">"Login    | \"\""</span>)
+  <span class="function">statement</span>(<span class="string">"Password | \"\""</span>)
+  <span class="function">statement</span>(<span class="string">"[Cancel] | [  OK  ]"</span>)
+  <span class="function">statement</span>(<span class="string">"}"</span>)</code></pre>
+      <p>Every primitive in <code>fish.genius.uml.dsl</code> works without <code>InUml</code>-specific gating except the domain DSLs themselves.</p>
+
+      <h3>Common commands</h3>
+      <table>
+        <thead><tr><th>Command</th><th>Purpose</th></tr></thead>
+        <tbody>
+          <tr><td><code>make test</code></td><td><code>./mill __.test.testForked</code> — all tests</td></tr>
+          <tr><td><code>./mill render.test</code></td><td>one module's tests</td></tr>
+          <tr><td><code>make validate</code></td><td>fix + fmt + compile + test (run before committing)</td></tr>
+          <tr><td><code>make examples</code></td><td>render every example as SVG (also <code>-eps</code>, <code>-png</code>, <code>-latex</code>)</td></tr>
+          <tr><td><code>ZIO_TEST_UPDATE_GOLDEN=1 ./mill core.test</code></td><td>regenerate golden fixtures</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+  </main>
+
+  <footer>
+    <p>Genius Fish Platform &mdash; genius-uml Reference Manual</p>
+    <p style="opacity:0.8;font-size:0.85rem;margin-top:0.5rem;">
+      Canonical API surface. Helpers documented here are stable; anything not listed is package-private implementation detail.
+    </p>
+  </footer>
+</body>
+</html>
