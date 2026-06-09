@@ -32,12 +32,13 @@ object RendererSpec extends ZIOSpecDefault:
         step("Hello")(a)(b)
 
   def spec = suite("Renderer")(
-    test("test engine writes a placeholder for SVG output"):
+    test("test engine writes a placeholder under out/svg/test"):
       ZIO.scoped:
         for
-          path <- Renderer.svg(archimateDoc, "archimate-test")
+          path <- DiagramOutput.save(archimateDoc, DiagramOutput.Test, "archimate-test", FileFormat.SVG)
           body <- ZIO.attempt(os.read(path)).orDie
         yield assertTrue(
+          path == DiagramOutput.path(DiagramOutput.Test, "archimate-test", FileFormat.SVG),
           path.toString.endsWith(".svg"),
           body.startsWith("%FAKE-SVG"),
           body.contains("@startuml"),
@@ -48,8 +49,8 @@ object RendererSpec extends ZIOSpecDefault:
       val formats = List(FileFormat.SVG, FileFormat.PNG, FileFormat.EPS, FileFormat.LATEX)
       ZIO.foreach(formats): f =>
         ZIO.scoped:
-          Renderer.render(sequenceDoc, "diagram", f).map: p =>
-            assertTrue(p.toString.endsWith(f.getFileSuffix))
+          DiagramOutput.save(sequenceDoc, DiagramOutput.Test, "diagram", f).map: p =>
+            assertTrue(p == DiagramOutput.path(DiagramOutput.Test, "diagram", f))
       .map(_.reduce(_ && _))
     ,
     test("renderBytes returns a non-empty byte stream"):

@@ -1,13 +1,6 @@
-# Mill
+# Mill build dir, plus rendered diagram artifacts: tests write to
+# out/<format>/test and examples to out/<format>/examples.
 out/
-
-# Example artifacts produced by ./mill examples.run with PLANTUML_AVAILABLE=1
-*-example.svg
-*-example.png
-*-example.eps
-*-example.tex
-*-example.atxt
-*-example.utxt
 
 # Build / IDE metadata
 .bsp/

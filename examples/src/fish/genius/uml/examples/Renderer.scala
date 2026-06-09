@@ -3,7 +3,7 @@ package fish.genius.uml.examples
 import zio.*
 
 import fish.genius.uml.ast.PUmlNode
-import fish.genius.uml.render.{Emit, PUmlEngine}
+import fish.genius.uml.render.{DiagramOutput, Emit, PUmlEngine}
 
 import net.sourceforge.plantuml.FileFormat
 
@@ -13,8 +13,8 @@ import net.sourceforge.plantuml.FileFormat
  * Every example calls `Renderer.run(name, doc)`:
  *   - the rendered PlantUML source is always printed to stdout;
  *   - if `PLANTUML_AVAILABLE` is set, the document is also rendered through
- *     the live engine and the resulting file is copied into the current
- *     working directory as `<name>.<suffix>`.
+ *     the live engine and the resulting file is persisted under
+ *     `out/<format>/examples/<name>.<suffix>`.
  *
  * The output format defaults to SVG and can be overridden with the
  * `PLANTUML_FORMAT` env var (case-insensitive: `svg`, `eps`, `png`,
@@ -40,10 +40,8 @@ object Renderer:
         ZIO
           .scoped:
             for
-              path <- PUmlEngine.render(doc, name, format)
-              dest = os.pwd / s"$name${format.getFileSuffix}"
-              _ <- ZIO.attempt(os.copy.over(path, dest))
-              _ <- Console.printLine(s"${format.name} written to $dest")
+              dest <- DiagramOutput.save(doc, DiagramOutput.Examples, name, format)
+              _    <- Console.printLine(s"${format.name} written to $dest")
             yield ()
           .provide(PUmlEngine.live)
 

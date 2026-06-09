@@ -39,12 +39,13 @@ object IntegrationSpec extends ZIOSpecDefault:
             head.contains("<svg") || head.startsWith("<?xml"),
           )
     ,
-    test("live engine writes an SVG file under a scoped workspace"):
+    test("live engine writes an SVG file under out/svg/test"):
       ZIO.scoped:
         for
-          path <- Renderer.svg(doc, "integration")
+          path <- DiagramOutput.save(doc, DiagramOutput.Test, "integration", FileFormat.SVG)
           size <- ZIO.attempt(os.size(path)).orDie
         yield assertTrue(
+          path == DiagramOutput.path(DiagramOutput.Test, "integration", FileFormat.SVG),
           path.toString.endsWith(".svg"),
           size > 64,
         )
@@ -59,13 +60,14 @@ object IntegrationSpec extends ZIOSpecDefault:
             head.startsWith("%!PS-Adobe"),
           )
     ,
-    test("live engine writes an EPS file under a scoped workspace"):
+    test("live engine writes an EPS file under out/eps/test"):
       ZIO.scoped:
         for
-          path <- Renderer.eps(doc, "integration")
+          path <- DiagramOutput.save(doc, DiagramOutput.Test, "integration", FileFormat.EPS)
           size <- ZIO.attempt(os.size(path)).orDie
           head <- ZIO.attempt(os.read(path).take(32)).orDie
         yield assertTrue(
+          path == DiagramOutput.path(DiagramOutput.Test, "integration", FileFormat.EPS),
           path.toString.endsWith(".eps"),
           size > 64,
           head.startsWith("%!PS-Adobe"),
