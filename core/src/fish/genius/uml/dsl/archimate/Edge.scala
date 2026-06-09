@@ -18,4 +18,3 @@ enum Edge(val direction: String):
 
   def asString(prefix: Edge.EdgePrefix, suffix: Edge.EdgeSuffix): String =
     s"$prefix$direction$suffix"
-

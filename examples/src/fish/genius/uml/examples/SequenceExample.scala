@@ -14,11 +14,11 @@ object SequenceExample extends ZIOAppDefault:
         autonumber()
         teozRenderingEngine()
 
-        val user             = actor("User")
-        val browser          = box("Front-end", Some("#DAEEFF")):
+        val user          = actor("User")
+        val browser       = box("Front-end", Some("#DAEEFF")):
           participant("Browser")
-        val api              = participant("API")
-        val (service, db)    = box("Back-end", Some("#DDFFDD")):
+        val api           = participant("API")
+        val (service, db) = box("Back-end", Some("#DDFFDD")):
           (control("Service"), database("Postgres"))
 
         step("Open store")(user)(browser)
