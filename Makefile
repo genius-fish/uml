@@ -107,9 +107,35 @@ release-prepare:
 	fi
 	./mill release.releasePrepare --releaseType $(TYPE)
 
+# Representative published artifact (no version) used by release-preflight to detect an already-
+# published or partially-published version on the releases repo. Empty disables the check.
+RELEASE_VERIFY_BASE ?= fish/genius/genius-uml-core_3
+
+# Atomic release: releaseFinalize creates the tag LOCALLY (no push), we publish, then
+# releasePushRelease pushes the tag. A failed publish leaves nothing public — recover with
+# `make release-abort`, then retry the same version.
 release-finalize:
 	./mill release.releaseFinalize
+	$(MAKE) release-preflight
 	$(MAKE) publishLocal
+	$(MAKE) publish
+	./mill release.releasePushRelease
+
+release-preflight:
+	@VERSION=$$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//'); \
+	if [ -z "$(RELEASE_VERIFY_BASE)" ]; then \
+		echo "[WARN] RELEASE_VERIFY_BASE unset, skipping remote pre-flight"; \
+	else \
+		url="https://repo.genius.fish/releases/$(RELEASE_VERIFY_BASE)/$$VERSION/"; \
+		code=$$(curl -s -o /dev/null -w "%{http_code}" -u "$$REPO_USERNAME:$$REPO_TOKEN" -I "$$url" 2>/dev/null || echo 000); \
+		if [ "$$code" -ge 200 ] && [ "$$code" -lt 400 ]; then \
+			echo "[ERROR] Version $$VERSION already on remote at $$url (HTTP $$code)."; \
+			echo "        Aborting before publish to avoid a partial/burned release."; \
+			echo "        Run 'make release-abort', clean any orphans, then bump the version."; \
+			exit 1; \
+		fi; \
+		echo "[OK] Pre-flight: $$VERSION not present remotely (HTTP $$code)"; \
+	fi
 
 release-abort:
 	./mill release.releaseAbort
