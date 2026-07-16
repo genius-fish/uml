@@ -35,6 +35,7 @@ def archimatePreamble(
   ArchimateConfiguration,
 ): Unit =
   val cfg = summon[ArchimateConfiguration]
+  if cfg.elkLayout then statement("!pragma layout elk")
   statement(
     s"""!define TECHN_FONT_SIZE ${cfg.technicalFontSize}
        |!define ELEMENT_FONT_COLOR #FFFFFF

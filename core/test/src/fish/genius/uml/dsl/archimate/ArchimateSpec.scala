@@ -13,6 +13,14 @@ object ArchimateSpec extends ZIOSpecDefault:
 
   given ArchimateConfiguration = ArchimateConfiguration()
 
+  /** Minimal one-shape diagram, parameterised by configuration. */
+  private def actorDiagram(
+    using ArchimateConfiguration
+  ) = block:
+    uml:
+      archimateDiagram:
+        val _ = shape(BusinessActor, label("Alice"))
+
   def spec = suite("Archimate DSL")(
     test("renders a small business-context diagram"):
       val n      = block:
@@ -48,10 +56,13 @@ object ArchimateSpec extends ZIOSpecDefault:
             val a = shape(BusinessActor, label("Alice"))
             val b = shape(BusinessRole, label("Cashier"))
             relationship(Composition, Down, Some("composes"))(a)(b)
+            relationship(Assignment)(a)(b)
       val output = Emit.emit(n)
       assertTrue(
         output.contains("*-DOWN-"),
         output.contains(": \"composes\""),
+        // `@@-` (the old Assignment prefix) is not valid PlantUML; the ball prefix is.
+        output.contains("0-->>"),
       )
     ,
     test("defineStereoType emits a `skinparam rectangle<<NAME>>` block"):
@@ -86,6 +97,20 @@ object ArchimateSpec extends ZIOSpecDefault:
         output.contains("Demo Legend"),
         output.contains("endlegend"),
       )
+    ,
+    test("elkLayout emits the `!pragma layout elk` preamble line"):
+      val output = Emit.emit(actorDiagram(
+        using ArchimateConfiguration(elkLayout = true)
+      ))
+      assertTrue(
+        output.contains("!pragma layout elk"),
+        // the pragma must precede everything else in the preamble
+        output.indexOf("!pragma layout elk") < output.indexOf("!define TECHN_FONT_SIZE"),
+      )
+    ,
+    test("default configuration does not emit the elk pragma"):
+      val output = Emit.emit(actorDiagram)
+      assertTrue(!output.contains("!pragma"))
     ,
     test("shape registry covers every Archimate element"):
       // Just enumerate them — if any is missing the call would fail.

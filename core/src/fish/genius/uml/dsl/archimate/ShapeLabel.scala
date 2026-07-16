@@ -5,10 +5,17 @@ import fish.genius.uml.dsl.SvgIcon
 /**
  * Build-time configuration for an [[ShapeLabel]]: tweaks the type-/description
  * font sizes used inside Archimate shape captions.
+ *
+ * `elkLayout` switches the diagram's layout engine from GraphViz/Smetana to
+ * the Eclipse Layout Kernel bundled with the PlantUML jar (emits
+ * `!pragma layout elk` in the preamble). ELK usually produces tidier layouts
+ * for large Archimate diagrams, at the cost of ignoring some GraphViz-specific
+ * layout hints.
  */
 final case class ArchimateConfiguration(
   technicalFontSize: Int = 12,
-  descriptionFontSize: Int = 10)
+  descriptionFontSize: Int = 10,
+  elkLayout: Boolean = false)
 
 object ArchimateConfiguration:
   /** Sensible defaults — useful when callers don't want to spell one out. */
