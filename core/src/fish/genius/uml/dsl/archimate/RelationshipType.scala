@@ -9,7 +9,7 @@ import fish.genius.uml.dsl.archimate.Edge.{EdgePrefix, EdgeSuffix}
 enum RelationshipType(val prefix: EdgePrefix, val suffix: EdgeSuffix):
   case Composition extends RelationshipType("*-", "-")
   case Aggregation extends RelationshipType("o-", "-")
-  case Assignment extends RelationshipType("@@-", "->>")
+  case Assignment extends RelationshipType("0-", "->>")
   case Serving extends RelationshipType("-", "->")
   case Flow extends RelationshipType(".", ".>>")
   case Specialization extends RelationshipType("-", "-|>")
