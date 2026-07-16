@@ -60,6 +60,17 @@ object IntegrationSpec extends ZIOSpecDefault:
             head.startsWith("%!PS-Adobe"),
           )
     ,
+    test("live engine fails with InvalidSource instead of rendering PlantUML's error page"):
+      val invalid = block:
+        uml:
+          statement("a @@-->> b") // the old Assignment token — not valid PlantUML
+      PUmlEngine
+        .renderBytes(invalid)
+        .exit
+        .map: exit =>
+          assertTrue(exit.isFailure) &&
+          assert(exit)(Assertion.failsWithA[PUmlError.InvalidSource])
+    ,
     test("live engine writes an EPS file under out/eps/test"):
       ZIO.scoped:
         for

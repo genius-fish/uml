@@ -7,6 +7,7 @@ import zio.*
 import fish.genius.uml.ast.PUmlNode
 
 import net.sourceforge.plantuml.{FileFormat, FileFormatOption, SourceStringReader}
+import net.sourceforge.plantuml.error.PSystemError
 
 /**
  * Render a [[PUmlNode]] AST into a diagram file on disk.
@@ -122,7 +123,7 @@ object PUmlEngine:
           val baos = new java.io.ByteArrayOutputStream()
           renderTo(doc, format, baos)
           baos.toByteArray
-        .mapError(PUmlError.RenderFailed.apply)
+        .mapError(asPUmlError)
 
     private def writeRendered(
       doc: PUmlNode,
@@ -134,8 +135,12 @@ object PUmlEngine:
           val s = stream
           try renderTo(doc, format, s)
           finally s.close()
-        .mapError(PUmlError.RenderFailed.apply)
+        .mapError(asPUmlError)
         .unit
+
+    private def asPUmlError(cause: Throwable): PUmlError = cause match
+      case e: PUmlError => e
+      case other        => PUmlError.RenderFailed(other)
 
     private def renderTo(
       doc: PUmlNode,
@@ -144,8 +149,29 @@ object PUmlEngine:
     ): Unit =
       val source = fish.genius.uml.render.Emit.emit(doc)
       val reader = new SourceStringReader(source)
+      failOnSyntaxError(reader)
       val opt    = new FileFormatOption(format)
       reader.outputImage(out, opt)
+
+    /**
+     * PlantUML does not fail on a syntax error: it renders its error page as
+     * a "successful" image. Inspect the parsed blocks first and raise a typed
+     * [[PUmlError.InvalidSource]] instead of writing an error-page diagram.
+     */
+    private def failOnSyntaxError(reader: SourceStringReader): Unit =
+      import scala.jdk.CollectionConverters.*
+      reader.getBlocks.asScala.iterator
+        .map(_.getDiagram)
+        .collectFirst { case err: PSystemError => err }
+        .foreach: err =>
+          val details = err.getErrorsUml.asScala
+            .map: e =>
+              val line = Option(e.getLineLocation)
+                .map(l => s"line ${l.getPosition + 1}: ")
+                .getOrElse("")
+              s"$line${e.getError}"
+            .mkString("; ")
+          throw PUmlError.InvalidSource(details)
 
     private def workspace: ZIO[Scope, PUmlError, Workspace] =
       val acquire =
