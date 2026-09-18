@@ -6,5 +6,6 @@
         "repo": "genius-fish/claude-marketplace"
       }
     }
-  }
+  },
+  "agent": "gf-product-owner"
 }
