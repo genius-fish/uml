@@ -35,3 +35,6 @@ hs_err_pid*
 # Release state — produced by /gf-standards:release-prepare, consumed by
 # /gf-standards:release-finalize. Lives only on the local working tree.
 .release-state.json
+
+# Review output (merge-gate reports, reviews/<KEY>-progress.md) stays local, as in every fleet repo (APP-1877).
+reviews/
