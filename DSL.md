@@ -955,3 +955,11 @@ a container is parented to it. `--check` moves an element and reports how far th
 connector ends are from their ports. `--straight` ignores the layout's routes. Tested
 headless on Blender 5.0.1 and 5.2.2.
 
+A placard is small: in an overview of a large view its name renders a few pixels tall.
+`--labels auto` (the default) then also floats each name above its element, about 16 px
+tall in the render whatever the scene's size, on a light card, kept facing the camera so
+it faces an interactive viewer too. It does so when a placard's name would render under
+9 px; the builder prints that size. Taken front to back, a floating name that would cover
+one already placed moves up until it is free. `--labels placard` and `--labels float`
+force either.
+

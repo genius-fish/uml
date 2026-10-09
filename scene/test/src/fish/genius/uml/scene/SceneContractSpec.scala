@@ -36,6 +36,14 @@ object SceneContractSpec extends ZIOSpecDefault:
       test("the builder knows every connector the layout names"):
         assertTrue(RelationshipType.values.toList.map(SceneNames.of).filterNot(connectors).isEmpty)
       ,
+      test("the builder takes every option DSL.md documents"):
+        val options = List("--view", "--blend", "--render", "--check", "--straight", "--labels")
+        val choices = List("\"auto\"", "\"placard\"", "\"float\"")
+        assertTrue(
+          options.filterNot(option => script.contains(s"\"$option\"")).isEmpty,
+          choices.forall(script.contains),
+        )
+      ,
       test("the builder reads every field the layout writes"):
         val scene  = Scene(
           "One",

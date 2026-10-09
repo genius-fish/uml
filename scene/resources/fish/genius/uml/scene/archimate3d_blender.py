@@ -889,6 +889,7 @@ def element(key, etype, name=None, x=0.0, y=0.0, font=None, w=None, d=None, z=0.
     root["archimate_type"] = etype
     root["archimate_name"] = name
     root["am_w"], root["am_d"] = w, d
+    root["am_z"], root["am_container"], root["am_form"] = z, bool(container), form
     model = place_obj(empty(f"{key}.model", root, 0.02), (0, 0, -half), (PI / 2, 0, 0))
     b = B(model, key)
     on_placard = bool(name) and form not in ("puck", "tray")
@@ -1217,6 +1218,98 @@ def stage(roots, azimuth, elevation, res, samples):
         pass
 
 
+# ── floating labels ───────────────────────────────────────────────────────────
+LABEL_PX = 16           # a floating name's height in the render, in pixels
+LEGIBLE_PX = 9          # a placard name below this is not read: float the names
+PLACARD_NAME = 0.12     # a placard name's height in scene units, about
+LEAF_TOP = 1.6          # above a leaf's sculpture
+CONTAINER_TOP = 0.75    # above a container's front strip, below its children's labels
+RAISES = 8              # how often a label that overlaps another may move up
+CHAR_WIDTH = 0.5        # a character's width, in label heights
+
+
+def label_size(scene, cam, point):
+    """Scene units that render LABEL_PX tall at the camera's distance to `point`."""
+    res_x, res_y = scene.render.resolution_x, scene.render.resolution_y
+    distance = (cam.matrix_world.translation - point).length
+    vertical = 2 * math.atan(math.tan(cam.data.angle_x / 2) * res_y / res_x)
+    return LABEL_PX / res_y * 2 * distance * math.tan(vertical / 2)
+
+
+def placard_px(scene, cam, roots):
+    """How tall a placard's name renders, in pixels, at the middle of the view."""
+    centre = sum((r.matrix_world.translation for r in roots), Vector()) / len(roots)
+    return PLACARD_NAME / label_size(scene, cam, centre) * LABEL_PX
+
+
+def wants_floating(mode, scene, cam, roots):
+    """auto floats the names when a placard would render smaller than LEGIBLE_PX."""
+    if mode != "auto":
+        return mode == "float"
+    return placard_px(scene, cam, roots) < LEGIBLE_PX
+
+
+def _screen_box(scene, cam, point, name):
+    """The label's box in the frame, as fractions of its width and height."""
+    from bpy_extras.object_utils import world_to_camera_view
+
+    centre = world_to_camera_view(scene, cam, point)
+    width = LABEL_PX * (CHAR_WIDTH * len(name) + 0.8) / scene.render.resolution_x
+    height = LABEL_PX * 1.6 / scene.render.resolution_y
+    return (centre.x - width / 2, centre.y - height / 2, centre.x + width / 2, centre.y + height / 2)
+
+
+def _overlap(a, b):
+    return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
+
+
+def float_labels(scene, cam, roots, font=None):
+    """Each named element's name above it, on a light card, kept facing the camera. Taken
+    front to back, a label that would cover one already placed moves up until it is free."""
+    bpy.context.view_layer.update()
+    named = [r for r in roots if r.get("archimate_name") and r.get("am_form") != "puck"]
+    named.sort(key=lambda r: (cam.matrix_world.translation - r.matrix_world.translation).length)
+    card_mat = material("am.card", srgb_to_linear("#F7F6F2"), 0.6, alpha=0.82)
+    placed = []
+    for root in named:
+        name = root["archimate_name"]
+        half = root.matrix_world.translation.z - root.get("am_z", 0.0)
+        offset = Vector((0, -root.get("am_d", P_D) / 2 + 0.35, CONTAINER_TOP - half)) if root.get("am_container") \
+            else Vector((0, 0, LEAF_TOP - half))
+        size = label_size(scene, cam, root.matrix_world.translation + offset)
+        for _ in range(RAISES):
+            box = _screen_box(scene, cam, root.matrix_world.translation + offset, name)
+            if not any(_overlap(box, other) for other in placed):
+                break
+            offset = offset + Vector((0, 0, size * 1.7))
+        placed.append(_screen_box(scene, cam, root.matrix_world.translation + offset, name))
+        cu = bpy.data.curves.new(f"{root.name}.floating", "FONT")
+        cu.body = name
+        cu.align_x = "CENTER"
+        cu.align_y = "CENTER"
+        cu.size = size
+        if font is not None:
+            cu.font = font
+        cu.materials.append(label_ink())
+        text = link(bpy.data.objects.new(cu.name, cu), root)
+        text.location = offset
+        # a card behind the name, sized from its length; text faces +Z, so behind is -Z
+        bm = bmesh.new()
+        bmesh.ops.create_grid(bm, x_segments=1, y_segments=1, size=0.5)
+        bmesh.ops.scale(bm, vec=(size * (CHAR_WIDTH * len(name) + 0.6), size * 1.5, 1), verts=bm.verts)
+        card = mesh_from_bm(f"{root.name}.floating.card", bm, card_mat, text, smooth=False)
+        card.location = (0, 0, -size * 0.05)
+        track = text.constraints.new("TRACK_TO")
+        track.target = cam
+        track.track_axis = "TRACK_Z"
+        track.up_axis = "UP_Y"
+        for ob in (text, card):
+            ob.hide_select = True
+            if hasattr(ob, "visible_shadow"):
+                ob.visible_shadow = False
+    return len(placed)
+
+
 def check(built, connectors):
     """Move the first element and report how far the connector ends are from their ports."""
     root = next(r for r, _ in built.values() if r.parent is None)
@@ -1257,6 +1350,8 @@ def main():
     ap.add_argument("--elevation", type=float)
     ap.add_argument("--check", action="store_true", help="move an element and verify the connectors follow")
     ap.add_argument("--straight", action="store_true", help="ignore the layout's routes: straight lines between the nearest ports")
+    ap.add_argument("--labels", choices=("auto", "placard", "float"), default="auto",
+                    help="names above the elements too: auto when the placards would be too small to read")
     args = ap.parse_args(argv)
 
     if bpy.app.background:
@@ -1288,7 +1383,12 @@ def main():
         w, h = (int(v) for v in args.size.lower().split("x"))
         azimuth = args.azimuth if args.azimuth is not None else (22 if args.catalogue else 35)
         elevation = args.elevation if args.elevation is not None else (50 if args.catalogue else 36)
-        stage([r for r, _ in built.values()], azimuth, elevation, (w, h), args.samples)
+        roots = [r for r, _ in built.values()]
+        stage(roots, azimuth, elevation, (w, h), args.samples)
+        scene, cam = bpy.context.scene, bpy.context.scene.camera
+        print(f"archimate3d: a placard's name renders about {placard_px(scene, cam, roots):.0f} px tall")
+        if wants_floating(args.labels, scene, cam, roots):
+            print(f"archimate3d: {float_labels(scene, cam, roots, font)} floating labels")
     # Blender reads a bare relative name against the .blend, not the shell: make them absolute
     if args.blend:
         bpy.ops.wm.save_as_mainfile(filepath=os.path.abspath(args.blend))
