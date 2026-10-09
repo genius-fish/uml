@@ -1527,7 +1527,7 @@ OPEN_S, GLIDE_S, RUN_S, HOLD_S, CLOSE_S = 1.2, 1.1, 1.5, 0.7, 1.4   # seconds
 FADE_S = 0.4               # a spot, a caption or a finished trail changes over this long
 PUSH_IN = 0.6              # the camera creeps this far forward while a step holds
 STEP_ELEVATION = 30        # the camera looks down on a step at this angle
-STEP_MARGIN = 0.2          # a step's two plinths keep this share of the frame free
+STEP_MARGIN = 0.2          # a step's shot keeps this share of the frame free round what it holds
 STEP_SPAN = 5.0            # a step's shot spans at least this much floor, so a near pair
                            # or a step to itself is not seen from too close
 AZIMUTH_LIMIT = 55         # never further round than this: placards face the front
@@ -1539,7 +1539,8 @@ ROUTE_LIFT = 0.06          # a trail along a connector runs this far above it
 ARC_RISE, ARC_GROWTH = 0.9, 0.1    # an arc rises this high, plus this share of its span
 ARC_POINTS = 24
 ARC_END = 0.35             # an arc leaves this far above a plinth
-LOOP_R = 0.75              # a step to itself runs round an upright ring this wide, over its plinth
+LOOP_R = 0.75              # the radius of the upright ring a step to itself runs round
+LOOP_POINTS = 32
 CAPTION_SHARE = 34 / 1080  # a step's caption height, as a share of the frame's: 34 px in 1080p
 CAPTION_TOP = 0.1          # its distance from the top of the frame, as a share of the height
 CAPTION_DEPTH = 2.0        # how far in front of the camera the caption hangs
@@ -1547,7 +1548,7 @@ CAPTION_MARGIN = 1.2       # the caption card's width beyond the text, in captio
 CAPTION_HEIGHT = 1.8       # the caption card's height, in caption heights
 CAPTION_CHARS = 60         # a longer label is cut short, so the card stays in the frame
 
-Flight = namedtuple("Flight", "frames steps along margin clearance gap closest")
+Flight = namedtuple("Flight", "frames steps along margin clearance gap leaf_share loop")
 
 
 def find_flow(view, wanted):
@@ -1592,24 +1593,36 @@ def arc_end(root):
     return p + Vector((0, 0, ARC_END))
 
 
-def step_route(view, built, step):
+def loop_route(start, azimuth):
+    """Once round an upright ring standing on a plinth, turned to face a camera at
+    `azimuth`: up off the plinth, over, and back down onto it."""
+    across = Vector((math.cos(math.radians(azimuth)), math.sin(math.radians(azimuth)), 0))
+    angles = [2 * math.pi * i / LOOP_POINTS for i in range(LOOP_POINTS + 1)]
+    return [start + across * (LOOP_R * math.sin(a)) + Vector((0, 0, LOOP_R * (1 - math.cos(a)))) for a in angles]
+
+
+def arc_route(a, b):
+    """An arc from a to b above the scene, the higher the further apart they are."""
+    rise = ARC_RISE + ARC_GROWTH * (b - a).length
+    fractions = [i / ARC_POINTS for i in range(ARC_POINTS + 1)]
+    return [a.lerp(b, u) + Vector((0, 0, rise * 4 * u * (1 - u))) for u in fractions]
+
+
+def step_route(view, built, step, azimuth):
     """The points a step's pulse runs through, from source to target, and the connector
-    they follow: the route that connector was drawn on (connect() records it), or an arc
-    above the scene where no connector joins the two."""
+    they follow, if any: the route a connector joining the two was drawn on (connect()
+    records it); for a step to itself, a ring over its plinth facing the camera at
+    `azimuth`; otherwise an arc above the scene."""
     carrier = carrier_of(view, step)
     path = bpy.data.objects.get(f"{carrier}.line") if carrier else None
     if path is not None and "am_route" in path:
         flat = list(path["am_route"])
         points = [Vector(flat[i:i + 3]) + Vector((0, 0, ROUTE_LIFT)) for i in range(0, len(flat), 3)]
         return (points if path["am_source"] == step["source"] else points[::-1]), path
-    a, b = arc_end(built[step["source"]][0]), arc_end(built[step["target"]][0])
+    start = arc_end(built[step["source"]][0])
     if step["source"] == step["target"]:
-        # once round an upright ring standing on the plinth: out of it and back into it
-        turns = [2 * math.pi * i / ARC_POINTS for i in range(ARC_POINTS + 1)]
-        return [a + Vector((LOOP_R * math.sin(t), 0, LOOP_R * (1 - math.cos(t)))) for t in turns], None
-    rise = ARC_RISE + ARC_GROWTH * (b - a).length
-    return [a.lerp(b, i / ARC_POINTS) + Vector((0, 0, rise * 4 * (i / ARC_POINTS) * (1 - i / ARC_POINTS)))
-            for i in range(ARC_POINTS + 1)], None
+        return loop_route(start, azimuth), None
+    return arc_route(start, arc_end(built[step["target"]][0])), None
 
 
 def route_gap(path, route):
@@ -1711,8 +1724,8 @@ class CameraTrack:
 
 
 def shot_corners(source, target):
-    """What a step's shot must hold: both plinths, and at least STEP_SPAN of floor
-    around them, so the camera never comes closer than that."""
+    """What a step's shot must hold: both plinths, and a square of floor STEP_SPAN wide
+    centred between them, so a near pair or a single leaf is not seen from too close."""
     corners = plinth_corners(source) + plinth_corners(target)
     middle = (source.matrix_world.translation + target.matrix_world.translation) / 2
     half = STEP_SPAN / 2
@@ -1720,14 +1733,15 @@ def shot_corners(source, target):
 
 
 def flight_poses(scene, cam, built, steps):
-    """Where the camera stands for each step: framed on its two plinths, from the side."""
+    """Where the camera stands for each step and the azimuth it looks from: framed on
+    what shot_corners holds, from the side."""
     base = cam.get("am_azimuth", 35.0)
     poses = []
     for st in steps:
         source, target = built[st["source"]][0], built[st["target"]][0]
-        frame(scene, cam, shot_corners(source, target),
-              step_azimuth(source, target, base), STEP_ELEVATION, STEP_MARGIN)
-        poses.append((cam.location.copy(), cam.rotation_euler.to_quaternion()))
+        azimuth = step_azimuth(source, target, base)
+        frame(scene, cam, shot_corners(source, target), azimuth, STEP_ELEVATION, STEP_MARGIN)
+        poses.append((cam.location.copy(), cam.rotation_euler.to_quaternion(), azimuth))
     return poses
 
 
@@ -1768,25 +1782,38 @@ def step_pulse(number, path, arrive, run_end):
     show(pulse, ((1, 0), (arrive - 1, 0), (arrive, 1), (run_end, 1), (run_end + 1, 0)))
 
 
-def measure_flight(scene, cam, built, shots):
-    """What the flight shows, at each step's arrival, mid-run and leave: the tightest
-    margin of the step's two plinths in the frame, how far the highest of them stays
-    below the caption bar, and the largest share of the frame's width one plinth takes
-    (how close the camera comes)."""
+def project(scene, cam, points):
+    """Points as the camera frames them: x and y as shares of the frame's width and height."""
     from bpy_extras.object_utils import world_to_camera_view
 
-    margin, highest, closest = 1.0, 0.0, 0.0
-    for step, frames in shots:
-        plinths = [plinth_corners(built[step[end]][0]) for end in ("source", "target")]
+    return [world_to_camera_view(scene, cam, p) for p in points]
+
+
+def measure_flight(scene, cam, built, shots):
+    """What the flight shows, at each step's arrival, mid-run and departure:
+    - margin: how far inside the frame the step's plinths and route stay, at the least;
+    - clearance: how far the highest of them stays below the caption bar;
+    - leaf_share: the largest share of the frame's width a leaf's plinth takes (a
+      container's scaled to a leaf's width), which is how close the camera comes;
+    - loop: the narrowest a step to itself opens its ring, as a share of the frame's
+      width; None when no step goes to itself."""
+    margin, highest, leaf_share, loops = 1.0, 0.0, 0.0, []
+    for step, frames, route in shots:
+        roots = [built[step[end]][0] for end in ("source", "target")]
         for frame_no in frames:
             scene.frame_set(frame_no)
-            for corners in plinths:
-                xs, ys = zip(*((p.x, p.y) for p in (world_to_camera_view(scene, cam, c) for c in corners)))
-                margin = min(margin, min(xs), 1 - max(xs), min(ys), 1 - max(ys))
-                highest = max(highest, max(ys))
-                closest = max(closest, max(xs) - min(xs))
+            plinths = [project(scene, cam, plinth_corners(root)) for root in roots]
+            path = project(scene, cam, route)
+            for p in [p for points in plinths for p in points] + path:
+                margin = min(margin, p.x, 1 - p.x, p.y, 1 - p.y)
+                highest = max(highest, p.y)
+            for root, points in zip(roots, plinths):
+                width = max(p.x for p in points) - min(p.x for p in points)
+                leaf_share = max(leaf_share, width * P_W / root.get("am_w", P_W))
+            if step["source"] == step["target"]:
+                loops.append(max(p.x for p in path) - min(p.x for p in path))
     caption_bottom = 1 - CAPTION_TOP - CAPTION_SHARE * CAPTION_HEIGHT / 2
-    return margin, caption_bottom - highest, closest
+    return margin, caption_bottom - highest, leaf_share, (min(loops) if loops else None)
 
 
 def flyover(scene, cam, view, built, flow, font=None, fps=FPS):
@@ -1810,21 +1837,21 @@ def flyover(scene, cam, view, built, flow, font=None, fps=FPS):
     for light in lights.values():
         keyframe(light.data, "energy", 1, 0.0)
     shots, along, gap = [], 0, 0.0
-    for number, (step, (location, rotation)) in enumerate(zip(steps, poses), 1):
+    for number, (step, (location, rotation, azimuth)) in enumerate(zip(steps, poses), 1):
         arrive = f + s(GLIDE_S)
         run_end = arrive + s(RUN_S)
         leave = run_end + s(HOLD_S)
         track.hold(arrive, location, rotation)
         track.hold(leave, location + (rotation @ Vector((0, 0, -1))) * PUSH_IN, rotation)
         step_spots(lights, step, arrive, leave, s(FADE_S))
-        route, carrier = step_route(view, built, step)
+        route, carrier = step_route(view, built, step, azimuth)
         if carrier is not None:
             along += 1
             gap = max(gap, route_gap(carrier, route))
         step_pulse(number, step_trail(number, route, arrive, run_end, leave, s(FADE_S)), arrive, run_end)
         show(caption(scene, cam, f"flow.{number}.caption", caption_text(number, step), font),
              ((1, 0), (arrive - s(FADE_S), 0), (arrive, 1), (leave, 1), (leave + s(FADE_S), 0)))
-        shots.append((step, (arrive, (arrive + run_end) // 2, leave)))
+        shots.append((step, (arrive, (arrive + run_end) // 2, leave), route))
         f = leave
     for light in lights.values():
         keyframe(light.data, "energy", f + s(FADE_S), 0.0)
@@ -1835,9 +1862,9 @@ def flyover(scene, cam, view, built, flow, font=None, fps=FPS):
     f += s(OPEN_S)
     track.hold(f, *overview)
     scene.frame_start, scene.frame_end = 1, f
-    margin, clearance, closest = measure_flight(scene, cam, built, shots)
+    margin, clearance, leaf_share, loop = measure_flight(scene, cam, built, shots)
     scene.frame_set(1)
-    return Flight(f, len(steps), along, margin, clearance, gap, closest)
+    return Flight(f, len(steps), along, margin, clearance, gap, leaf_share, loop)
 
 
 def render_animation(scene, path, samples=32):
@@ -1873,9 +1900,12 @@ def point(args, scene, cam, view, built, roots, font):
         flight = flyover(scene, cam, view, built, flow, font, args.fps)
         print(f"archimate3d: flyover of {flow.get('name') or flow.get('key')}: {flight.steps} steps, "
               f"{flight.along} along a connector, {flight.frames} frames at {args.fps} fps")
-        print(f"archimate3d: every step's two plinths stay {flight.margin:.3f} inside the frame and "
+        print(f"archimate3d: every step's plinths and route stay {flight.margin:.3f} inside the frame and "
               f"{flight.clearance:.3f} below the caption; routes within {flight.gap:.3f} of their connectors")
-        print(f"archimate3d: at its closest a plinth takes {flight.closest:.3f} of the frame's width")
+        print(f"archimate3d: at its closest the camera shows a leaf's plinth at {flight.leaf_share:.3f} "
+              f"of the frame's width")
+        if flight.loop is not None:
+            print(f"archimate3d: a step to itself opens its ring {flight.loop:.3f} of the frame's width")
         return flow
     print(f"archimate3d: a placard's name renders about {placard_px(scene, cam, roots):.1f} px tall")
     if wants_floating(args.labels, scene, cam, roots):

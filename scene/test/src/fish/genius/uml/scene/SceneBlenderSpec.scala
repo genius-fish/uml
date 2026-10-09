@@ -33,7 +33,8 @@ object SceneBlenderSpec extends ZIOSpecDefault:
     margin: Double,
     clearance: Double,
     gap: Double,
-    closest: Double)
+    leafShare: Double,
+    loop: Option[Double])
 
   final private case class Floating(
     names: Int,
@@ -59,7 +60,7 @@ object SceneBlenderSpec extends ZIOSpecDefault:
       for
         counts <- first("""flyover of .*: (\d+) steps, (\d+) along a connector, (\d+) frames""")
         shown  <- first("""stay ([\d.-]+) inside the frame and ([\d.-]+) below the caption; routes within ([\d.]+)""")
-        near   <- first("""at its closest a plinth takes ([\d.]+) of the frame's width""")
+        near   <- first("""at its closest the camera shows a leaf's plinth at ([\d.]+)""")
       yield Flight(
         counts(0).toInt,
         counts(1).toInt,
@@ -68,6 +69,7 @@ object SceneBlenderSpec extends ZIOSpecDefault:
         shown(1).toDouble,
         shown(2).toDouble,
         near(0).toDouble,
+        first("""a step to itself opens its ring ([\d.]+)""").map(_.head.toDouble),
       )
 
     def floating: Option[Floating] =
@@ -162,6 +164,32 @@ object SceneBlenderSpec extends ZIOSpecDefault:
       finally head.close()
     }
 
+  // How close a flight may come: the largest share of the frame's width a leaf's plinth
+  // may take (0.47 for a step to itself and 0.29 for a near pair before shots had a
+  // floor to hold; about 0.24 since).
+  private val LEAF_SHARE_LIMIT = 0.26
+
+  // How wide a step to itself must open its ring, as a share of the frame's width.
+  private val LOOP_LIMIT = 0.05
+
+  // A step from the shop to itself.
+  private val thinking = small.copy(flows =
+    List(SceneFlow(SceneId("thinking"), "Thinking", List(SceneStep(SceneId("shop"), SceneId("shop"), "checks stock"))))
+  )
+
+  // Two leaves side by side, 2.4 apart centre to centre, one step from one to the other:
+  // a scene written by hand, as the layout keeps plinths further apart.
+  private val nearPair =
+    def leaf(key: String, x: Double) = SceneElement(SceneId(key), "node", key, x, 0, 2, 1.3, 0, None, container = false)
+    Scene(
+      "Near",
+      5,
+      2,
+      List(leaf("a", -1.2), leaf("b", 1.2)),
+      Nil,
+      List(FlowRoute(SceneId("next door"), "Next door", List(FlowLeg(SceneId("a"), SceneId("b"), "hands over", None)))),
+    )
+
   private val MP4 = "ftyp".getBytes(StandardCharsets.US_ASCII) // after the box size
   private val PNG = Array(0x89, 'P', 'N', 'G').map(_.toByte)
 
@@ -202,7 +230,8 @@ object SceneBlenderSpec extends ZIOSpecDefault:
           yield assertTrue(
             // at 6 fps: 1 + opening 7 + 2 steps × (glide 7 + run 9 + hold 4) + closing 8 + 7
             run.flight.exists(f => f.steps == 2 && f.along == 2 && f.frames == 63),
-            run.flight.exists(f => f.margin > 0.1 && f.clearance > 0 && f.gap < 0.4 && f.closest < 0.4),
+            run.flight.exists(f => f.margin > 0.1 && f.clearance > 0 && f.gap < 0.4),
+            run.flight.exists(f => f.leafShare < LEAF_SHARE_LIMIT && f.loop.isEmpty),
             valid,
           )
       ,
@@ -213,16 +242,24 @@ object SceneBlenderSpec extends ZIOSpecDefault:
           run.lit.exists(_.ambient == 0.2),
         )
       ,
-      test("a step to itself loops over its own plinth, seen from no closer than any other"):
-        val thinking = small.copy(flows =
-          List(SceneFlow(
-            SceneId("thinking"),
-            "Thinking",
-            List(SceneStep(SceneId("shop"), SceneId("shop"), "checks stock")),
-          ))
+      test("a step to itself runs round a ring over its plinth, facing the camera from either side"):
+        for
+          front <- built(thinking, "--flyover")
+          side  <- built(thinking, "--flyover", "--azimuth", "90")
+        yield assertTrue(
+          front.flight.exists(f => f.steps == 1 && f.along == 0 && f.loop.exists(_ > LOOP_LIMIT)),
+          side.flight.exists(_.loop.exists(_ > LOOP_LIMIT)),
+          front.flight.exists(f => f.margin > 0.1 && f.clearance > 0),
         )
-        for run <- built(thinking, "--flyover")
-        yield assertTrue(run.flight.exists(f => f.steps == 1 && f.along == 0 && f.margin > 0.1 && f.closest < 0.4))
+      ,
+      test("no shot comes too close: not on a step to itself, not on a near pair"):
+        for
+          alone <- built(thinking, "--flyover")
+          near  <- inDirectory(build(_, nearPair, "--flyover"))
+        yield assertTrue(
+          alone.flight.exists(_.leafShare < LEAF_SHARE_LIMIT),
+          near.flight.exists(f => f.steps == 1 && f.leafShare < LEAF_SHARE_LIMIT),
+        )
       ,
       test("--frame renders one frame of the flight as a still"):
         inDirectory: dir =>
