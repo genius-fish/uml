@@ -995,7 +995,9 @@ flight through it into the `.blend` timeline. The overview comes first, in full 
 then, per step, the camera glides to the step's two elements and looks at them from the
 side, both lit while the rest dims, while a pulse runs from source to target and leaves
 an amber trail: along the connector that joins them, on the route it was drawn on
-(`--straight` included), or in an arc above the scene where none does. The step's number
+(`--straight` included), or in an arc above the scene where none does; a step from an
+element to itself runs once round a ring standing on its plinth. A shot spans at least
+five units of floor, so a near pair or a single element is not seen from too close. The step's number
 and label stand in a caption bar at the top of the frame, its height a fixed share of
 the frame's; a label longer than 60 characters is cut short.
 A finished step's trail thins and stops glowing, so the flow so far stays visible; at
@@ -1004,8 +1006,9 @@ the end the camera returns to the overview and the light comes back. A step take
 
 The builder measures the flight it made and prints it: how many steps ran along a
 connector, how far inside the frame both plinths of every step stay (at its arrival,
-mid-run and departure), how far below the caption bar, and how far each route strays
-from its connector (an arrowhead's length, since a route ends on the ports). A flow it
+mid-run and departure), how far below the caption bar, how far each route strays from
+its connector (an arrowhead's length, since a route ends on the ports), and the largest
+share of the frame's width one plinth takes, which is how close the camera comes. A flow it
 cannot find, by key or name, is reported, and `--animation` then writes nothing.
 
 `--animation out.mp4` renders that timeline to an H.264 video with EEVEE and Blender's

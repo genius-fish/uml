@@ -32,7 +32,8 @@ object SceneBlenderSpec extends ZIOSpecDefault:
     frames: Int,
     margin: Double,
     clearance: Double,
-    gap: Double)
+    gap: Double,
+    closest: Double)
 
   final private case class Floating(
     names: Int,
@@ -58,6 +59,7 @@ object SceneBlenderSpec extends ZIOSpecDefault:
       for
         counts <- first("""flyover of .*: (\d+) steps, (\d+) along a connector, (\d+) frames""")
         shown  <- first("""stay ([\d.-]+) inside the frame and ([\d.-]+) below the caption; routes within ([\d.]+)""")
+        near   <- first("""at its closest a plinth takes ([\d.]+) of the frame's width""")
       yield Flight(
         counts(0).toInt,
         counts(1).toInt,
@@ -65,6 +67,7 @@ object SceneBlenderSpec extends ZIOSpecDefault:
         shown(0).toDouble,
         shown(1).toDouble,
         shown(2).toDouble,
+        near(0).toDouble,
       )
 
     def floating: Option[Floating] =
@@ -199,7 +202,7 @@ object SceneBlenderSpec extends ZIOSpecDefault:
           yield assertTrue(
             // at 6 fps: 1 + opening 7 + 2 steps × (glide 7 + run 9 + hold 4) + closing 8 + 7
             run.flight.exists(f => f.steps == 2 && f.along == 2 && f.frames == 63),
-            run.flight.exists(f => f.margin > 0.1 && f.clearance > 0 && f.gap < 0.4),
+            run.flight.exists(f => f.margin > 0.1 && f.clearance > 0 && f.gap < 0.4 && f.closest < 0.4),
             valid,
           )
       ,
@@ -209,6 +212,17 @@ object SceneBlenderSpec extends ZIOSpecDefault:
           run.flight.exists(f => f.along == 2 && f.gap < 0.4),
           run.lit.exists(_.ambient == 0.2),
         )
+      ,
+      test("a step to itself loops over its own plinth, seen from no closer than any other"):
+        val thinking = small.copy(flows =
+          List(SceneFlow(
+            SceneId("thinking"),
+            "Thinking",
+            List(SceneStep(SceneId("shop"), SceneId("shop"), "checks stock")),
+          ))
+        )
+        for run <- built(thinking, "--flyover")
+        yield assertTrue(run.flight.exists(f => f.steps == 1 && f.along == 0 && f.margin > 0.1 && f.closest < 0.4))
       ,
       test("--frame renders one frame of the flight as a still"):
         inDirectory: dir =>

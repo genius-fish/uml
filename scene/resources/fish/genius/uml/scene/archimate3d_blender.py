@@ -1528,6 +1528,8 @@ FADE_S = 0.4               # a spot, a caption or a finished trail changes over 
 PUSH_IN = 0.6              # the camera creeps this far forward while a step holds
 STEP_ELEVATION = 30        # the camera looks down on a step at this angle
 STEP_MARGIN = 0.2          # a step's two plinths keep this share of the frame free
+STEP_SPAN = 5.0            # a step's shot spans at least this much floor, so a near pair
+                           # or a step to itself is not seen from too close
 AZIMUTH_LIMIT = 55         # never further round than this: placards face the front
 TRAIL_R = 0.045            # the radius of a step's light trail
 TRAIL_DONE = 0.35          # a finished step's trail thins to this share, and stops glowing
@@ -1537,6 +1539,7 @@ ROUTE_LIFT = 0.06          # a trail along a connector runs this far above it
 ARC_RISE, ARC_GROWTH = 0.9, 0.1    # an arc rises this high, plus this share of its span
 ARC_POINTS = 24
 ARC_END = 0.35             # an arc leaves this far above a plinth
+LOOP_R = 0.75              # a step to itself runs round an upright ring this wide, over its plinth
 CAPTION_SHARE = 34 / 1080  # a step's caption height, as a share of the frame's: 34 px in 1080p
 CAPTION_TOP = 0.1          # its distance from the top of the frame, as a share of the height
 CAPTION_DEPTH = 2.0        # how far in front of the camera the caption hangs
@@ -1544,7 +1547,7 @@ CAPTION_MARGIN = 1.2       # the caption card's width beyond the text, in captio
 CAPTION_HEIGHT = 1.8       # the caption card's height, in caption heights
 CAPTION_CHARS = 60         # a longer label is cut short, so the card stays in the frame
 
-Flight = namedtuple("Flight", "frames steps along margin clearance gap")
+Flight = namedtuple("Flight", "frames steps along margin clearance gap closest")
 
 
 def find_flow(view, wanted):
@@ -1600,6 +1603,10 @@ def step_route(view, built, step):
         points = [Vector(flat[i:i + 3]) + Vector((0, 0, ROUTE_LIFT)) for i in range(0, len(flat), 3)]
         return (points if path["am_source"] == step["source"] else points[::-1]), path
     a, b = arc_end(built[step["source"]][0]), arc_end(built[step["target"]][0])
+    if step["source"] == step["target"]:
+        # once round an upright ring standing on the plinth: out of it and back into it
+        turns = [2 * math.pi * i / ARC_POINTS for i in range(ARC_POINTS + 1)]
+        return [a + Vector((LOOP_R * math.sin(t), 0, LOOP_R * (1 - math.cos(t)))) for t in turns], None
     rise = ARC_RISE + ARC_GROWTH * (b - a).length
     return [a.lerp(b, i / ARC_POINTS) + Vector((0, 0, rise * 4 * (i / ARC_POINTS) * (1 - i / ARC_POINTS)))
             for i in range(ARC_POINTS + 1)], None
@@ -1703,13 +1710,22 @@ class CameraTrack:
         keyframe(self.cam, "rotation_quaternion", frame_no, rotation)
 
 
+def shot_corners(source, target):
+    """What a step's shot must hold: both plinths, and at least STEP_SPAN of floor
+    around them, so the camera never comes closer than that."""
+    corners = plinth_corners(source) + plinth_corners(target)
+    middle = (source.matrix_world.translation + target.matrix_world.translation) / 2
+    half = STEP_SPAN / 2
+    return corners + [Vector((middle.x + sx * half, middle.y + sy * half, 0.0)) for sx in (-1, 1) for sy in (-1, 1)]
+
+
 def flight_poses(scene, cam, built, steps):
     """Where the camera stands for each step: framed on its two plinths, from the side."""
     base = cam.get("am_azimuth", 35.0)
     poses = []
     for st in steps:
         source, target = built[st["source"]][0], built[st["target"]][0]
-        frame(scene, cam, plinth_corners(source) + plinth_corners(target),
+        frame(scene, cam, shot_corners(source, target),
               step_azimuth(source, target, base), STEP_ELEVATION, STEP_MARGIN)
         poses.append((cam.location.copy(), cam.rotation_euler.to_quaternion()))
     return poses
@@ -1754,20 +1770,23 @@ def step_pulse(number, path, arrive, run_end):
 
 def measure_flight(scene, cam, built, shots):
     """What the flight shows, at each step's arrival, mid-run and leave: the tightest
-    margin of the step's two plinths in the frame, and how far the highest of them stays
-    below the caption bar."""
+    margin of the step's two plinths in the frame, how far the highest of them stays
+    below the caption bar, and the largest share of the frame's width one plinth takes
+    (how close the camera comes)."""
     from bpy_extras.object_utils import world_to_camera_view
 
-    margin, highest = 1.0, 0.0
+    margin, highest, closest = 1.0, 0.0, 0.0
     for step, frames in shots:
-        corners = plinth_corners(built[step["source"]][0]) + plinth_corners(built[step["target"]][0])
+        plinths = [plinth_corners(built[step[end]][0]) for end in ("source", "target")]
         for frame_no in frames:
             scene.frame_set(frame_no)
-            for p in (world_to_camera_view(scene, cam, c) for c in corners):
-                margin = min(margin, p.x, 1 - p.x, p.y, 1 - p.y)
-                highest = max(highest, p.y)
+            for corners in plinths:
+                xs, ys = zip(*((p.x, p.y) for p in (world_to_camera_view(scene, cam, c) for c in corners)))
+                margin = min(margin, min(xs), 1 - max(xs), min(ys), 1 - max(ys))
+                highest = max(highest, max(ys))
+                closest = max(closest, max(xs) - min(xs))
     caption_bottom = 1 - CAPTION_TOP - CAPTION_SHARE * CAPTION_HEIGHT / 2
-    return margin, caption_bottom - highest
+    return margin, caption_bottom - highest, closest
 
 
 def flyover(scene, cam, view, built, flow, font=None, fps=FPS):
@@ -1816,9 +1835,9 @@ def flyover(scene, cam, view, built, flow, font=None, fps=FPS):
     f += s(OPEN_S)
     track.hold(f, *overview)
     scene.frame_start, scene.frame_end = 1, f
-    margin, clearance = measure_flight(scene, cam, built, shots)
+    margin, clearance, closest = measure_flight(scene, cam, built, shots)
     scene.frame_set(1)
-    return Flight(f, len(steps), along, margin, clearance, gap)
+    return Flight(f, len(steps), along, margin, clearance, gap, closest)
 
 
 def render_animation(scene, path, samples=32):
@@ -1856,6 +1875,7 @@ def point(args, scene, cam, view, built, roots, font):
               f"{flight.along} along a connector, {flight.frames} frames at {args.fps} fps")
         print(f"archimate3d: every step's two plinths stay {flight.margin:.3f} inside the frame and "
               f"{flight.clearance:.3f} below the caption; routes within {flight.gap:.3f} of their connectors")
+        print(f"archimate3d: at its closest a plinth takes {flight.closest:.3f} of the frame's width")
         return flow
     print(f"archimate3d: a placard's name renders about {placard_px(scene, cam, roots):.1f} px tall")
     if wants_floating(args.labels, scene, cam, roots):
