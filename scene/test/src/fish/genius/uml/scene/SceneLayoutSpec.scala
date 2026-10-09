@@ -226,6 +226,30 @@ object SceneLayoutSpec extends ZIOSpecDefault:
           )
         )
       ,
+      test("a flow's odd cases: two connectors on one pair, a step to itself, no steps"):
+        val odd   = SceneGraph(
+          "Odd",
+          List(node("A", BusinessActor), node("B", BusinessProcess)),
+          List(edge("A", "B", Assignment), edge("B", "A", Triggering), edge("A", "A", Association)),
+          List(
+            SceneFlow(SceneId("there and back"), "There and back", List(step("A", "B", "go"), step("B", "A", "back"))),
+            SceneFlow(SceneId("self"), "Self", List(step("A", "A", "think"))),
+            SceneFlow(SceneId("empty"), "Empty", Nil),
+          ),
+        )
+        val scene = laid(odd)
+        val legs  = scene.flows.map(_.steps.map(_.relationship.map(_.value)))
+        // each way runs on the connector that goes that way; a connector from a node to
+        // itself is not drawn, so a step to itself has none to run along (it arcs)
+        assertTrue(
+          legs == List(List(Some("A>B"), Some("B>A")), List(None), Nil),
+          !scene.relationships.exists(r => r.source == r.target),
+        )
+      ,
+      test("a blank flow id is refused like any other"):
+        val blank = SceneGraph("Blank", List(node("A", BusinessActor)), Nil, List(SceneFlow(SceneId(" "), "?", Nil)))
+        assertTrue(SceneLayout.layout(blank) == Left(SceneError.InvalidGraph(::(GraphProblem.BlankId, Nil))))
+      ,
       test("a flow with a step to an unknown node, or an id taken, is refused with every problem"):
         val broken   = SceneGraph(
           "Broken",

@@ -67,19 +67,19 @@ final case class SceneGraph(
 
   // Every problem at once, so a caller fixes its graph in one round.
   def problems: List[GraphProblem] =
-    val ids        = allNodes.map(_.id) ++ edges.map(_.id) ++ flows.map(_.id)
-    val blank      = ids.filter(_.value.trim.isEmpty).distinct.map(_ => GraphProblem.BlankId)
-    val duplicates = ids.diff(ids.distinct).distinct.map(GraphProblem.DuplicateId(_))
-    val known      = allNodes.map(_.id).toSet
-    val dangling   = edges.flatMap: e =>
+    val ids           = allNodes.map(_.id) ++ edges.map(_.id) ++ flows.map(_.id)
+    val blank         = ids.filter(_.value.trim.isEmpty).distinct.map(_ => GraphProblem.BlankId)
+    val duplicates    = ids.diff(ids.distinct).distinct.map(GraphProblem.DuplicateId(_))
+    val known         = allNodes.map(_.id).toSet
+    val dangling      = edges.flatMap: e =>
       List(e.source, e.target).filterNot(known).map(GraphProblem.UnknownEndpoint(e.id, _))
-    val lost       = flows.flatMap: flow =>
+    val danglingSteps = flows.flatMap: flow =>
       flow.steps
         .flatMap(step => List(step.source, step.target))
         .filterNot(known)
         .distinct
         .map(GraphProblem.UnknownStepEnd(flow.id, _))
-    blank ++ duplicates ++ dangling ++ lost
+    blank ++ duplicates ++ dangling ++ danglingSteps
 
 end SceneGraph
 

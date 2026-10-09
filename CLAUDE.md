@@ -62,7 +62,10 @@ The pipeline is **DSL → immutable `PUmlNode` AST → PlantUML `String` → ren
   `SceneContractSpec` pins it, and checks the builder's options against DSL.md (handed in
   by `scene.test.forkEnv`). `SceneBlenderSpec` runs the builder headless and is ignored
   unless `BLENDER_AVAILABLE=1` (`BLENDER=…` names the binary): run it after any change to
-  the builder, `BLENDER_AVAILABLE=1 make test`.
+  the builder, `BLENDER_AVAILABLE=1 make test`. It needs a Blender that runs EEVEE headless
+  (5.x). The builder measures what it builds (connector ends on ports, label overlap, a
+  flight's framing and route gap) and prints it; the spec asserts those lines, so a visual
+  claim gets a printed measure before it gets a test.
 - **`examples`** — depends on `core`, `render` and `scene`. Runnable end-to-end showcases.
 
 ### DSL capture (the non-obvious part — `core/.../dsl/`)

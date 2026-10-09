@@ -980,8 +980,10 @@ either.
 `--highlight` puts what it names in the light and dims the rest: a spot falls on each
 element, and a connector glows in amber with a softer spot on both its ends. It takes
 a comma-separated list; each item is a key, an element's name (any case) or
-`source>target` (names or keys) for the connectors between two elements. The builder
-prints how many elements and connectors it lit, and each item that named nothing.
+`source>target` (names or keys) for the connectors between two elements, either way
+round. Each thing is lit once, however often it is named. The builder prints how many
+elements and connectors it lit, how many spots hang and how far the ambient light is
+turned down, and each item that named nothing.
 
 ```bash
 blender -b -P archimate3d_blender.py -- --view scene.json \
@@ -992,16 +994,26 @@ blender -b -P archimate3d_blender.py -- --view scene.json \
 flight through it into the `.blend` timeline. The overview comes first, in full light;
 then, per step, the camera glides to the step's two elements and looks at them from the
 side, both lit while the rest dims, while a pulse runs from source to target and leaves
-an amber trail: along the connector that joins them, or in an arc above the scene where
-none does. The step's number and label stand in a caption bar at the top of the frame.
+an amber trail: along the connector that joins them, on the route it was drawn on
+(`--straight` included), or in an arc above the scene where none does. The step's number
+and label stand in a caption bar at the top of the frame, its height a fixed share of
+the frame's; a label longer than 60 characters is cut short.
 A finished step's trail thins and stops glowing, so the flow so far stays visible; at
 the end the camera returns to the overview and the light comes back. A step takes about
 3.3 seconds. Floating labels stay off: the camera comes close enough for the placards.
+
+The builder measures the flight it made and prints it: how many steps ran along a
+connector, how far inside the frame both plinths of every step stay (at its arrival,
+mid-run and departure), how far below the caption bar, and how far each route strays
+from its connector (an arrowhead's length, since a route ends on the ports). A flow it
+cannot find, by key or name, is reported, and `--animation` then writes nothing.
 
 `--animation out.mp4` renders that timeline to an H.264 video with EEVEE and Blender's
 own encoder (no ffmpeg needed), at 1920 by 1080 unless `--size` says otherwise and 30
 frames a second unless `--fps` does. `--frame N --render still.png` renders one frame of
 the flight as a still, with Cycles; useful for a thumbnail or to check the camera.
+Highlight, flyover and animation are tested headless on Blender 5.0.1; the animation
+needs a Blender that can run EEVEE without a display, as 5.x does.
 
 ```bash
 blender -b -P archimate3d_blender.py -- --view scene.json \
