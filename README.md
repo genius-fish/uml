@@ -9,6 +9,7 @@ A composable, type-safe PlantUML DSL and renderer for Scala 3.
 | `core`     | Pure DSL + AST. No ZIO, no filesystem, no subprocess.                  |
 | `render`   | ZIO 2 service that turns AST into SVG / PNG / EPS / LaTeX via PlantUML.|
 | `testkit`  | Golden-file and structural assertions for ZIO Test.                    |
+| `scene`    | An ArchiMate graph laid out as a 3D scene (ELK), plus its Blender builder. |
 | `examples` | Runnable end-to-end showcases (Archimate, sequence, activity).         |
 
 ## Stack

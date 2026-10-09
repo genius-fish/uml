@@ -27,6 +27,8 @@ object V:
   val osLib      = "0.11.8"
   val sourcecode = "0.4.4"
   val plantuml   = "1.2026.2"
+  val elk        = "0.9.1"
+  val zioJson    = "0.7.3"
 
 // ---------------------------------------------------------------------------
 // Release module (git-tag versioning, release workflow, AI release notes)
@@ -136,6 +138,23 @@ object render extends GeniusFishModule:
     def moduleDeps = super.moduleDeps ++ Seq(testkit)
 
 // ---------------------------------------------------------------------------
+// Module: scene (an ArchiMate graph laid out as a 3D scene: ELK, JSON, Blender builder)
+// ---------------------------------------------------------------------------
+object scene extends GeniusFishModule:
+  def artifactName = "genius-uml-scene"
+  def moduleDeps   = Seq(core)
+
+  def mvnDeps = Seq(
+    mvn"org.eclipse.elk:org.eclipse.elk.core:${V.elk}",
+    mvn"org.eclipse.elk:org.eclipse.elk.graph:${V.elk}",
+    mvn"org.eclipse.elk:org.eclipse.elk.alg.common:${V.elk}",
+    mvn"org.eclipse.elk:org.eclipse.elk.alg.layered:${V.elk}",
+    mvn"dev.zio::zio-json:${V.zioJson}",
+  )
+
+  object test extends GeniusFishTests
+
+// ---------------------------------------------------------------------------
 // Module: testkit (golden-file + structural assertions for ZIO Test)
 // ---------------------------------------------------------------------------
 object testkit extends GeniusFishModule:
@@ -156,4 +175,4 @@ end testkit
 // ---------------------------------------------------------------------------
 object examples extends GeniusFishModule:
   def artifactName = "genius-uml-examples"
-  def moduleDeps   = Seq(core, render)
+  def moduleDeps   = Seq(core, render, scene)

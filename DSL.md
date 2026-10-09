@@ -30,6 +30,7 @@ to be in scope, so misplaced calls — `shape(...)` outside an
 12. [Rendering](#rendering)
 13. [Testing helpers](#testing-helpers)
 14. [Patterns and tips](#patterns-and-tips)
+15. [Scenes: ArchiMate in 3D](#scenes-archimate-in-3d)
 
 ---
 
@@ -866,3 +867,85 @@ diagram("salt"):
 
 Every primitive in `fish.genius.uml.dsl` works without `InUml`-specific
 gating except the domain DSLs themselves.
+
+---
+
+## Scenes: ArchiMate in 3D
+
+The `scene` module (`genius-uml-scene`) lays an ArchiMate graph out as a 3D scene and
+ships the Blender builder that builds it. It depends on `core` for `ShapeType` and
+`RelationshipType`; `core` itself stays dependency-free.
+
+```scala
+import fish.genius.uml.dsl.archimate.RelationshipType.*
+import fish.genius.uml.dsl.archimate.ShapeType.*
+import fish.genius.uml.scene.*
+import zio.json.*
+
+val graph = SceneGraph(
+  "Order handling",
+  List(
+    SceneNode(SceneId("customer"), NodeKind.Element(BusinessActor), "Customer"),
+    SceneNode(SceneId("process"), NodeKind.Element(BusinessProcess), "Handle Order"),
+    SceneNode(SceneId("system"), NodeKind.Element(ApplicationComponent), "Order System",
+      children = List(SceneNode(SceneId("api"), NodeKind.Element(ApplicationComponent), "Order API"))),
+  ),
+  List(SceneEdge(SceneId("assigned"), SceneId("customer"), SceneId("process"), Assignment)),
+)
+
+val json: Either[SceneError, String] = SceneLayout.layout(graph).map(_.toJsonPretty)
+```
+
+```bash
+blender -b -P archimate3d_blender.py -- --view scene.json --blend scene.blend --render scene.png
+```
+
+`SceneBuilder.blenderScript` returns the builder from the jar; `SceneBuilder.threeJs` the
+same shapes in three.js for a browser preview.
+
+### The graph
+
+- `SceneNode(id, kind, label, children)`: `kind` is `NodeKind.Element(shapeType)`,
+  `Grouping`, `AndJunction` or `OrJunction`. A node's `children` stand on its plinth:
+  nesting is the caller's to decide, as a 2D diagram draws it as a boundary.
+- `SceneEdge(id, source, target, relationship)`: a connector to a node's own ancestor is
+  left out, since it cannot be drawn on the plinth the node stands on.
+- `SceneLayout.layout` refuses a graph with a blank or duplicate id or an edge to an
+  unknown node with `SceneError.InvalidGraph`, listing every problem; an ELK failure
+  comes back as `SceneError.LayoutFailed`. Nothing is thrown.
+
+### The notation
+
+Every element is a plinth with a sculpture on it. The plinth's form is the aspect (square
+for structure, rounded for behaviour, chamfered for motivation), its colour the layer;
+the sculpture is the element's icon, made solid; the name sits on a placard sloped
+towards the viewer. A grouping is a glass tray with a dashed rim and its name on a tab.
+Each plinth has four ports, one in the middle of each side.
+
+### The layout
+
+ELK Layered, top to bottom, which the scene reads as back to front. Each `ShapeGroup` is
+an ELK partition: Motivation lies at the back, then Strategy, Business, Application,
+Technology and Physical, with Implementation at the front. A first pass places the
+plinths; a row wider than `Options.maxPerRow` (by default about the square root of the
+graph) has its leaves folded into rows; the sides each connector meets on follow from
+where its ends landed (one behind the other: south to north; side by side: east to west);
+the last pass routes every connector orthogonally between the middles of those sides.
+Where ELK leaves a connector between two containers unfinished, a small orthogonal router
+takes it around the plinths.
+
+### The scene
+
+`Scene` is JSON through zio-json: per element its key, `type` (the builder's shape name,
+`SceneNames.of`), name, centre `x`/`y`, footprint `w`/`d`, base height `z`, `parent` and
+`container`; per relationship its key, `type`, `sourcePort` and `targetPort`
+(`north`, `south`, `east`, `west`; north is away from the viewer) and `bends`.
+
+### In Blender
+
+An element is one selectable object, its plinth; everything on it follows. A connector is
+a curve hooked to its two ports, so it travels with both elements; an element standing on
+a container is parented to it. `--check` moves an element and reports how far the
+connector ends are from their ports. `--straight` ignores the layout's routes. Tested
+headless on Blender 5.0 and 5.2.
+

@@ -54,7 +54,12 @@ The pipeline is **DSL → immutable `PUmlNode` AST → PlantUML `String` → ren
 - **`render`** — depends on `core`. ZIO 2 service that turns the AST into SVG/PNG/EPS/
   LaTeX via the PlantUML jar.
 - **`testkit`** — depends on `core`. Golden-file and structural assertions for ZIO Test.
-- **`examples`** — depends on `core` + `render`. Runnable end-to-end showcases.
+- **`scene`** — depends on `core` (for `ShapeType` and `RelationshipType`), ELK and zio-json.
+  Lays an ArchiMate `SceneGraph` out as a 3D `Scene` (`SceneLayout`) and ships the Blender
+  builder and three.js shapes as resources (`SceneBuilder`). Its own rules are in DSL.md,
+  "Scenes: ArchiMate in 3D". The builder in `scene/resources/` and the layout's JSON are one
+  contract: a field renamed in `Scene.scala` is renamed in `archimate3d_blender.py`.
+- **`examples`** — depends on `core`, `render` and `scene`. Runnable end-to-end showcases.
 
 ### DSL capture (the non-obvious part — `core/.../dsl/`)
 
