@@ -25,7 +25,14 @@ object SceneLayoutSpec extends ZIOSpecDefault:
   ): SceneEdge =
     SceneEdge(SceneId(s"$source>$target"), SceneId(source), SceneId(target), relationship)
 
-  // Four layers, a nested component, a grouping and a junction: enough for every rule.
+  private def step(
+    source: String,
+    target: String,
+    label: String,
+  ): SceneStep =
+    SceneStep(SceneId(source), SceneId(target), label)
+
+  // Four layers, a nested component, a grouping, a junction and a flow: enough for every rule.
   private val graph = SceneGraph(
     "Scene",
     List(
@@ -60,6 +67,18 @@ object SceneLayoutSpec extends ZIOSpecDefault:
       edge("Handle Order", "Faster delivery", Realization),
       edge("Order Intake", "fork", Serving),
       edge("fork", "Customer", Serving),
+    ),
+    List(
+      SceneFlow(
+        SceneId("ordering"),
+        "Ordering",
+        List(
+          step("Customer", "Handle Order", "places an order"),
+          step("Handle Order", "Order Intake", "submits it"),
+          step("Order API", "Order Worker", "queues it"),
+          step("Order System", "Order API", "hands it on"),
+        ),
+      )
     ),
   )
 
@@ -174,7 +193,55 @@ object SceneLayoutSpec extends ZIOSpecDefault:
         assertTrue(
           json.contains("\"type\" : \"business-actor\""),
           json.contains("\"sourcePort\" : \"south\"") || json.contains("\"sourcePort\" : \"north\""),
+          json.contains("\"flows\""),
           json.fromJson[Scene] == Right(scene),
+        )
+      ,
+      test("a scene written before flows reads with none"):
+        val old = """{"name":"Old","width":0,"depth":0,"elements":[],"relationships":[]}"""
+        assertTrue(old.fromJson[Scene] == Right(Scene("Old", 0, 0, Nil, Nil)))
+      ,
+      test("a flow keeps its steps in order, each on the connector that joins its two ends"):
+        def leg(
+          source: String,
+          target: String,
+          label: String,
+          carrier: Option[String],
+        ) =
+          FlowLeg(SceneId(source), SceneId(target), label, carrier.map(SceneId(_)))
+        assertTrue(
+          scene.flows == List(
+            FlowRoute(
+              SceneId("ordering"),
+              "Ordering",
+              List(
+                leg("Customer", "Handle Order", "places an order", Some("Customer>Handle Order")),
+                // the connector runs the other way round, from the service to the process
+                leg("Handle Order", "Order Intake", "submits it", Some("Order Intake>Handle Order")),
+                leg("Order API", "Order Worker", "queues it", None),
+                // a container and its child: no connector in the scene to run along
+                leg("Order System", "Order API", "hands it on", None),
+              ),
+            )
+          )
+        )
+      ,
+      test("a flow with a step to an unknown node, or an id taken, is refused with every problem"):
+        val broken   = SceneGraph(
+          "Broken",
+          List(node("A", BusinessActor), node("B", BusinessRole)),
+          Nil,
+          List(
+            SceneFlow(SceneId("A"), "Taken", Nil),
+            SceneFlow(SceneId("lost"), "Lost", List(step("A", "Nowhere", "?"), step("Nowhere", "B", "?"))),
+          ),
+        )
+        val problems = SceneLayout.layout(broken) match
+          case Left(SceneError.InvalidGraph(found)) => found.toList
+          case _                                    => Nil
+        assertTrue(
+          problems.contains(GraphProblem.DuplicateId(SceneId("A"))),
+          problems.count(_ == GraphProblem.UnknownStepEnd(SceneId("lost"), SceneId("Nowhere"))) == 1,
         )
       ,
       test("every node kind and relationship type has its own name"):

@@ -13,7 +13,8 @@ final case class Scene(
   width: Double,
   depth: Double,
   elements: List[SceneElement],
-  relationships: List[SceneRelationship])
+  relationships: List[SceneRelationship],
+  flows: List[FlowRoute] = Nil)
 
 // x and y are the plinth's centre, w and d its footprint, z the height it stands at:
 // the top of its container's plinth, or 0. `shape` is a name in the builder's catalogue.
@@ -44,6 +45,20 @@ final case class SceneRelationship(
 
 final case class ScenePoint(x: Double, y: Double)
 
+// A SceneFlow as the builder walks it. Each leg goes from its source to its target:
+// along the connector `relationship` when one joins the two (in either direction),
+// else in an arc above the scene.
+final case class FlowRoute(
+  key: SceneId,
+  name: String,
+  steps: List[FlowLeg])
+
+final case class FlowLeg(
+  source: SceneId,
+  target: SceneId,
+  label: String,
+  relationship: Option[SceneId])
+
 // The four sides of a plinth: north is away from the viewer, south towards it.
 enum PortName derives CanEqual:
   case North, South, East, West
@@ -63,6 +78,12 @@ object SceneElement:
 
 object SceneRelationship:
   given JsonCodec[SceneRelationship] = DeriveJsonCodec.gen
+
+object FlowLeg:
+  given JsonCodec[FlowLeg] = DeriveJsonCodec.gen
+
+object FlowRoute:
+  given JsonCodec[FlowRoute] = DeriveJsonCodec.gen
 
 object Scene:
   given JsonCodec[Scene] = DeriveJsonCodec.gen

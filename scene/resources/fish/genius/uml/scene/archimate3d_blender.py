@@ -22,8 +22,12 @@ Headless:
   blender -b -P archimate3d_blender.py -- [--view view.json | --catalogue]
           [--blend out.blend] [--render out.png] [--samples 96] [--check]
           [--straight] [--labels auto|placard|float]
+          [--highlight KEY,NAME,SOURCE>TARGET] [--flyover [FLOW]]
+          [--animation out.mp4] [--fps 30] [--frame N]
 --labels auto (the default) floats each name above its element when the placards
-would render too small to read.
+would render too small to read. --highlight dims the scene and lights what it names;
+--flyover flies the camera through one of the view's flows, step by step, into the
+timeline, and --animation renders that to a video (EEVEE, H.264).
   Without --view or --catalogue it builds the example view (the canvas's hero).
 In the Blender UI: open in the Text Editor and Run Script; it builds the example
 view into a new "ArchiMate" collection and leaves the rest of the file alone.
@@ -36,7 +40,11 @@ shaped like it:
                  "parent": null, "container": false}, ...], # optional: what it stands on
    "relationships": [{"source": "customer", "target": "handle-order", "type": "assignment",
                       "sourcePort": "east", "targetPort": "west",  # optional: the route
-                      "bends": [{"x": 0.0, "y": 2.6}]}, ...]}
+                      "bends": [{"x": 0.0, "y": 2.6}]}, ...],
+   "flows": [{"key": "ordering", "name": "Ordering",              # optional: walks
+              "steps": [{"source": "customer", "target": "handle-order",
+                         "label": "places an order",
+                         "relationship": null}, ...]}, ...]}     # optional: the carrier
 x and y are in Blender units; +y is away from the viewer. Without ports and bends a
 connector runs straight between the nearest ports; --straight forces that.
 """
@@ -1095,6 +1103,11 @@ EXAMPLE_VIEW = {
 }
 
 
+def rel_name(r):
+    """A connector's name: its key, or its ends and type when it has none."""
+    return r.get("key") or f"{r['source']}.{r['type']}.{r['target']}"
+
+
 def build_view(view, font=None, straight=False):
     """Build a view: a scene from SceneLayout, or any hand-written list of elements and relationships."""
     built = {}
@@ -1111,7 +1124,7 @@ def build_view(view, font=None, straight=False):
             child.matrix_parent_inverse = holder.matrix_world.inverted()
     connectors = []
     for r in view.get("relationships", []):
-        name = r.get("key") or f"{r['source']}.{r['type']}.{r['target']}"
+        name = rel_name(r)
         routed = not straight
         connectors.append(connect(name, built[r["source"]][1], built[r["target"]][1], r["type"],
                                   r.get("sourcePort") if routed else None, r.get("targetPort") if routed else None,
@@ -1209,6 +1222,7 @@ def stage(roots, azimuth, elevation, res, samples):
     scene.camera = cam
     scene.render.resolution_x, scene.render.resolution_y = res
     frame(scene, cam, corners, azimuth, elevation)
+    cam["am_azimuth"], cam["am_elevation"] = azimuth, elevation
 
     scene.render.engine = "CYCLES"
     scene.cycles.samples = samples
@@ -1358,6 +1372,372 @@ def float_labels(scene, cam, roots, font=None):
     return len(placed), stuck, covering
 
 
+# ── highlight: a spot on what matters, the rest dimmed ───────────────────────
+ACCENT = "#FFB000"         # the colour of what is pointed at: a lit connector, a pulse
+DIM_SHARE = 0.2            # the share of the ambient light left when something is lit
+SPOT_HEIGHT = 7.0          # a spot hangs this high above the floor
+SPOT_POWER = 1800.0        # watts, for a spot on one element
+SPOT_MARGIN = 0.35         # the light pool reaches this far beyond the plinth
+SPOT_BLEND = 0.2           # the soft edge of the pool, as Blender's spot_blend
+END_SHARE = 0.55           # a lit connector's ends get this share of a spot's power
+
+
+def accent(strength=5.0, name="am.accent"):
+    """An emissive accent material; `name` makes one an animation can key on its own."""
+    mat = bpy.data.materials.get(name)
+    if mat:
+        return mat
+    mat = material(name, srgb_to_linear(ACCENT), 0.35)
+    bsdf = mat.node_tree.nodes.get("Principled BSDF")
+    bsdf.inputs["Emission Color"].default_value = (*srgb_to_linear(ACCENT), 1.0)
+    bsdf.inputs["Emission Strength"].default_value = strength
+    return mat
+
+
+def dim(scene, share=DIM_SHARE):
+    """Turn the ambient light down, once: the world and the two suns."""
+    if scene.get("am_dimmed"):
+        return
+    scene["am_dimmed"] = True
+    bg = scene.world.node_tree.nodes.get("Background") if scene.world else None
+    if bg:
+        bg.inputs[1].default_value *= share
+    for name in ("Key", "Fill"):
+        ob = bpy.data.objects.get(name)
+        if ob is not None and ob.type == "LIGHT":
+            ob.data.energy *= share
+
+
+def ambient(scene):
+    """The ambient light sources the scene dims: (datablock, property path, index) each."""
+    sources = []
+    bg = scene.world.node_tree.nodes.get("Background") if scene.world else None
+    if bg:
+        sources.append((bg.inputs[1], "default_value"))
+    for name in ("Key", "Fill"):
+        ob = bpy.data.objects.get(name)
+        if ob is not None and ob.type == "LIGHT":
+            sources.append((ob.data, "energy"))
+    return sources
+
+
+def dim_between(scene, frames, share=DIM_SHARE):
+    """Key the ambient light: full, dimmed over frames[0]..frames[1], dimmed until
+    frames[2], full again by frames[3]."""
+    for owner, path in ambient(scene):
+        full = getattr(owner, path)
+        for frame_no, value in zip(frames, (full, full * share, full * share, full)):
+            setattr(owner, path, value)
+            owner.keyframe_insert(path, frame=frame_no)
+        setattr(owner, path, full)
+
+
+def spot_on(root, name, power=SPOT_POWER):
+    """A spot straight above an element, its pool just wider than the plinth."""
+    radius = max(root.get("am_w", P_W), root.get("am_d", P_D)) / 2 + SPOT_MARGIN
+    ld = bpy.data.lights.new(name, "SPOT")
+    ld.energy = power
+    ld.spot_size = 2 * math.atan(radius / SPOT_HEIGHT) * (1 + SPOT_BLEND)
+    ld.spot_blend = SPOT_BLEND
+    ld.shadow_soft_size = 0.2
+    ob = link(bpy.data.objects.new(name, ld))
+    centre = root.matrix_world.translation
+    ob.location = (centre.x, centre.y, SPOT_HEIGHT)  # a light points down its -Z already
+    ob.hide_select = True
+    return ob
+
+
+def connector_parts(name):
+    """Everything drawn for one connector: its line, dashes or dots, head and tail."""
+    return [ob for ob in bpy.data.objects
+            if ob.name.startswith(f"{name}.") and ob.type in ("MESH", "CURVE")]
+
+
+def light_up(name, mat):
+    for ob in connector_parts(name):
+        for i in range(len(ob.data.materials)):
+            ob.data.materials[i] = mat
+
+
+def resolve(view, tokens):
+    """The element and relationship keys a list of tokens names. A token is a key, an
+    element's name (any case), or source>target (names or keys) for the connectors
+    between them. Returns (element keys, relationship names, tokens that named nothing)."""
+    elements = view["elements"]
+    relationships = view.get("relationships", [])
+
+    def ends(token):
+        token = token.strip()
+        return {e["key"] for e in elements
+                if e["key"] == token or (e.get("name") or "").casefold() == token.casefold()}
+
+    found_elements, found_relationships, unknown = [], [], []
+    rel_names = {rel_name(r) for r in relationships}
+    for token in (t.strip() for t in tokens if t.strip()):
+        if token in rel_names:
+            found_relationships.append(token)
+        elif ">" in token:
+            source, target = (ends(s) for s in token.split(">", 1))
+            between = [rel_name(r) for r in relationships if r["source"] in source and r["target"] in target]
+            found_relationships += between
+            if not between:
+                unknown.append(token)
+        elif ends(token):
+            found_elements += sorted(ends(token))
+        else:
+            unknown.append(token)
+    return found_elements, found_relationships, unknown
+
+
+def highlight(scene, view, built, tokens):
+    """Dim the scene and light what the tokens name. Returns what resolve found."""
+    elements, relationships, unknown = resolve(view, tokens)
+    if not elements and not relationships:
+        return elements, relationships, unknown
+    dim(scene)
+    lit = {}
+    for key in elements:
+        lit[key] = spot_on(built[key][0], f"{key}.spot")
+    by_name = {rel_name(r): r for r in view.get("relationships", [])}
+    for name in relationships:
+        light_up(name, accent())
+        for end in (by_name[name]["source"], by_name[name]["target"]):
+            if end not in lit:
+                lit[end] = spot_on(built[end][0], f"{end}.spot", SPOT_POWER * END_SHARE)
+    return elements, relationships, unknown
+
+
+# ── flyover: the camera walks a flow, step by step ───────────────────────────
+FPS = 30
+OPEN_S, GLIDE_S, RUN_S, HOLD_S, CLOSE_S = 1.2, 1.1, 1.5, 0.7, 1.4   # seconds
+STEP_ELEVATION = 30        # the camera looks down on a step at this angle
+STEP_MARGIN = 0.2          # a step's two plinths keep this share of the frame free
+AZIMUTH_LIMIT = 55         # never further round than this: placards face the front
+TRAIL_R = 0.045            # the radius of a step's light trail
+PULSE_R = 0.11
+ROUTE_LIFT = 0.06          # a trail along a connector runs this far above it
+ARC_RISE, ARC_GROWTH = 0.9, 0.1    # an arc rises this high, plus this share of its span
+CAPTION_PX = 34            # a step's caption height in the video, in pixels
+CAPTION_TOP = 0.1          # its distance from the top of the frame, as a share of the height
+CAPTION_DEPTH = 2.0        # how far in front of the camera the caption hangs
+TRAIL_DONE = 0.35          # a finished step's trail thins to this share, and stops glowing
+
+
+def find_flow(view, wanted):
+    flows = view.get("flows", [])
+    if not wanted:
+        return flows[0] if flows else None
+    return next((f for f in flows if f.get("key") == wanted
+                 or (f.get("name") or "").casefold() == wanted.casefold()), None)
+
+
+def plinth_corners(root):
+    p, hw, hd = root.matrix_world.translation, root.get("am_w", P_W) / 2, root.get("am_d", P_D) / 2
+    return [Vector((p.x + sx * hw, p.y + sy * hd, z)) for sx in (-1, 1) for sy in (-1, 1) for z in (0.0, p.z + 1.0)]
+
+
+def step_azimuth(source, target, base):
+    """Look at a step from the side, so its pulse crosses the frame; but from the front."""
+    v = target.matrix_world.translation - source.matrix_world.translation
+    az = math.degrees(math.atan2(v.y, v.x))
+    while az > 90:
+        az -= 180
+    while az < -90:
+        az += 180
+    if abs(az) < 1e-6 and abs(v.x) < 1e-6:
+        az = base
+    return max(-AZIMUTH_LIMIT, min(AZIMUTH_LIMIT, az))
+
+
+def step_route(view, built, step):
+    """The points a step's pulse runs through: along the connector that carries it,
+    from the step's source to its target, or in an arc above the scene."""
+    by_name = {rel_name(r): r for r in view.get("relationships", [])}
+    carrier = by_name.get(step.get("relationship") or "")
+    if carrier is None:
+        carrier = next((r for r in view.get("relationships", [])
+                        if {r["source"], r["target"]} == {step["source"], step["target"]}), None)
+    if carrier is not None and carrier.get("sourcePort") and carrier.get("targetPort"):
+        ps = built[carrier["source"]][1][carrier["sourcePort"]].matrix_world.translation
+        pt = built[carrier["target"]][1][carrier["targetPort"]].matrix_world.translation
+        height = max(ps.z, pt.z) + ROUTE_LIFT
+        points = [Vector((ps.x, ps.y, height)),
+                  *[Vector((b["x"], b["y"], height)) for b in carrier.get("bends", [])],
+                  Vector((pt.x, pt.y, height))]
+        return points if carrier["source"] == step["source"] else points[::-1]
+    a, b = (arc_end(built[step[end]][0]) for end in ("source", "target"))
+    rise = ARC_RISE + ARC_GROWTH * (b - a).length
+    return [a.lerp(b, i / 24) + Vector((0, 0, rise * 4 * (i / 24) * (1 - i / 24))) for i in range(25)]
+
+
+def arc_end(root):
+    """Where an arc leaves or lands: above the plinth, or a container's front strip, where
+    its name and sculpture are, rather than on the children standing on it."""
+    p = root.matrix_world.translation
+    if root.get("am_container"):
+        return Vector((p.x, p.y - root.get("am_d", P_D) / 2 + 0.4, p.z + 0.35))
+    return p + Vector((0, 0, 0.35))
+
+
+def trail(name, points, mat):
+    cu = bpy.data.curves.new(name, "CURVE")
+    cu.dimensions = "3D"
+    cu.fill_mode = "FULL"
+    cu.bevel_depth = TRAIL_R
+    cu.bevel_resolution = 3
+    cu.use_path = True
+    cu.bevel_factor_mapping_end = "SPLINE"
+    sp = cu.splines.new("POLY")
+    sp.points.add(len(points) - 1)
+    for i, p in enumerate(points):
+        sp.points[i].co = (*p, 1.0)
+    cu.materials.append(mat)
+    ob = link(bpy.data.objects.new(name, cu))
+    ob.hide_select = True
+    return ob
+
+
+def caption(scene, cam, name, text, font):
+    """A step's number and label on a card, hung in front of the camera at the top of the
+    frame, so it stays put on the screen whatever the camera does."""
+    vertical = 2 * math.atan(math.tan(cam.data.angle_x / 2) * scene.render.resolution_y / scene.render.resolution_x)
+    frame_h = 2 * CAPTION_DEPTH * math.tan(vertical / 2)
+    size = frame_h * CAPTION_PX / scene.render.resolution_y
+    cu = bpy.data.curves.new(name, "FONT")
+    cu.body = text
+    cu.align_x = "CENTER"
+    cu.align_y = "CENTER"
+    cu.size = size
+    if font is not None:
+        cu.font = font
+    cu.materials.append(label_ink())
+    ob = link(bpy.data.objects.new(name, cu), cam)
+    ob.location = (0, frame_h * (0.5 - CAPTION_TOP), -CAPTION_DEPTH)
+    bm = bmesh.new()
+    bmesh.ops.create_grid(bm, x_segments=1, y_segments=1, size=0.5)
+    bmesh.ops.scale(bm, vec=(size * (CHAR_WIDTH * len(text) + 1.2), size * 1.8, 1), verts=bm.verts)
+    card = mesh_from_bm(f"{name}.card", bm, accent(1.0, "am.caption"), ob, smooth=False)
+    card.location = (0, 0, -size * CARD_GAP)
+    for o in (ob, card):
+        o.hide_select = True
+        if hasattr(o, "visible_shadow"):
+            o.visible_shadow = False
+    return ob
+
+
+def key(ob, path, frame, value, index=-1):
+    if index >= 0:
+        getattr(ob, path)[index] = value
+    else:
+        setattr(ob, path, value)
+    ob.keyframe_insert(path, index=index, frame=frame)
+
+
+def flyover(scene, cam, view, built, flow, font=None, fps=FPS):
+    """Animate the camera through a flow's steps: the overview, then per step a glide to
+    its two elements, both lit, a pulse and its trail from source to target, the step's
+    caption; then back to the overview. Returns the last frame."""
+    scene.render.fps = fps
+    s = lambda seconds: max(1, round(seconds * fps))
+    base_az, base_el = cam.get("am_azimuth", 35.0), cam.get("am_elevation", 36.0)
+    overview = (cam.location.copy(), cam.rotation_euler.to_quaternion())
+    steps = [st for st in flow.get("steps", []) if st["source"] in built and st["target"] in built]
+
+    # where the camera stands for each step: framed on the two plinths, from the side
+    poses = []
+    for st in steps:
+        source, target = built[st["source"]][0], built[st["target"]][0]
+        frame(scene, cam, plinth_corners(source) + plinth_corners(target),
+              step_azimuth(source, target, base_az), STEP_ELEVATION, STEP_MARGIN)
+        route = step_route(view, built, st)
+        poses.append((cam.location.copy(), cam.rotation_euler.to_quaternion(), route))
+
+    cam.rotation_mode = "QUATERNION"
+    previous = overview[1]
+
+    def pose(frame_no, location, rotation):
+        nonlocal previous
+        if previous.dot(rotation) < 0:
+            rotation = -rotation  # the short way round
+        previous = rotation
+        key(cam, "location", frame_no, location)
+        key(cam, "rotation_quaternion", frame_no, rotation)
+
+    f = 1
+    pose(f, *overview)
+    f += s(OPEN_S)
+    pose(f, *overview)
+    opened = f
+    spots = {}
+    for k in sorted({e for st in steps for e in (st["source"], st["target"])}):
+        spots[k] = spot_on(built[k][0], f"{k}.flyover.spot")
+        key(spots[k].data, "energy", 1, 0.0)
+    for i, (st, (location, rotation, route)) in enumerate(zip(steps, poses), 1):
+        arrive, run_end = f + s(GLIDE_S), f + s(GLIDE_S) + s(RUN_S)
+        leave = run_end + s(HOLD_S)
+        pose(arrive, location, rotation)
+        pose(leave, location + (rotation @ Vector((0, 0, -1))) * 0.6, rotation)  # a slow push in
+        for k, light in spots.items():
+            on = k in (st["source"], st["target"])
+            key(light.data, "energy", arrive - s(0.4), light.data.energy)
+            key(light.data, "energy", arrive, SPOT_POWER if on else 0.0)
+            key(light.data, "energy", leave, SPOT_POWER if on else 0.0)
+        mat = accent(6.0, f"am.flow.{i}")
+        lit = mat.node_tree.nodes["Principled BSDF"].inputs["Emission Strength"]
+        path = trail(f"flow.{i}.trail", route, mat)
+        key(path.data, "bevel_factor_end", 1, 0.0)
+        key(path.data, "bevel_factor_end", arrive, 0.0)
+        key(path.data, "bevel_factor_end", run_end, 1.0)
+        # done: the trail thins and stops glowing, a trace of the flow so far
+        lit.keyframe_insert("default_value", frame=leave)
+        lit.default_value = 0.0
+        lit.keyframe_insert("default_value", frame=leave + s(0.5))
+        key(path.data, "bevel_depth", leave, TRAIL_R)
+        key(path.data, "bevel_depth", leave + s(0.5), TRAIL_R * TRAIL_DONE)
+        pulse = B(None, f"flow.{i}").ball((0, 0, 0), PULSE_R, accent(12.0, "am.pulse"))
+        pulse.name = f"flow.{i}.pulse"
+        follow = pulse.constraints.new("FOLLOW_PATH")
+        follow.target = path
+        follow.use_fixed_location = True
+        key(follow, "offset_factor", arrive, 0.0)
+        key(follow, "offset_factor", run_end, 1.0)
+        for frame_no, scale in ((1, 0.0), (arrive - 1, 0.0), (arrive, 1.0), (run_end, 1.0), (run_end + 1, 0.0)):
+            key(pulse, "scale", frame_no, (scale,) * 3)
+        text = st.get("label") or ""
+        label = caption(scene, cam, f"flow.{i}.caption", f"{i}  {text}".rstrip(), font)
+        for frame_no, scale in ((1, 0.0), (arrive - s(0.3), 0.0), (arrive, 1.0), (leave, 1.0), (leave + s(0.3), 0.0)):
+            key(label, "scale", frame_no, (scale,) * 3)
+        f = leave
+    for light in spots.values():
+        key(light.data, "energy", f + s(0.4), 0.0)
+    if not scene.get("am_dimmed"):  # a --highlight keeps the scene dimmed throughout
+        dim_between(scene, (opened, opened + s(GLIDE_S), f, f + s(CLOSE_S)))
+    f += s(CLOSE_S)
+    pose(f, *overview)
+    f += s(OPEN_S)
+    pose(f, *overview)
+    scene.frame_start, scene.frame_end = 1, f
+    scene.frame_set(1)
+    return f
+
+
+def render_animation(scene, path, samples=32):
+    """The timeline to an H.264 video, with EEVEE and Blender's own encoder."""
+    scene.render.engine = "BLENDER_EEVEE" if "BLENDER_EEVEE" in {
+        e.identifier for e in scene.render.bl_rna.properties["engine"].enum_items} else "BLENDER_EEVEE_NEXT"
+    if hasattr(scene.eevee, "taa_render_samples"):
+        scene.eevee.taa_render_samples = samples
+    image = scene.render.image_settings
+    if hasattr(image, "media_type"):
+        image.media_type = "VIDEO"
+    image.file_format = "FFMPEG"
+    scene.render.ffmpeg.format = "MPEG4"
+    scene.render.ffmpeg.codec = "H264"
+    scene.render.ffmpeg.constant_rate_factor = "HIGH"
+    scene.render.filepath = os.path.abspath(path)
+    bpy.ops.render.render(animation=True)
+
+
 def check(built, connectors):
     """Move the first element and report how far the connector ends are from their ports."""
     root = next(r for r, _ in built.values() if r.parent is None)
@@ -1393,13 +1773,18 @@ def main():
     ap.add_argument("--blend", help="save the .blend here")
     ap.add_argument("--render", help="render a still to this .png")
     ap.add_argument("--samples", type=int, default=96)
-    ap.add_argument("--size", default="1920x1200")
+    ap.add_argument("--size", help="WIDTHxHEIGHT (default 1920x1200, or 1920x1080 for --animation)")
     ap.add_argument("--azimuth", type=float)
     ap.add_argument("--elevation", type=float)
     ap.add_argument("--check", action="store_true", help="move an element and verify the connectors follow")
     ap.add_argument("--straight", action="store_true", help="ignore the layout's routes: straight lines between the nearest ports")
     ap.add_argument("--labels", choices=LABEL_MODES, default="auto",
                     help="names above the elements too: auto when the placards would be too small to read")
+    ap.add_argument("--highlight", help="light these, the rest dimmed: keys, names or source>target, comma-separated")
+    ap.add_argument("--flyover", nargs="?", const="", help="fly the camera through a flow (key or name; default the first)")
+    ap.add_argument("--animation", help="render the flyover to this .mp4")
+    ap.add_argument("--fps", type=int, default=FPS)
+    ap.add_argument("--frame", type=int, help="with --render: the flyover's frame to render")
     args = ap.parse_args(argv)
 
     if bpy.app.background:
@@ -1427,23 +1812,43 @@ def main():
     if args.check and connectors:
         print(f"archimate3d: after moving an element, connector ends are within {check(built, connectors):.4f} of their ports")
 
-    if bpy.app.background or args.render:
-        w, h = (int(v) for v in args.size.lower().split("x"))
+    if args.animation and args.flyover is None:
+        args.flyover = ""
+    flow = find_flow(view, args.flyover) if args.flyover is not None else None
+    if args.flyover is not None and flow is None:
+        print(f"archimate3d: no flow {args.flyover or ''} in the view; no flyover".replace("  ", " "))
+    if bpy.app.background or args.render or args.highlight or flow:
+        size = args.size or ("1920x1080" if args.animation else "1920x1200")
+        w, h = (int(v) for v in size.lower().split("x"))
         azimuth = args.azimuth if args.azimuth is not None else (22 if args.catalogue else 35)
         elevation = args.elevation if args.elevation is not None else (50 if args.catalogue else 36)
         roots = [r for r, _ in built.values()]
         stage(roots, azimuth, elevation, (w, h), args.samples)
         scene, cam = bpy.context.scene, bpy.context.scene.camera
-        print(f"archimate3d: a placard's name renders about {placard_px(scene, cam, roots):.1f} px tall")
-        if wants_floating(args.labels, scene, cam, roots):
-            names, stuck, covering = float_labels(scene, cam, roots, font)
-            print(f"archimate3d: {names} floating labels, {stuck} not freed, {covering} covering pairs")
+        if args.highlight:
+            elements, relationships, unknown = highlight(scene, view, built, args.highlight.split(","))
+            print(f"archimate3d: {len(elements)} elements and {len(relationships)} connectors in the light")
+            for token in unknown:
+                print(f"archimate3d: nothing called {token!r} in the view")
+        if flow:
+            last = flyover(scene, cam, view, built, flow, font, args.fps)
+            print(f"archimate3d: flyover of {flow.get('name') or flow.get('key')}: "
+                  f"{len(flow.get('steps', []))} steps, {last} frames at {args.fps} fps")
+        else:
+            print(f"archimate3d: a placard's name renders about {placard_px(scene, cam, roots):.1f} px tall")
+            if wants_floating(args.labels, scene, cam, roots):
+                names, stuck, covering = float_labels(scene, cam, roots, font)
+                print(f"archimate3d: {names} floating labels, {stuck} not freed, {covering} covering pairs")
     # Blender reads a bare relative name against the .blend, not the shell: make them absolute
     if args.blend:
         bpy.ops.wm.save_as_mainfile(filepath=os.path.abspath(args.blend))
     if args.render:
+        if args.frame is not None:
+            bpy.context.scene.frame_set(args.frame)
         bpy.context.scene.render.filepath = os.path.abspath(args.render)
         bpy.ops.render.render(write_still=True)
+    if args.animation and flow:
+        render_animation(bpy.context.scene, args.animation)
 
 
 if __name__ == "__main__":

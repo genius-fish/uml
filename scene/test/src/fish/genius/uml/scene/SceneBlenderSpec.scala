@@ -1,7 +1,7 @@
 package fish.genius.uml.scene
 
 import java.nio.charset.StandardCharsets
-import java.nio.file.Files
+import java.nio.file.{Files, Path}
 
 import zio.json.*
 import zio.test.*
@@ -25,12 +25,31 @@ object SceneBlenderSpec extends ZIOSpecDefault:
     def placardPx: Option[Double] = number("""a placard's name renders about ([\d.]+) px""")
     def checkGap: Option[Double]  = number("""connector ends are within ([\d.]+) of""")
 
+    // (elements, connectors) in the light
+    def lit: Option[(Int, Int)] =
+      lines
+        .flatMap("""(\d+) elements and (\d+) connectors in the light""".r.findFirstMatchIn(_))
+        .headOption
+        .map(m => (m.group(1).toInt, m.group(2).toInt))
+
+    // (steps, frames)
+    def flyover: Option[(Int, Int)] =
+      lines
+        .flatMap("""flyover of .*: (\d+) steps, (\d+) frames""".r.findFirstMatchIn(_))
+        .headOption
+        .map(m => (m.group(1).toInt, m.group(2).toInt))
+
+    def notFound: List[String] =
+      lines.flatMap("""nothing called '(.*)' in the view""".r.findFirstMatchIn(_).map(_.group(1)))
+
     // (names, names not freed, pairs still covering)
     def floating: Option[(Int, Int, Int)] =
       lines
         .flatMap("""(\d+) floating labels, (\d+) not freed, (\d+) covering pairs""".r.findFirstMatchIn(_))
         .headOption
         .map(m => (m.group(1).toInt, m.group(2).toInt, m.group(3).toInt))
+
+  end Run
 
   private val blender = sys.env.getOrElse("BLENDER", "blender")
 
@@ -66,7 +85,25 @@ object SceneBlenderSpec extends ZIOSpecDefault:
       SceneEdge(SceneId("assigned"), SceneId("customer"), SceneId("ordering"), Assignment),
       SceneEdge(SceneId("serves"), SceneId("shop"), SceneId("ordering"), Serving),
     ),
+    List(
+      SceneFlow(
+        SceneId("buying"),
+        "Buying",
+        List(
+          SceneStep(SceneId("customer"), SceneId("ordering"), "places an order"),
+          SceneStep(SceneId("ordering"), SceneId("shop"), "records it"),
+        ),
+      )
+    ),
   )
+
+  // the first bytes of an MP4 file: a size, then "ftyp"
+  private def isMp4(file: Path): Boolean =
+    Files.isRegularFile(file) && Files.size(file) > 1000 && {
+      val head = Files.newInputStream(file)
+      try new String(head.readNBytes(8), StandardCharsets.US_ASCII).endsWith("ftyp")
+      finally head.close()
+    }
 
   override def spec: Spec[TestEnvironment & Scope, Any] =
     suite("scene / the Blender builder, headless")(
@@ -84,7 +121,20 @@ object SceneBlenderSpec extends ZIOSpecDefault:
         for
           floated <- laidOut(small).flatMap(build(_, "--labels", "float"))
           placard <- laidOut(SceneChecks.large).flatMap(build(_, "--labels", "placard"))
-        yield assertTrue(floated.floating.map(_._1).contains(3), placard.floating.isEmpty),
+        yield assertTrue(floated.floating.map(_._1).contains(3), placard.floating.isEmpty)
+      ,
+      test("--highlight lights an element and a connector, and names what it cannot find"):
+        for run <- laidOut(small).flatMap(build(_, "--highlight", "shop,customer>ordering,nowhere"))
+        yield assertTrue(run.lit.contains((1, 1)), run.notFound == List("nowhere"))
+      ,
+      test("--flyover walks a flow's steps, and --animation writes them as a video"):
+        for
+          video <- ZIO.attemptBlocking(Files.createTempDirectory("scene-video").resolve("buying.mp4"))
+          run   <- laidOut(small).flatMap(
+            build(_, "--flyover", "Buying", "--animation", video.toString, "--size", "320x180", "--fps", "6")
+          )
+          made  <- ZIO.attemptBlocking(isMp4(video))
+        yield assertTrue(run.flyover.exists((steps, frames) => steps == 2 && frames > 20), made),
     ) @@ TestAspect.ifEnvSet("BLENDER_AVAILABLE") @@ TestAspect.sequential
 
 end SceneBlenderSpec

@@ -81,6 +81,13 @@ object SceneContractSpec extends ZIOSpecDefault:
               clear = true,
             )
           ),
+          List(
+            FlowRoute(
+              SceneId("f"),
+              "F",
+              List(FlowLeg(SceneId("a"), SceneId("b"), "asks", Some(SceneId("ab")))),
+            )
+          ),
         )
         val fields = scene.toJsonAST.toOption.map(keys).getOrElse(Set.empty) --
           Set("name", "width", "depth", "elements", "relationships", "clear")

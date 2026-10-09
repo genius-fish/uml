@@ -910,9 +910,15 @@ same shapes in three.js for a browser preview. Both answer `Either[BuilderError,
   nesting is the caller's to decide, as a 2D diagram draws it as a boundary.
 - `SceneEdge(id, source, target, relationship)`: a connector to a node's own ancestor is
   left out, since it cannot be drawn on the plinth the node stands on.
-- `SceneLayout.layout` refuses a graph with a blank or duplicate id or an edge to an
-  unknown node with `SceneError.InvalidGraph`, listing every problem; an ELK failure
-  comes back as `SceneError.LayoutFailed` with its cause. Nothing is thrown.
+- `SceneFlow(id, name, steps)`: a walk through the graph in order, such as the
+  interactions of a sequence diagram. Each `SceneStep(source, target, label)` goes from
+  one node to another and says what passes between them. The layout passes flows
+  through, naming per step the connector that joins its two ends (either way round),
+  if there is one; the builder flies its camera along a flow (below).
+- `SceneLayout.layout` refuses a graph with a blank or duplicate id, an edge to an
+  unknown node or a step to an unknown node with `SceneError.InvalidGraph`, listing
+  every problem; an ELK failure comes back as `SceneError.LayoutFailed` with its cause.
+  Nothing is thrown.
 
 ### The notation
 
@@ -945,7 +951,10 @@ without it, and two runs of such a graph may differ, each keeping every rule abo
 `Scene` is JSON through zio-json: per element its key, `type` (the builder's shape name,
 `SceneNames.of`), name, centre `x`/`y`, footprint `w`/`d`, base height `z`, `parent` and
 `container`; per relationship its key, `type`, `sourcePort` and `targetPort`
-(`north`, `south`, `east`, `west`; north is away from the viewer), `bends` and `clear`.
+(`north`, `south`, `east`, `west`; north is away from the viewer), `bends` and `clear`;
+per flow its key, name and `steps`, each with `source`, `target`, `label` and the
+`relationship` it runs along, when one joins its ends. A scene without `flows` reads as
+one with none.
 
 ### In Blender
 
@@ -965,4 +974,37 @@ that would cover one already placed moves up, at most eight times; the builder p
 how many names stayed covered and how many pairs still overlap, so a view too crowded
 for its render size shows in the output. `--labels placard` and `--labels float` force
 either.
+
+### Pointing: highlight and flyover
+
+`--highlight` puts what it names in the light and dims the rest: a spot falls on each
+element, and a connector glows in amber with a softer spot on both its ends. It takes
+a comma-separated list; each item is a key, an element's name (any case) or
+`source>target` (names or keys) for the connectors between two elements. The builder
+prints how many elements and connectors it lit, and each item that named nothing.
+
+```bash
+blender -b -P archimate3d_blender.py -- --view scene.json \
+  --highlight "Order System,Customer>Handle Order" --render lit.png
+```
+
+`--flyover` takes a flow by key or name (the first flow without one) and writes a camera
+flight through it into the `.blend` timeline. The overview comes first, in full light;
+then, per step, the camera glides to the step's two elements and looks at them from the
+side, both lit while the rest dims, while a pulse runs from source to target and leaves
+an amber trail: along the connector that joins them, or in an arc above the scene where
+none does. The step's number and label stand in a caption bar at the top of the frame.
+A finished step's trail thins and stops glowing, so the flow so far stays visible; at
+the end the camera returns to the overview and the light comes back. A step takes about
+3.3 seconds. Floating labels stay off: the camera comes close enough for the placards.
+
+`--animation out.mp4` renders that timeline to an H.264 video with EEVEE and Blender's
+own encoder (no ffmpeg needed), at 1920 by 1080 unless `--size` says otherwise and 30
+frames a second unless `--fps` does. `--frame N --render still.png` renders one frame of
+the flight as a still, with Cycles; useful for a thumbnail or to check the camera.
+
+```bash
+blender -b -P archimate3d_blender.py -- --view scene.json \
+  --flyover "Place an order" --blend flight.blend --animation flight.mp4
+```
 

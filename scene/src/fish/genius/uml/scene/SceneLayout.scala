@@ -111,9 +111,25 @@ object SceneLayout:
           bends = route.bends,
           clear = route.clear,
         )
-    Scene(graph.name, round(built.width), round(built.depth), elements, relationships)
+    val flows         = graph.flows.map: flow =>
+      FlowRoute(
+        flow.id,
+        flow.name,
+        flow.steps.map(step =>
+          FlowLeg(step.source, step.target, step.label, carrier(relationships, step))
+        ),
+      )
+    Scene(graph.name, round(built.width), round(built.depth), elements, relationships, flows)
 
   end scene
+
+  // The connector a step runs along: one from its source to its target, else one the
+  // other way round. A connector to an ancestor is not in the scene, so not a carrier.
+  private def carrier(relationships: List[SceneRelationship], step: SceneStep): Option[SceneId] =
+    relationships
+      .find(r => r.source == step.source && r.target == step.target)
+      .orElse(relationships.find(r => r.source == step.target && r.target == step.source))
+      .map(_.key)
 
   private def element(
     structure: SceneStructure,

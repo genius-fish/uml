@@ -13,12 +13,18 @@ import fish.genius.uml.dsl.archimate.ShapeType.*
 import fish.genius.uml.scene.*
 
 // A small layered view laid out as a 3D scene, written as JSON next to the Blender
-// builder from the same jar:
+// builder from the same jar, with one flow to fly through:
 //
 //   ./mill examples.runMain fish.genius.uml.examples.SceneExample
 //   blender -b -P out/scene/examples/archimate3d_blender.py -- \
 //     --view out/scene/examples/scene.json --blend out/scene/examples/scene.blend \
 //     --render out/scene/examples/scene.png
+//   blender -b -P out/scene/examples/archimate3d_blender.py -- \
+//     --view out/scene/examples/scene.json --highlight "Order System" \
+//     --render out/scene/examples/order-system.png
+//   blender -b -P out/scene/examples/archimate3d_blender.py -- \
+//     --view out/scene/examples/scene.json --flyover "Place an order" \
+//     --animation out/scene/examples/place-an-order.mp4
 object SceneExample extends ZIOAppDefault:
 
   private def node(
@@ -34,6 +40,13 @@ object SceneExample extends ZIOAppDefault:
     relationship: RelationshipType,
   ): SceneEdge =
     SceneEdge(SceneId(s"$source>$target"), SceneId(source), SceneId(target), relationship)
+
+  private def step(
+    source: String,
+    target: String,
+    label: String,
+  ): SceneStep =
+    SceneStep(SceneId(source), SceneId(target), label)
 
   private val graph = SceneGraph(
     "Order handling",
@@ -59,6 +72,19 @@ object SceneExample extends ZIOAppDefault:
       edge("Application Server", "Order System", Serving),
       edge("Order Intake", "either", Serving),
       edge("either", "Customer", Serving),
+    ),
+    List(
+      SceneFlow(
+        SceneId("place-an-order"),
+        "Place an order",
+        List(
+          step("Customer", "Handle Order", "Places an order"),
+          step("Handle Order", "Order Intake", "Submits it"),
+          step("Order Intake", "Order API", "Calls the API"),
+          step("Order API", "Order Worker", "Queues the order"),
+          step("Order Worker", "Order", "Stores it"),
+        ),
+      )
     ),
   )
 

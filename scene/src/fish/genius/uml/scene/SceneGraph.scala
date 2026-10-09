@@ -45,21 +45,41 @@ final case class SceneEdge(
   target: SceneId,
   relationship: RelationshipType)
 
+// A walk through the graph in order, such as the interactions of a sequence diagram:
+// each step goes from one node to another and says what passes between them. The
+// Blender builder flies its camera along one (archimate3d_blender.py --flyover).
+final case class SceneStep(
+  source: SceneId,
+  target: SceneId,
+  label: String)
+
+final case class SceneFlow(
+  id: SceneId,
+  name: String,
+  steps: List[SceneStep])
+
 final case class SceneGraph(
   name: String,
   nodes: List[SceneNode],
-  edges: List[SceneEdge]):
+  edges: List[SceneEdge],
+  flows: List[SceneFlow] = Nil):
   def allNodes: List[SceneNode] = nodes.flatMap(_.flatten)
 
   // Every problem at once, so a caller fixes its graph in one round.
   def problems: List[GraphProblem] =
-    val ids        = allNodes.map(_.id) ++ edges.map(_.id)
+    val ids        = allNodes.map(_.id) ++ edges.map(_.id) ++ flows.map(_.id)
     val blank      = ids.filter(_.value.trim.isEmpty).distinct.map(_ => GraphProblem.BlankId)
     val duplicates = ids.diff(ids.distinct).distinct.map(GraphProblem.DuplicateId(_))
     val known      = allNodes.map(_.id).toSet
     val dangling   = edges.flatMap: e =>
       List(e.source, e.target).filterNot(known).map(GraphProblem.UnknownEndpoint(e.id, _))
-    blank ++ duplicates ++ dangling
+    val lost       = flows.flatMap: flow =>
+      flow.steps
+        .flatMap(step => List(step.source, step.target))
+        .filterNot(known)
+        .distinct
+        .map(GraphProblem.UnknownStepEnd(flow.id, _))
+    blank ++ duplicates ++ dangling ++ lost
 
 end SceneGraph
 
@@ -67,6 +87,7 @@ enum GraphProblem derives CanEqual:
   case BlankId
   case DuplicateId(id: SceneId)
   case UnknownEndpoint(edge: SceneId, endpoint: SceneId)
+  case UnknownStepEnd(flow: SceneId, endpoint: SceneId)
 
 enum SceneError derives CanEqual:
   case InvalidGraph(problems: ::[GraphProblem])
