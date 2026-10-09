@@ -5,7 +5,7 @@ import scala.collection.immutable.TreeSet
 
 // A small orthogonal router for the routes ELK cannot finish. With hierarchy handling
 // on, ELK routes a connector that crosses from one container into another in pieces
-// and leaves the stretch between them out. SceneLayout hands those connectors here: a
+// and leaves the stretch between them out. SceneRoutes hands those connectors here: a
 // shortest path on the grid of lines along the obstacles' sides, with a penalty per
 // bend, leaving and entering each plinth straight out of its port.
 private[scene] object OrthogonalRouter:
@@ -15,15 +15,18 @@ private[scene] object OrthogonalRouter:
     y: Double,
     w: Double,
     d: Double):
-    def x0: Double = x - w / 2
-    def x1: Double = x + w / 2
-    def y0: Double = y - d / 2
-    def y1: Double = y + d / 2
+    def left: Double   = x - w / 2
+    def right: Double  = x + w / 2
+    def bottom: Double = y - d / 2
+    def top: Double    = y + d / 2
 
     def inflate(margin: Double): Box = Box(x, y, w + 2 * margin, d + 2 * margin)
 
     def contains(px: Double, py: Double): Boolean =
-      px > x0 + EPSILON && px < x1 - EPSILON && py > y0 + EPSILON && py < y1 - EPSILON
+      px > left + EPSILON && px < right - EPSILON && py > bottom + EPSILON && py < top - EPSILON
+
+    def meets(other: Box): Boolean =
+      left < other.right && other.left < right && bottom < other.top && other.bottom < top
 
     // Coordinates come rounded to a thousandth, so "straight" allows that much; a
     // diagonal counts as crossing, since no orthogonal route has one.
@@ -34,18 +37,18 @@ private[scene] object OrthogonalRouter:
       by: Double,
     ): Boolean =
       if math.abs(ay - by) < STRAIGHT then
-        ay > y0 + STRAIGHT && ay < y1 - STRAIGHT && overlaps(ax, bx, x0, x1)
+        ay > bottom + STRAIGHT && ay < top - STRAIGHT && overlaps(ax, bx, left, right)
       else if math.abs(ax - bx) < STRAIGHT then
-        ax > x0 + STRAIGHT && ax < x1 - STRAIGHT && overlaps(ay, by, y0, y1)
+        ax > left + STRAIGHT && ax < right - STRAIGHT && overlaps(ay, by, bottom, top)
       else true
 
     private def overlaps(
       a: Double,
       b: Double,
-      lo: Double,
-      hi: Double,
+      low: Double,
+      high: Double,
     ): Boolean =
-      math.max(math.min(a, b), lo) < math.min(math.max(a, b), hi) - STRAIGHT
+      math.max(math.min(a, b), low) < math.min(math.max(a, b), high) - STRAIGHT
 
   end Box
 
@@ -54,14 +57,18 @@ private[scene] object OrthogonalRouter:
 
   private val EPSILON      = 1e-9
   private val STRAIGHT     = 2e-3
-  private val MARGIN       = 0.3
   private val STUB         = 0.35
   private val BEND_PENALTY = 1.5
   private val STEPS        = List((1, 0), (-1, 0), (0, 1), (0, -1))
+  // How far a route keeps from a plinth: wide first, closer when it is crowded.
+  private val MARGINS      = List(0.3, 0.15, 0.05)
+  // Only the plinths this close to the two ends are considered first: the grid, and
+  // so the search, grows with the square of the obstacles.
+  private val WINDOW       = 4.0
 
   final private case class State(
-    i: Int,
-    j: Int,
+    column: Int,
+    row: Int,
     heading: Heading)
 
   final private case class Entry(
@@ -70,7 +77,7 @@ private[scene] object OrthogonalRouter:
     state: State)
 
   private given Ordering[Entry] =
-    Ordering.by[Entry, (Double, Int)](e => (e.cost, e.order))(
+    Ordering.by[Entry, (Double, Int)](entry => (entry.cost, entry.order))(
       using Ordering.Tuple2(
         using Ordering.Double.TotalOrdering,
         Ordering.Int,
@@ -85,39 +92,71 @@ private[scene] object OrthogonalRouter:
     in: Heading,
     obstacles: List[Box],
   ): Option[List[(Double, Double)]] =
-    val walls = obstacles.map(_.inflate(MARGIN))
-    val from  = (start._1 + out._1 * STUB, start._2 + out._2 * STUB)
-    val to    = (end._1 + in._1 * STUB, end._2 + in._2 * STUB)
-    val xs = (List(from._1, to._1) ++ walls.flatMap(b => List(b.x0, b.x1))).distinct.sorted.toVector
-    val ys = (List(from._2, to._2) ++ walls.flatMap(b => List(b.y0, b.y1))).distinct.sorted.toVector
-    val grid  = Grid(xs, ys, walls)
-    val first = State(xs.indexOf(from._1), ys.indexOf(from._2), out)
-    val goal  = (xs.indexOf(to._1), ys.indexOf(to._2), (-in._1, -in._2))
-    search(grid, goal, TreeSet(Entry(0, 0, first)), Map(first -> 0.0), Map.empty, 1)
-      .map((last, previous) => corners(trace(last, previous).map(s => (xs(s.i), ys(s.j)))))
+    val span   = Box(
+      (start._1 + end._1) / 2,
+      (start._2 + end._2) / 2,
+      math.abs(start._1 - end._1),
+      math.abs(start._2 - end._2),
+    )
+    val nearby = obstacles.filter(_.meets(span.inflate(WINDOW)))
+    val tries  = MARGINS.flatMap(margin => List(nearby -> margin, obstacles -> margin)).distinct
+    tries.iterator
+      .flatMap((considered, margin) => attempt(start, out, end, in, considered, margin))
+      .find(bends => clearOf(obstacles, start :: bends ::: List(end)))
 
   end route
 
+  private def clearOf(obstacles: List[Box], points: List[(Double, Double)]): Boolean =
+    points.zip(points.drop(1)).forall((a, b) => !obstacles.exists(_.crosses(a._1, a._2, b._1, b._2)))
+
+  private def attempt(
+    start: (Double, Double),
+    out: Heading,
+    end: (Double, Double),
+    in: Heading,
+    obstacles: List[Box],
+    margin: Double,
+  ): Option[List[(Double, Double)]] =
+    val walls   = obstacles.map(_.inflate(margin))
+    val leaving = (start._1 + out._1 * STUB, start._2 + out._2 * STUB)
+    val arrival = (end._1 + in._1 * STUB, end._2 + in._2 * STUB)
+    val columns =
+      (List(leaving._1, arrival._1) ++
+      walls.flatMap(b => List(b.left, b.right))).distinct.sorted.toVector
+    val rows    =
+      (List(leaving._2, arrival._2) ++
+      walls.flatMap(b => List(b.bottom, b.top))).distinct.sorted.toVector
+    val grid    = Grid(columns, rows, walls)
+    val first   = State(columns.indexOf(leaving._1), rows.indexOf(leaving._2), out)
+    val goal    = (columns.indexOf(arrival._1), rows.indexOf(arrival._2), (-in._1, -in._2))
+    search(grid, goal, TreeSet(Entry(0, 0, first)), Map(first -> 0.0), Map.empty, 1)
+      .map((last, previous) => corners(trace(last, previous).map(s => (columns(s.column), rows(s.row)))))
+
+  end attempt
+
   final private case class Grid(
-    xs: Vector[Double],
-    ys: Vector[Double],
+    columns: Vector[Double],
+    rows: Vector[Double],
     walls: List[Box]):
-    def inside(i: Int, j: Int): Boolean = i >= 0 && i < xs.size && j >= 0 && j < ys.size
-    def free(i: Int, j: Int): Boolean   = !walls.exists(_.contains(xs(i), ys(j)))
+
+    def inside(column: Int, row: Int): Boolean =
+      column >= 0 && column < columns.size && row >= 0 && row < rows.size
+
+    def free(column: Int, row: Int): Boolean = !walls.exists(_.contains(columns(column), rows(row)))
 
     def clear(
-      a: State,
-      i: Int,
-      j: Int,
+      from: State,
+      column: Int,
+      row: Int,
     ): Boolean =
-      !walls.exists(_.crosses(xs(a.i), ys(a.j), xs(i), ys(j)))
+      !walls.exists(_.crosses(columns(from.column), rows(from.row), columns(column), rows(row)))
 
     def length(
-      a: State,
-      i: Int,
-      j: Int,
+      from: State,
+      column: Int,
+      row: Int,
     ): Double =
-      math.abs(xs(i) - xs(a.i)) + math.abs(ys(j) - ys(a.j))
+      math.abs(columns(column) - columns(from.column)) + math.abs(rows(row) - rows(from.row))
 
   end Grid
 
@@ -132,23 +171,28 @@ private[scene] object OrthogonalRouter:
     order: Int,
   ): Option[(State, Map[State, State])] =
     frontier.headOption match
-      case None                                                                       => None
-      case Some(entry) if entry.cost > best.getOrElse(entry.state, Double.MaxValue)   =>
+      case None                                                                              => None
+      case Some(entry) if entry.cost > best.getOrElse(entry.state, Double.MaxValue)          =>
         search(grid, goal, frontier - entry, best, previous, order)
-      case Some(entry) if (entry.state.i, entry.state.j, entry.state.heading) == goal =>
+      case Some(entry) if (entry.state.column, entry.state.row, entry.state.heading) == goal =>
         Some((entry.state, previous))
-      case Some(entry)                                                                =>
+      case Some(entry)                                                                       =>
         val here   = entry.state
         val better = STEPS
           .filter(step => step != (-here.heading._1, -here.heading._2))
           .flatMap: step =>
-            val (i, j) = (here.i + step._1, here.j + step._2)
-            val arrive = (i, j) == (goal._1, goal._2)
-            Option.when(grid.inside(i, j) && (grid.free(i, j) || arrive) && grid.clear(here, i, j)):
+            val (column, row) = (here.column + step._1, here.row + step._2)
+            val arriving      = (column, row) == (goal._1, goal._2)
+            Option.when(
+              grid.inside(column, row) && (grid.free(column, row) || arriving) &&
+              grid.clear(here, column, row)
+            ):
               val bend = if step != here.heading then BEND_PENALTY else 0.0
-              (State(i, j, step), entry.cost + grid.length(here, i, j) + bend)
+              (State(column, row, step), entry.cost + grid.length(here, column, row) + bend)
           .filter((next, cost) => cost < best.getOrElse(next, Double.MaxValue))
-        val queued = better.zipWithIndex.map { case ((next, cost), k) => Entry(cost, order + k, next) }
+        val queued = better.zipWithIndex.map { case ((next, cost), index) =>
+          Entry(cost, order + index, next)
+        }
         search(
           grid,
           goal,
@@ -167,7 +211,10 @@ private[scene] object OrthogonalRouter:
   // keep only the points where the route turns, and both ends
   private def corners(points: List[(Double, Double)]): List[(Double, Double)] =
     points.zipWithIndex.collect:
-      case (p, k) if k == 0 || k == points.size - 1 || turns(points(k - 1), p, points(k + 1)) => p
+      case (point, index)
+        if index == 0 || index == points.size - 1 ||
+        turns(points(index - 1), point, points(index + 1)) =>
+        point
 
   private def turns(
     a: (Double, Double),

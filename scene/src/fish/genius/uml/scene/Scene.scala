@@ -30,7 +30,8 @@ final case class SceneElement(
   container: Boolean)
 
 // A connector leaves its source through the middle of one plinth side and arrives at
-// the middle of one side of its target; between them it follows `bends`.
+// the middle of one side of its target; between them it follows `bends`. `clear` is
+// false only when the plinths left no way around them, and the route may cross one.
 final case class SceneRelationship(
   key: SceneId,
   source: SceneId,
@@ -38,7 +39,8 @@ final case class SceneRelationship(
   @jsonField("type") kind: String,
   sourcePort: PortName,
   targetPort: PortName,
-  bends: List[ScenePoint])
+  bends: List[ScenePoint],
+  clear: Boolean)
 
 final case class ScenePoint(x: Double, y: Double)
 

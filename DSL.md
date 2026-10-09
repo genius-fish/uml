@@ -901,7 +901,7 @@ blender -b -P archimate3d_blender.py -- --view scene.json --blend scene.blend --
 ```
 
 `SceneBuilder.blenderScript` returns the builder from the jar; `SceneBuilder.threeJs` the
-same shapes in three.js for a browser preview.
+same shapes in three.js for a browser preview. Both answer `Either[BuilderError, String]`.
 
 ### The graph
 
@@ -912,7 +912,7 @@ same shapes in three.js for a browser preview.
   left out, since it cannot be drawn on the plinth the node stands on.
 - `SceneLayout.layout` refuses a graph with a blank or duplicate id or an edge to an
   unknown node with `SceneError.InvalidGraph`, listing every problem; an ELK failure
-  comes back as `SceneError.LayoutFailed`. Nothing is thrown.
+  comes back as `SceneError.LayoutFailed` with its cause. Nothing is thrown.
 
 ### The notation
 
@@ -930,16 +930,22 @@ Technology and Physical, with Implementation at the front. A first pass places t
 plinths; a row wider than `Options.maxPerRow` (by default about the square root of the
 graph) has its leaves folded into rows; the sides each connector meets on follow from
 where its ends landed (one behind the other: south to north; side by side: east to west);
-the last pass routes every connector orthogonally between the middles of those sides.
+the last pass routes every connector orthogonally between the middles of those sides, and
+the sides are chosen again from where the plinths ended up until they stop changing.
 Where ELK leaves a connector between two containers unfinished, a small orthogonal router
-takes it around the plinths.
+takes it around the plinths; where the plinths leave no way through at all, the connector
+gets a plain orthogonal route and `clear = false`.
+
+The layout asks ELK for model order, which makes the same graph give the same scene. ELK
+0.9.1 fails on model order in some nested graphs, mostly larger ones; the layout then runs
+without it, and two runs of such a graph may differ, each keeping every rule above.
 
 ### The scene
 
 `Scene` is JSON through zio-json: per element its key, `type` (the builder's shape name,
 `SceneNames.of`), name, centre `x`/`y`, footprint `w`/`d`, base height `z`, `parent` and
 `container`; per relationship its key, `type`, `sourcePort` and `targetPort`
-(`north`, `south`, `east`, `west`; north is away from the viewer) and `bends`.
+(`north`, `south`, `east`, `west`; north is away from the viewer), `bends` and `clear`.
 
 ### In Blender
 
@@ -947,5 +953,5 @@ An element is one selectable object, its plinth; everything on it follows. A con
 a curve hooked to its two ports, so it travels with both elements; an element standing on
 a container is parented to it. `--check` moves an element and reports how far the
 connector ends are from their ports. `--straight` ignores the layout's routes. Tested
-headless on Blender 5.0 and 5.2.
+headless on Blender 5.0.1 and 5.2.2.
 

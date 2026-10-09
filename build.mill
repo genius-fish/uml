@@ -150,6 +150,8 @@ object scene extends GeniusFishModule:
     mvn"org.eclipse.elk:org.eclipse.elk.alg.common:${V.elk}",
     mvn"org.eclipse.elk:org.eclipse.elk.alg.layered:${V.elk}",
     mvn"dev.zio::zio-json:${V.zioJson}",
+    // zio-json alone would bring an older zio than the rest of the build
+    mvn"dev.zio::zio:${V.zio}",
   )
 
   object test extends GeniusFishTests

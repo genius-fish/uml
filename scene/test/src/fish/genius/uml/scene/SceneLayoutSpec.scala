@@ -25,7 +25,7 @@ object SceneLayoutSpec extends ZIOSpecDefault:
   ): SceneEdge =
     SceneEdge(SceneId(s"$source>$target"), SceneId(source), SceneId(target), relationship)
 
-  // Four layers, a nested component and a grouping: enough for every rule.
+  // Four layers, a nested component, a grouping and a junction: enough for every rule.
   private val graph = SceneGraph(
     "Scene",
     List(
@@ -48,6 +48,7 @@ object SceneLayoutSpec extends ZIOSpecDefault:
         "Data Platform",
         List(node("Message Broker", TechnologySystemSoftware)),
       ),
+      SceneNode(SceneId("fork"), NodeKind.AndJunction, "fork"),
     ),
     List(
       edge("Customer", "Handle Order", Assignment),
@@ -57,15 +58,17 @@ object SceneLayoutSpec extends ZIOSpecDefault:
       edge("Application Server", "Order System", Serving),
       edge("Database", "Order Worker", Serving),
       edge("Handle Order", "Faster delivery", Realization),
+      edge("Order Intake", "fork", Serving),
+      edge("fork", "Customer", Serving),
     ),
   )
 
-  private def laid(g: SceneGraph): Scene =
-    SceneLayout.layout(g).fold(error => Scene(s"failed: $error", 0, 0, Nil, Nil), identity)
+  private def laid(toLay: SceneGraph): Scene =
+    SceneLayout.layout(toLay).fold(error => Scene(s"failed: $error", 0, 0, Nil, Nil), identity)
 
   private lazy val scene = laid(graph)
 
-  private def el(s: Scene, label: String): Option[SceneElement] = s.elements.find(_.name == label)
+  private def el(laidOut: Scene, label: String): Option[SceneElement] = laidOut.elements.find(_.name == label)
 
   private def y(label: String): Double = el(scene, label).map(_.y).getOrElse(Double.NaN)
 
@@ -101,8 +104,21 @@ object SceneLayoutSpec extends ZIOSpecDefault:
       test("every connector leaves through a port that faces the other end"):
         assertTrue(scene.relationships.nonEmpty, SceneChecks.portsFacingAway(scene).isEmpty)
       ,
-      test("every route is orthogonal from port to port and runs through no other plinth"):
-        assertTrue(SceneChecks.diagonals(scene).isEmpty, SceneChecks.throughPlinths(scene).isEmpty)
+      test("every route is orthogonal from port to port, runs through no other plinth, and is clear"):
+        assertTrue(
+          SceneChecks.diagonals(scene).isEmpty,
+          SceneChecks.throughPlinths(scene).isEmpty,
+          scene.relationships.forall(_.clear),
+        )
+      ,
+      test("a junction stands on its own round footprint, in its neighbours' layer"):
+        val junction = el(scene, "fork")
+        assertTrue(
+          junction.exists(j =>
+            j.shape == "and-junction" && j.w == SceneLayout.JUNCTION_SIZE && j.d == SceneLayout.JUNCTION_SIZE
+          ),
+          junction.exists(_.y > y("Order Intake")),
+        )
       ,
       test("relationships carry the builder's names"):
         assertTrue(
@@ -125,15 +141,32 @@ object SceneLayoutSpec extends ZIOSpecDefault:
         val rows   = placed.elements.filter(_.shape == "deliverable").map(_.y).distinct
         assertTrue(rows.size >= 3, placed.width < 30 * SceneLayout.PLINTH_WIDTH)
       ,
-      test("a large graph with nesting, fan-outs and cross-container connectors stays clean"):
-        val big = laid(SceneChecks.large)
+      test("large graphs with nesting, fan-outs and cross-container connectors stay clean"):
+        val checked = List(1, 2).map: scale =>
+          val graph = SceneChecks.generated(scale)
+          val big   = laid(graph)
+          big.elements.size == graph.allNodes.size && big.relationships.size == graph.edges.size &&
+          SceneChecks.overlaps(big).isEmpty && SceneChecks.diagonals(big).isEmpty &&
+          SceneChecks.throughPlinths(big).isEmpty
+        assertTrue(SceneChecks.generated(2).allNodes.size > 200, checked == List(true, true))
+      ,
+      // ELK 0.9.1 fails on model order in some nested graphs (the spec graph above, and
+      // larger ones); the layout then runs without it, still valid, and two runs may differ.
+      test("where ELK keeps model order, the same graph always gives the same scene"):
+        val leaves = (1 to 30).toList.map(i => node(f"Deliverable $i%02d", ImplementationDeliverable))
+        val fan    = SceneGraph(
+          "Fan",
+          node("Programme", ImplementationWorkPackage) :: node("Goal", MotivationGoal) :: leaves,
+          edge("Programme", "Goal", Realization) :: leaves.map(leaf => edge("Programme", leaf.label, Realization)),
+        )
+        val runs   = List.fill(4)(SceneLayout.layout(fan))
+        assertTrue(runs.distinct.size == 1, runs.forall(_.isRight))
+      ,
+      test("where it cannot, every run still keeps every rule"):
+        val runs = List.fill(3)(laid(SceneChecks.generated(1)))
         assertTrue(
-          big.elements.size == SceneChecks.large.allNodes.size,
-          big.elements.size > 100,
-          big.relationships.size == SceneChecks.large.edges.size,
-          SceneChecks.overlaps(big).isEmpty,
-          SceneChecks.diagonals(big).isEmpty,
-          SceneChecks.throughPlinths(big).isEmpty,
+          runs.forall(run => SceneChecks.overlaps(run).isEmpty && SceneChecks.diagonals(run).isEmpty),
+          runs.forall(run => SceneChecks.throughPlinths(run).isEmpty && SceneChecks.portsFacingAway(run).isEmpty),
         )
       ,
       test("the scene round-trips through JSON, with the shape under \"type\" and lower-case ports"):
@@ -144,12 +177,14 @@ object SceneLayoutSpec extends ZIOSpecDefault:
           json.fromJson[Scene] == Right(scene),
         )
       ,
-      test("every shape and relationship type has its own name"):
-        val shapes = ShapeType.values.toList.map(SceneNames.of)
-        val kinds  = RelationshipType.values.toList.map(SceneNames.of)
+      test("every node kind and relationship type has its own name"):
+        val kinds         = ShapeType.values.toList.map(NodeKind.Element(_)) ++
+          List(NodeKind.Grouping, NodeKind.AndJunction, NodeKind.OrJunction)
+        val names         = kinds.map(SceneNames.of)
+        val relationships = RelationshipType.values.toList.map(SceneNames.of)
         assertTrue(
-          shapes.distinct.size == ShapeType.values.length,
-          kinds.distinct.size == RelationshipType.values.length,
+          names.distinct.size == kinds.size,
+          relationships.distinct.size == RelationshipType.values.length,
         )
       ,
       test("an empty graph is an empty scene"):

@@ -49,6 +49,7 @@ object SceneExample extends ZIOAppDefault:
       node("Order Intake", ApplicationService),
       node("Order", ApplicationDataObject),
       node("Application Server", TechnologyNode),
+      SceneNode(SceneId("either"), NodeKind.OrJunction, "either"),
     ),
     List(
       edge("Customer", "Handle Order", Assignment),
@@ -56,6 +57,8 @@ object SceneExample extends ZIOAppDefault:
       edge("Order API", "Order Intake", Realization),
       edge("Order Worker", "Order", Access),
       edge("Application Server", "Order System", Serving),
+      edge("Order Intake", "either", Serving),
+      edge("either", "Customer", Serving),
     ),
   )
 
@@ -66,12 +69,14 @@ object SceneExample extends ZIOAppDefault:
     for
       root <- System.env("MILL_WORKSPACE_ROOT").map(_.fold(Paths.get("."))(Paths.get(_)))
       out = root.resolve("out").resolve("scene").resolve("examples")
-      scene <- ZIO.fromEither(SceneLayout.layout(graph)).mapError(e => RuntimeException(e.toString))
-      script <- ZIO.fromEither(SceneBuilder.blenderScript).mapError(e => RuntimeException(e.toString))
-      _    <- ZIO.attemptBlocking(Files.createDirectories(out))
-      json <- write(out.resolve("scene.json"), scene.toJsonPretty)
-      _    <- write(out.resolve(SceneBuilder.BLENDER_SCRIPT), script)
-      _    <- Console.printLine(
+      scene  <-
+        ZIO.fromEither(SceneLayout.layout(graph)).mapError(error => RuntimeException(error.toString))
+      script <-
+        ZIO.fromEither(SceneBuilder.blenderScript).mapError(error => RuntimeException(error.toString))
+      _      <- ZIO.attemptBlocking(Files.createDirectories(out))
+      json   <- write(out.resolve("scene.json"), scene.toJsonPretty)
+      _      <- write(out.resolve(SceneBuilder.BLENDER_SCRIPT), script)
+      _      <- Console.printLine(
         s"${scene.elements.size} elements, ${scene.relationships.size} connectors: $json"
       )
     yield ()

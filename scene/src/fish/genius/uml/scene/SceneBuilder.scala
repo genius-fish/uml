@@ -15,15 +15,19 @@ object SceneBuilder:
   val BLENDER_SCRIPT = "archimate3d_blender.py"
   val THREE_JS       = "archimate3d.js"
 
-  def blenderScript: Either[SceneError, String] = resource(BLENDER_SCRIPT)
+  def blenderScript: Either[BuilderError, String] = resource(BLENDER_SCRIPT)
 
-  def threeJs: Either[SceneError, String] = resource(THREE_JS)
+  def threeJs: Either[BuilderError, String] = resource(THREE_JS)
 
-  private def resource(name: String): Either[SceneError, String] =
+  private def resource(name: String): Either[BuilderError, String] =
     Option(getClass.getResourceAsStream(s"/fish/genius/uml/scene/$name"))
-      .toRight(SceneError.ResourceMissing(name))
+      .toRight(BuilderError.Missing(name))
       .flatMap: stream =>
         Using(Source.fromInputStream(stream, "UTF-8"))(_.mkString).toEither.left
-          .map(_ => SceneError.ResourceMissing(name))
+          .map(BuilderError.Unreadable(name, _))
 
 end SceneBuilder
+
+enum BuilderError derives CanEqual:
+  case Missing(name: String)
+  case Unreadable(name: String, cause: Throwable)

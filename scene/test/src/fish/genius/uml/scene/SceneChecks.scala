@@ -75,49 +75,70 @@ object SceneChecks:
 
   end throughPlinths
 
-  // A hundred and more nodes over every layer: containers with children, groupings,
-  // a fan of thirty leaves off one work package, connectors between containers.
-  lazy val large: SceneGraph =
-    def n(
+  // About a hundred nodes per scale over every layer: containers with children,
+  // groupings, a fan of thirty leaves off one work package, connectors between containers.
+  lazy val large: SceneGraph = generated(1)
+
+  def generated(scale: Int, withJunctions: Boolean = true): SceneGraph =
+    def node(
       id: String,
       shape: ShapeType,
       children: List[SceneNode] = Nil,
     )                =
       SceneNode(SceneId(id), NodeKind.Element(shape), id, children)
-    def e(
-      s: String,
-      t: String,
-      r: RelationshipType,
-    )                = SceneEdge(SceneId(s"$s>$t"), SceneId(s), SceneId(t), r)
-    val goals        = (1 to 14).toList.map(i => n(s"goal$i", MotivationGoal))
-    val capabilities = (1 to 8).toList.map(i => n(s"cap$i", StrategyCapability))
-    val processes    = (1 to 10).toList.map(i => n(s"proc$i", BusinessProcess))
-    val systems      = (1 to 6).toList.map: i =>
-      n(s"sys$i", ApplicationComponent, (1 to 3).toList.map(j => n(s"sys$i.c$j", ApplicationComponent)))
-    val services     = (1 to 8).toList.map(i => n(s"svc$i", ApplicationService))
+    def edge(
+      source: String,
+      target: String,
+      relationship: RelationshipType,
+    )                =
+      SceneEdge(SceneId(s"$source>$target"), SceneId(source), SceneId(target), relationship)
+    val goals        = (1 to 14 * scale).toList.map(i => node(s"goal$i", MotivationGoal))
+    val capabilities = (1 to 8 * scale).toList.map(i => node(s"cap$i", StrategyCapability))
+    val processes    = (1 to 10 * scale).toList.map(i => node(s"proc$i", BusinessProcess))
+    val systems      = (1 to 6 * scale).toList.map: i =>
+      node(s"sys$i", ApplicationComponent, (1 to 3).toList.map(j => node(s"sys$i.c$j", ApplicationComponent)))
+    val services     = (1 to 8 * scale).toList.map(i => node(s"svc$i", ApplicationService))
     val platform     = SceneNode(
       SceneId("platform"),
       NodeKind.Grouping,
       "Platform",
-      (1 to 5).toList.map(i => n(s"node$i", TechnologyNode, List(n(s"node$i.os", TechnologySystemSoftware)))),
+      (1 to 5 * scale).toList.map(i => node(s"node$i", TechnologyNode, List(node(s"node$i.os", TechnologySystemSoftware)))),
     )
-    val deliverables = (1 to 30).toList.map(i => n(s"del$i", ImplementationDeliverable))
-    val programme    = n("programme", ImplementationWorkPackage)
-    val nodes = goals ++ capabilities ++ processes ++ systems ++ services ++ List(platform, programme) ++ deliverables
-    val edges =
-      processes.zipWithIndex.map((p, i) => e(p.label, s"cap${i % 8 + 1}", RelationshipType.Realization)) ++
-      services.zipWithIndex.map((s, i) => e(s.label, s"proc${i % 10 + 1}", RelationshipType.Serving)) ++
-      systems.flatMap(s =>
+    val deliverables = (1 to 30 * scale).toList.map(i => node(s"del$i", ImplementationDeliverable))
+    val programme    = node("programme", ImplementationWorkPackage)
+    val junctions    =
+      if withJunctions then (1 to scale).toList.map(i => SceneNode(SceneId(s"or$i"), NodeKind.OrJunction, s"or$i"))
+      else Nil
+    val nodes        =
+      goals ++ capabilities ++ processes ++ systems ++ services ++ List(platform, programme) ++ deliverables ++
+      junctions
+    val edges        =
+      processes.zipWithIndex.map((p, i) =>
+        edge(p.label, s"cap${i % capabilities.size + 1}", RelationshipType.Realization)
+      ) ++
+      services.zipWithIndex.map((s, i) => edge(s.label, s"proc${i % processes.size + 1}", RelationshipType.Serving)) ++
+      systems.zipWithIndex.flatMap((s, i) =>
         s.children.zipWithIndex.map((c, j) =>
-          e(c.label, s"svc${(j * 3 + s.label.last.asDigit) % 8 + 1}", RelationshipType.Realization)
+          edge(c.label, s"svc${(j * 3 + i) % services.size + 1}", RelationshipType.Realization)
         )
       ) ++
-      (1 to 5).toList.map(i => e(s"node$i.os", s"sys${i % 6 + 1}.c${i % 3 + 1}", RelationshipType.Serving)) ++
-      capabilities.zipWithIndex.map((c, i) => e(c.label, s"goal${i + 1}", RelationshipType.Realization)) ++
-      deliverables.map(d => e("programme", d.label, RelationshipType.Realization)) ++
-      List(e("sys1.c1", "sys2.c2", RelationshipType.Flow), e("sys3.c3", "sys5.c1", RelationshipType.Triggering)) ++
-      processes.sliding(2).collect { case List(a, b) => e(a.label, b.label, RelationshipType.Triggering) }.toList
-    SceneGraph("Large", nodes, edges)
-  end large
+      (1 to 5 * scale).toList.map(i =>
+        edge(s"node$i.os", s"sys${i % systems.size + 1}.c${i % 3 + 1}", RelationshipType.Serving)
+      ) ++
+      capabilities.zipWithIndex.map((c, i) => edge(c.label, s"goal${i + 1}", RelationshipType.Realization)) ++
+      deliverables.map(d => edge("programme", d.label, RelationshipType.Realization)) ++
+      List(
+        edge("sys1.c1", "sys2.c2", RelationshipType.Flow),
+        edge("sys3.c3", "sys5.c1", RelationshipType.Triggering),
+      ) ++
+      processes.sliding(2).collect { case List(a, b) => edge(a.label, b.label, RelationshipType.Triggering) }.toList ++
+      junctions.flatMap(j =>
+        List(
+          edge(s"proc$scale", j.label, RelationshipType.Triggering),
+          edge(j.label, "proc1", RelationshipType.Triggering),
+        )
+      )
+    SceneGraph(s"Generated x$scale", nodes, edges)
+  end generated
 
 end SceneChecks

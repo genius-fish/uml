@@ -33,6 +33,30 @@ object SceneBuilderSpec extends ZIOSpecDefault:
           bends.lastOption.exists((x, y) => y == 0.0 && x < 5.0),
         )
       ,
+      test("when the plinths leave no way through, the route is a plain orthogonal one, marked not clear"):
+        def plinth(
+          key: String,
+          x: Double,
+          y: Double,
+          w: Double,
+          d: Double,
+        )          =
+          SceneElement(SceneId(key), "node", key, x, y, w, d, 0, None, container = false)
+        val source = plinth("source", 0, 0, 2, 1.3)
+        val target = plinth("target", 6, 0, 2, 1.3)
+        val ring   = List(
+          plinth("west", 4.4, 0, 0.4, 4.6),
+          plinth("east", 7.6, 0, 0.4, 4.6),
+          plinth("north", 6, 2.2, 3.6, 0.4),
+          plinth("south", 6, -2.2, 3.6, 0.4),
+        )
+        val route  = SceneRoutes(source :: target :: ring).finish(source, PortName.East, Nil, target, PortName.West)
+        val points = (1.0, 0.0) :: route.bends.map(p => (p.x, p.y)) ::: List((5.0, 0.0))
+        assertTrue(
+          !route.clear,
+          points.zip(points.drop(1)).forall { case ((x0, y0), (x1, y1)) => x0 == x1 || y0 == y1 },
+        )
+      ,
       test("the fallback router gives up on a port walled in on every side"):
         import OrthogonalRouter.Box
         // a closed ring of walls around the target's port: nothing gets in

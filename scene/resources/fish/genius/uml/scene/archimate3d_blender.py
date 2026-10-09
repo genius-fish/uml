@@ -49,6 +49,7 @@ import bpy
 from mathutils import Matrix, Vector
 
 P_W, P_D, P_H = 2.0, 1.3, 0.2
+J_SIZE = 1.24  # a junction's round plinth, as SceneLayout.JUNCTION_SIZE
 DEG = math.pi / 180
 PI = math.pi
 
@@ -782,7 +783,7 @@ def plinth(key, form, m, w=P_W, d=P_D):
     """The root object of an element, in Blender space. Returns (object, half height)."""
     root = B(None, key)
     if form == "puck":
-        ob = root.cylinder(0.62, P_H, m.base, segs=72)
+        ob = root.cylinder(J_SIZE / 2, P_H, m.base, segs=72)
         half = P_H / 2
     elif form == "tray":
         ob = root.up(rrect(w, d, 0.04), 0.05, m.glass, 0.01)
@@ -878,8 +879,11 @@ def element(key, etype, name=None, x=0.0, y=0.0, font=None, w=None, d=None, z=0.
     m = Mats(e["layer"])
     form = e["plinth"]
     name = e["name"] if name is None else name
-    w = P_W if w is None or form == "puck" else w
-    d = P_D if d is None or form == "puck" else d
+    if form == "puck":
+        w = d = J_SIZE  # its ports sit on the rim of the puck
+    else:
+        w = P_W if w is None else w
+        d = P_D if d is None else d
     root, half = plinth(key, form, m, w, d)
     root.location = (x, y, z + half)
     root["archimate_type"] = etype
@@ -1272,6 +1276,10 @@ def main():
         view = EXAMPLE_VIEW
     built, connectors = build_view(view, font, args.straight)
     print(f"archimate3d: {len(built)} elements, {len(connectors)} connectors")
+    if not built:
+        # an empty view (a new model) has nothing to frame or render
+        print("archimate3d: the view is empty; nothing to build")
+        return
 
     if args.check and connectors:
         print(f"archimate3d: after moving an element, connector ends are within {check(built, connectors):.4f} of their ports")

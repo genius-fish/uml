@@ -70,5 +70,4 @@ enum GraphProblem derives CanEqual:
 
 enum SceneError derives CanEqual:
   case InvalidGraph(problems: ::[GraphProblem])
-  case LayoutFailed(reason: String)
-  case ResourceMissing(name: String)
+  case LayoutFailed(cause: Throwable)
