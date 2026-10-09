@@ -24,6 +24,7 @@ prepare: fix fmt compile
 
 build: prepare test
 
+# Set BLENDER_AVAILABLE=1 to also run the scene builder in Blender, headless.
 test:
 	./mill __.test.testForked
 

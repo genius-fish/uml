@@ -21,6 +21,9 @@ and a lathe.
 Headless:
   blender -b -P archimate3d_blender.py -- [--view view.json | --catalogue]
           [--blend out.blend] [--render out.png] [--samples 96] [--check]
+          [--straight] [--labels auto|placard|float]
+--labels auto (the default) floats each name above its element when the placards
+would render too small to read.
   Without --view or --catalogue it builds the example view (the canvas's hero).
 In the Blender UI: open in the Text Editor and Run Script; it builds the example
 view into a new "ArchiMate" collection and leaves the rest of the file alone.
@@ -1219,95 +1222,140 @@ def stage(roots, azimuth, elevation, res, samples):
 
 
 # ── floating labels ───────────────────────────────────────────────────────────
-LABEL_PX = 16           # a floating name's height in the render, in pixels
-LEGIBLE_PX = 9          # a placard name below this is not read: float the names
-PLACARD_NAME = 0.12     # a placard name's height in scene units, about
-LEAF_TOP = 1.6          # above a leaf's sculpture
-CONTAINER_TOP = 0.75    # above a container's front strip, below its children's labels
-RAISES = 8              # how often a label that overlaps another may move up
-CHAR_WIDTH = 0.5        # a character's width, in label heights
+LABEL_MODES = ("auto", "placard", "float")
+LABEL_PX = 16              # a floating name's height in the render, in pixels
+LEGIBLE_PX = 9             # a placard name below this is not read: float the names
+PLACARD_NAME = 0.12        # a placard name's height in scene units, about
+LEAF_TOP = 1.6             # a leaf's name floats this high, above its sculpture
+CONTAINER_TOP = 0.75       # a container's floats lower, under its children's names
+CONTAINER_INSET = 0.35     # and over its front strip, this far in from the edge
+RAISES = 8                 # how often a name that covers another may move up
+RAISE_STEP = 1.7           # how far it moves each time, in label heights
+CHAR_WIDTH = 0.5           # a character's width, in label heights
+CARD_MARGIN = 0.7          # the card's width beyond the text, in label heights
+CARD_HEIGHT = 1.55         # the card's height, in label heights
+CARD_GAP = 0.05            # how far behind the name its card sits, in label heights
+CARD_ALPHA = 0.82
+
+
+def _px_per_unit(scene, cam, point):
+    """How many pixels one scene unit spans upright on the screen at `point`."""
+    from bpy_extras.object_utils import world_to_camera_view
+
+    up = cam.matrix_world.to_3x3() @ Vector((0, 1, 0))
+    here, above = world_to_camera_view(scene, cam, point), world_to_camera_view(scene, cam, point + up)
+    return abs(above.y - here.y) * scene.render.resolution_y
 
 
 def label_size(scene, cam, point):
-    """Scene units that render LABEL_PX tall at the camera's distance to `point`."""
-    res_x, res_y = scene.render.resolution_x, scene.render.resolution_y
-    distance = (cam.matrix_world.translation - point).length
-    vertical = 2 * math.atan(math.tan(cam.data.angle_x / 2) * res_y / res_x)
-    return LABEL_PX / res_y * 2 * distance * math.tan(vertical / 2)
+    """Scene units that render LABEL_PX tall at `point`, at any render size or aspect."""
+    return LABEL_PX / _px_per_unit(scene, cam, point)
 
 
 def placard_px(scene, cam, roots):
     """How tall a placard's name renders, in pixels, at the middle of the view."""
     centre = sum((r.matrix_world.translation for r in roots), Vector()) / len(roots)
-    return PLACARD_NAME / label_size(scene, cam, centre) * LABEL_PX
+    return PLACARD_NAME * _px_per_unit(scene, cam, centre)
 
 
 def wants_floating(mode, scene, cam, roots):
     """auto floats the names when a placard would render smaller than LEGIBLE_PX."""
-    if mode != "auto":
-        return mode == "float"
-    return placard_px(scene, cam, roots) < LEGIBLE_PX
+    if mode == "auto":
+        return placard_px(scene, cam, roots) < LEGIBLE_PX
+    return mode == "float"
+
+
+def _label_extent(name):
+    """A floating name with its card: width and height, in label heights."""
+    return CHAR_WIDTH * len(name) + CARD_MARGIN, CARD_HEIGHT
 
 
 def _screen_box(scene, cam, point, name):
-    """The label's box in the frame, as fractions of its width and height."""
+    """The name's card on the screen, as fractions of the frame's width and height. The
+    names keep the camera's rotation, so the card is upright there."""
     from bpy_extras.object_utils import world_to_camera_view
 
     centre = world_to_camera_view(scene, cam, point)
-    width = LABEL_PX * (CHAR_WIDTH * len(name) + 0.8) / scene.render.resolution_x
-    height = LABEL_PX * 1.6 / scene.render.resolution_y
-    return (centre.x - width / 2, centre.y - height / 2, centre.x + width / 2, centre.y + height / 2)
+    width, height = _label_extent(name)
+    half_w = LABEL_PX * width / scene.render.resolution_x / 2
+    half_h = LABEL_PX * height / scene.render.resolution_y / 2
+    return centre.x - half_w, centre.y - half_h, centre.x + half_w, centre.y + half_h
 
 
 def _overlap(a, b):
     return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
 
 
+def _label_offset(root):
+    """Where an element's name floats, relative to its plinth's origin."""
+    half = root.matrix_world.translation.z - root.get("am_z", 0.0)
+    if root.get("am_container"):
+        return Vector((0, -root.get("am_d", P_D) / 2 + CONTAINER_INSET, CONTAINER_TOP - half))
+    return Vector((0, 0, LEAF_TOP - half))
+
+
+def _raise_until_free(scene, cam, root, name, label_height, placed):
+    """The name's offset, moved up while it covers a name already placed; and whether it
+    came free within RAISES steps."""
+    offset = _label_offset(root)
+    for _ in range(RAISES + 1):
+        box = _screen_box(scene, cam, root.matrix_world.translation + offset, name)
+        if not any(_overlap(box, other) for other in placed):
+            return offset, box, True
+        offset = offset + Vector((0, 0, label_height * RAISE_STEP))
+    return offset, box, False
+
+
+def _label_object(root, name, offset, label_height, card_material, font):
+    """The name as text, with its card behind it; text faces its +Z, so behind is -Z."""
+    cu = bpy.data.curves.new(f"{root.name}.floating", "FONT")
+    cu.body = name
+    cu.align_x = "CENTER"
+    cu.align_y = "CENTER"
+    cu.size = label_height
+    if font is not None:
+        cu.font = font
+    cu.materials.append(label_ink())
+    text = link(bpy.data.objects.new(cu.name, cu), root)
+    text.location = offset
+    width, height = _label_extent(name)
+    bm = bmesh.new()
+    bmesh.ops.create_grid(bm, x_segments=1, y_segments=1, size=0.5)
+    bmesh.ops.scale(bm, vec=(label_height * width, label_height * height, 1), verts=bm.verts)
+    card = mesh_from_bm(f"{root.name}.floating.card", bm, card_material, text, smooth=False)
+    card.location = (0, 0, -label_height * CARD_GAP)
+    for ob in (text, card):
+        ob.hide_select = True
+        if hasattr(ob, "visible_shadow"):
+            ob.visible_shadow = False
+    return text
+
+
+def _face_camera(ob, cam):
+    # The camera's own rotation, not a Track To at it: aimed at the camera, a name off the
+    # middle of the frame rolls and its card shears.
+    keep = ob.constraints.new("COPY_ROTATION")
+    keep.target = cam
+
+
 def float_labels(scene, cam, roots, font=None):
-    """Each named element's name above it, on a light card, kept facing the camera. Taken
-    front to back, a label that would cover one already placed moves up until it is free."""
+    """Each named element's name above it, on a light card, upright on the screen and
+    parented to its element. Taken front to back, a name that covers one already placed
+    moves up, at most RAISES times. Returns (names, names not freed, pairs still covering)."""
     bpy.context.view_layer.update()
     named = [r for r in roots if r.get("archimate_name") and r.get("am_form") != "puck"]
     named.sort(key=lambda r: (cam.matrix_world.translation - r.matrix_world.translation).length)
-    card_mat = material("am.card", srgb_to_linear("#F7F6F2"), 0.6, alpha=0.82)
-    placed = []
+    card_material = material("am.card", srgb_to_linear("#F7F6F2"), 0.6, alpha=CARD_ALPHA)
+    placed, stuck = [], 0
     for root in named:
         name = root["archimate_name"]
-        half = root.matrix_world.translation.z - root.get("am_z", 0.0)
-        offset = Vector((0, -root.get("am_d", P_D) / 2 + 0.35, CONTAINER_TOP - half)) if root.get("am_container") \
-            else Vector((0, 0, LEAF_TOP - half))
-        size = label_size(scene, cam, root.matrix_world.translation + offset)
-        for _ in range(RAISES):
-            box = _screen_box(scene, cam, root.matrix_world.translation + offset, name)
-            if not any(_overlap(box, other) for other in placed):
-                break
-            offset = offset + Vector((0, 0, size * 1.7))
-        placed.append(_screen_box(scene, cam, root.matrix_world.translation + offset, name))
-        cu = bpy.data.curves.new(f"{root.name}.floating", "FONT")
-        cu.body = name
-        cu.align_x = "CENTER"
-        cu.align_y = "CENTER"
-        cu.size = size
-        if font is not None:
-            cu.font = font
-        cu.materials.append(label_ink())
-        text = link(bpy.data.objects.new(cu.name, cu), root)
-        text.location = offset
-        # a card behind the name, sized from its length; text faces +Z, so behind is -Z
-        bm = bmesh.new()
-        bmesh.ops.create_grid(bm, x_segments=1, y_segments=1, size=0.5)
-        bmesh.ops.scale(bm, vec=(size * (CHAR_WIDTH * len(name) + 0.6), size * 1.5, 1), verts=bm.verts)
-        card = mesh_from_bm(f"{root.name}.floating.card", bm, card_mat, text, smooth=False)
-        card.location = (0, 0, -size * 0.05)
-        track = text.constraints.new("TRACK_TO")
-        track.target = cam
-        track.track_axis = "TRACK_Z"
-        track.up_axis = "UP_Y"
-        for ob in (text, card):
-            ob.hide_select = True
-            if hasattr(ob, "visible_shadow"):
-                ob.visible_shadow = False
-    return len(placed)
+        label_height = label_size(scene, cam, root.matrix_world.translation + _label_offset(root))
+        offset, box, free = _raise_until_free(scene, cam, root, name, label_height, placed)
+        stuck += 0 if free else 1
+        placed.append(box)
+        _face_camera(_label_object(root, name, offset, label_height, card_material, font), cam)
+    covering = sum(1 for i, a in enumerate(placed) for b in placed[i + 1:] if _overlap(a, b))
+    return len(placed), stuck, covering
 
 
 def check(built, connectors):
@@ -1350,7 +1398,7 @@ def main():
     ap.add_argument("--elevation", type=float)
     ap.add_argument("--check", action="store_true", help="move an element and verify the connectors follow")
     ap.add_argument("--straight", action="store_true", help="ignore the layout's routes: straight lines between the nearest ports")
-    ap.add_argument("--labels", choices=("auto", "placard", "float"), default="auto",
+    ap.add_argument("--labels", choices=LABEL_MODES, default="auto",
                     help="names above the elements too: auto when the placards would be too small to read")
     args = ap.parse_args(argv)
 
@@ -1386,9 +1434,10 @@ def main():
         roots = [r for r, _ in built.values()]
         stage(roots, azimuth, elevation, (w, h), args.samples)
         scene, cam = bpy.context.scene, bpy.context.scene.camera
-        print(f"archimate3d: a placard's name renders about {placard_px(scene, cam, roots):.0f} px tall")
+        print(f"archimate3d: a placard's name renders about {placard_px(scene, cam, roots):.1f} px tall")
         if wants_floating(args.labels, scene, cam, roots):
-            print(f"archimate3d: {float_labels(scene, cam, roots, font)} floating labels")
+            names, stuck, covering = float_labels(scene, cam, roots, font)
+            print(f"archimate3d: {names} floating labels, {stuck} not freed, {covering} covering pairs")
     # Blender reads a bare relative name against the .blend, not the shell: make them absolute
     if args.blend:
         bpy.ops.wm.save_as_mainfile(filepath=os.path.abspath(args.blend))

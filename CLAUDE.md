@@ -59,6 +59,10 @@ The pipeline is **DSL → immutable `PUmlNode` AST → PlantUML `String` → ren
   builder and three.js shapes as resources (`SceneBuilder`). Its own rules are in DSL.md,
   "Scenes: ArchiMate in 3D". The builder in `scene/resources/` and the layout's JSON are one
   contract: a field renamed in `Scene.scala` is renamed in `archimate3d_blender.py`.
+  `SceneContractSpec` pins it, and checks the builder's options against DSL.md (handed in
+  by `scene.test.forkEnv`). `SceneBlenderSpec` runs the builder headless and is ignored
+  unless `BLENDER_AVAILABLE=1` (`BLENDER=…` names the binary): run it after any change to
+  the builder, `BLENDER_AVAILABLE=1 make test`.
 - **`examples`** — depends on `core`, `render` and `scene`. Runnable end-to-end showcases.
 
 ### DSL capture (the non-obvious part — `core/.../dsl/`)

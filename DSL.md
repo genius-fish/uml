@@ -957,9 +957,12 @@ headless on Blender 5.0.1 and 5.2.2.
 
 A placard is small: in an overview of a large view its name renders a few pixels tall.
 `--labels auto` (the default) then also floats each name above its element, about 16 px
-tall in the render whatever the scene's size, on a light card, kept facing the camera so
-it faces an interactive viewer too. It does so when a placard's name would render under
-9 px; the builder prints that size. Taken front to back, a floating name that would cover
-one already placed moves up until it is free. `--labels placard` and `--labels float`
-force either.
+tall in the render at any render size or aspect, on a light card. A floating name copies
+the scene camera's rotation, so it stands upright in the render; it is parented to its
+element and moves with it. The builder prints how tall a placard's name renders, and
+`auto` floats the names when that is under 9 px. Taken front to back, a floating name
+that would cover one already placed moves up, at most eight times; the builder prints
+how many names stayed covered and how many pairs still overlap, so a view too crowded
+for its render size shows in the output. `--labels placard` and `--labels float` force
+either.
 

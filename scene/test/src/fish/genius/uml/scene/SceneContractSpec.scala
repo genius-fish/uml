@@ -1,5 +1,10 @@
 package fish.genius.uml.scene
 
+import java.nio.charset.StandardCharsets
+import java.nio.file.{Files, Path}
+
+import scala.util.Try
+
 import zio.json.*
 import zio.json.ast.Json
 import zio.test.*
@@ -21,6 +26,14 @@ object SceneContractSpec extends ZIOSpecDefault:
   // the keys of its connector table: "serving": (None, "open", None)
   private val connectors = """"([a-z-]+)": \(""".r.findAllMatchIn(script).map(_.group(1)).toSet
 
+  // DSL.md's section on scenes, handed in by the build (scene.test.forkEnv)
+  private val scenesSection =
+    sys.env
+      .get("SCENE_DSL_MD")
+      .flatMap(path => Try(Files.readString(Path.of(path), StandardCharsets.UTF_8)).toOption)
+      .flatMap(_.split("\n## ").find(_.startsWith("Scenes:")))
+      .getOrElse("")
+
   private def keys(json: Json): Set[String] = json match
     case Json.Obj(fields) => fields.map(_._1).toSet ++ fields.flatMap((_, value) => keys(value))
     case Json.Arr(values) => values.flatMap(keys).toSet
@@ -36,12 +49,15 @@ object SceneContractSpec extends ZIOSpecDefault:
       test("the builder knows every connector the layout names"):
         assertTrue(RelationshipType.values.toList.map(SceneNames.of).filterNot(connectors).isEmpty)
       ,
-      test("the builder takes every option DSL.md documents"):
-        val options = List("--view", "--blend", "--render", "--check", "--straight", "--labels")
-        val choices = List("\"auto\"", "\"placard\"", "\"float\"")
+      test("the builder takes every option DSL.md documents for it"):
+        val documented = """--[a-z]+""".r.findAllIn(scenesSection).toSet
+        val taken      = """add_argument\("(--[a-z]+)"""".r.findAllMatchIn(script).map(_.group(1)).toSet
+        assertTrue(documented.contains("--labels"), documented.filterNot(taken).isEmpty)
+      ,
+      test("--labels chooses auto, placard or float, auto by default"):
         assertTrue(
-          options.filterNot(option => script.contains(s"\"$option\"")).isEmpty,
-          choices.forall(script.contains),
+          script.contains("""LABEL_MODES = ("auto", "placard", "float")"""),
+          script.contains("""add_argument("--labels", choices=LABEL_MODES, default="auto""""),
         )
       ,
       test("the builder reads every field the layout writes"):

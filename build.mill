@@ -154,7 +154,10 @@ object scene extends GeniusFishModule:
     mvn"dev.zio::zio:${V.zio}",
   )
 
-  object test extends GeniusFishTests
+  object test extends GeniusFishTests:
+    // the contract spec checks the builder against the options DSL.md documents
+    def dslMd   = Task.Source(mill.api.BuildCtx.workspaceRoot / "DSL.md")
+    def forkEnv = super.forkEnv() ++ Map("SCENE_DSL_MD" -> dslMd().path.toString)
 
 // ---------------------------------------------------------------------------
 // Module: testkit (golden-file + structural assertions for ZIO Test)
