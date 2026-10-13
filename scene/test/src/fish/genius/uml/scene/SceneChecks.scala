@@ -75,6 +75,39 @@ object SceneChecks:
 
   end throughPlinths
 
+  // the floor each pane takes, as a box in scene coordinates
+  def paneFloors(scene: Scene): List[(SceneElement, OrthogonalRouter.Box)] =
+    scene.elements.flatMap: e =>
+      e.pane.flatMap(p => PaneLayout.footprint(p, scene.panes.orientation, e.w, e.d)).map:
+        (
+          x0,
+          y0,
+          x1,
+          y1,
+        ) =>
+          e -> OrthogonalRouter.Box(e.x + (x0 + x1) / 2, e.y + (y0 + y1) / 2, x1 - x0, y1 - y0)
+
+  // a pane's floor over another leaf's plinth or another pane's floor
+  def paneOverlaps(scene: Scene): List[(String, String)] =
+    val floors    = paneFloors(scene)
+    val plinths   = scene.elements.filterNot(_.container).map(e => e -> OrthogonalRouter.Box(e.x, e.y, e.w, e.d))
+    val onPlinths = floors.flatMap: (owner, floor) =>
+      plinths.collect { case (e, box) if e.key != owner.key && box.meets(floor) => (owner.name, e.name) }
+    val onFloors  = floors.combinations(2).toList.collect:
+      case List((a, fa), (b, fb)) if fa.meets(fb) => (a.name, b.name)
+    onPlinths ++ onFloors
+
+  // a connector over a pane's floor
+  def routesOverPanes(scene: Scene): List[(SceneId, String)] =
+    for
+      (owner, floor) <- paneFloors(scene)
+      r              <- scene.relationships
+      points = route(scene, r)
+      if points.zip(points.drop(1)).exists { case ((x0, y0), (x1, y1)) =>
+        floor.inflate(-0.01).crosses(x0, y0, x1, y1)
+      }
+    yield (r.key, owner.name)
+
   // About a hundred nodes per scale over every layer: containers with children,
   // groupings, a fan of thirty leaves off one work package, connectors between containers.
   lazy val large: SceneGraph = generated(1)

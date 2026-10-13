@@ -24,10 +24,14 @@ Headless:
           [--straight] [--labels auto|placard|float]
           [--highlight KEY,NAME,SOURCE>TARGET] [--flyover [FLOW]]
           [--animation out.mp4] [--fps 30] [--frame N]
+          [--panes auto|upright|lectern|flat|floating|off]
 --labels auto (the default) floats each name above its element when the placards
 would render too small to read. --highlight dims the scene and lights what it names;
 --flyover flies the camera through one of the view's flows, step by step, into the
-timeline, and --animation renders that to a video (EEVEE, H.264).
+timeline, and --animation renders that to a video (EEVEE, H.264). An element with a
+"pane" gets its passport on a glass pane beside its plinth, standing as the view's
+"panes" style says unless --panes says otherwise; auto stands it upright, or flat on the
+floor when the camera looks down steeply.
   Without --view or --catalogue it builds the example view (the canvas's hero).
 In the Blender UI: open in the Text Editor and Run Script; it builds the example
 view into a new "ArchiMate" collection and leaves the rest of the file alone.
@@ -1088,6 +1092,380 @@ def connect(name, src_ports, tgt_ports, rtype, source_port=None, target_port=Non
     return path
 
 
+# ── passports: a glass pane beside the plinth ────────────────────────────────
+# The measures, by the names SceneLayout's PaneLayout.metrics gives them; the layout sized
+# each pane and kept its floor free with these, so the two must stay the same (pinned by
+# SceneContractSpec). A pane is laid out top to bottom in slots of these heights, text
+# broken into lines the way the layout broke it, so the pane comes out as tall as the
+# layout said; the builder prints by how much it differs, and any line wider than its room.
+PANE = {"width": 2.1, "pad": 0.1, "band": 0.03, "charWidth": 0.56, "valueColumn": 0.36,
+        "eyebrow": 0.05, "eyebrowLine": 0.08, "title": 0.12, "titleLine": 0.14,
+        "subtitle": 0.055, "subtitleLine": 0.08, "text": 0.055, "textLine": 0.08,
+        "label": 0.04, "labelLine": 0.07, "fact": 0.055, "factLine": 0.085, "chip": 0.09,
+        "note": 0.045, "noteLine": 0.065, "rowPad": 0.025, "bar": 0.035, "ticks": 0.07,
+        "gap": 0.05, "footer": 0.04, "footerLine": 0.06,
+        "floorGap": 0.3, "stemY": 0.35, "stemZone": 0.3, "uprightLift": 0.42, "behindLift": 1.25,
+        "lecternLift": 0.36, "lecternSlope": 35.0, "floatLift": 1.7, "autoFlat": 56.0}
+PANE_MODES = ("auto", "upright", "lectern", "flat", "floating", "off")
+TONES = {"neutral": "#80868C", "good": "#2E7D4F", "info": "#2A6FB0", "caution": "#A8840F",
+         "warning": "#C2621A", "critical": "#B3261E"}
+ASCENT = 0.23            # where a baseline sits in its slot, below the middle, in font sizes
+TEXT_Z = 0.016           # the face's text and marks, in front of the glass
+STEM_R, FOOT_R = 0.018, 0.13
+TETHER_FROM = 1.2        # a floating pane's tether starts this high above the plinth's foot
+
+Pane = namedtuple("Pane", "key holder face orientation w h built stem")
+
+
+def pane_lines(text, size, width):
+    """The lines a text breaks into: greedy by characters, as PaneLayout.lines."""
+    room = max(1, int(width / (size * PANE["charWidth"])))
+    lines, line = [], ""
+    for word in text.split():
+        longer = word if not line else f"{line} {word}"
+        if len(longer) > room and line:
+            lines.append(line)
+            line = word
+        else:
+            line = longer
+    if line:
+        lines.append(line)
+    return lines or [""]
+
+
+def pane_orientation(mode, elevation):
+    """Auto stands a pane upright, or lays it flat when the camera looks down steeply."""
+    if mode == "auto":
+        return "flat" if elevation > PANE["autoFlat"] else "upright"
+    return mode
+
+
+def pane_glass(tint, layer):
+    base = LAYERS.get(layer, LAYERS["neutral"])[0] if tint == "layer" else "#DCE7EC"
+    rgb = srgb_to_linear(base)
+    if tint == "layer":
+        rgb = [c + (1 - c) * 0.35 for c in rgb]
+    name = f"am.pane.glass.{tint}.{layer if tint == 'layer' else 'clear'}"
+    mat = bpy.data.materials.get(name)
+    if mat:
+        return mat
+    mat = material(name, rgb, 0.32)
+    bsdf = mat.node_tree.nodes.get("Principled BSDF")
+    for key, value in (("Transmission Weight", 0.82), ("Transmission", 0.82), ("IOR", 1.45)):
+        if bsdf and key in bsdf.inputs:
+            bsdf.inputs[key].default_value = value
+    if hasattr(mat, "use_raytrace_refraction"):  # EEVEE, for the flyover's video
+        mat.use_raytrace_refraction = True
+    mat.diffuse_color = (*rgb, 0.45)
+    return mat
+
+
+def pane_rim():
+    mat = bpy.data.materials.get("am.pane.rim")
+    if mat:
+        return mat
+    mat = material("am.pane.rim", srgb_to_linear("#8E99A1"), 0.28)
+    bsdf = mat.node_tree.nodes.get("Principled BSDF")
+    if bsdf and "Metallic" in bsdf.inputs:
+        bsdf.inputs["Metallic"].default_value = 0.7
+    return mat
+
+
+def tone_mat(tone, m, pale=False):
+    if tone == "layer":
+        return m.light if pale else m.deep
+    rgb = srgb_to_linear(TONES.get(tone, TONES["neutral"]))
+    if pale:
+        rgb = [c + (1 - c) * 0.78 for c in rgb]
+    return material(f"am.tone.{tone}{'.pale' if pale else ''}", rgb, 0.5)
+
+
+def muted():
+    return material("am.muted", srgb_to_linear("#4F565E"), 0.75)
+
+
+class Face:
+    """Lays a passport out on a pane face, top to bottom: x right, y up, +z out of the
+    glass, origin in the middle. `v` is the distance from the top edge."""
+
+    def __init__(self, b, w, h, m, font):
+        self.b, self.w, self.h, self.m, self.font = b, w, h, m, font
+        self.x0 = -w / 2 + PANE["pad"]
+        self.cw = w - 2 * PANE["pad"]
+        self.vc = self.cw * PANE["valueColumn"]
+        self.v = 0.0
+
+    def y(self, v):
+        return self.h / 2 - v
+
+    def line(self, body, size, x, v, slot, mat, room, align="LEFT"):
+        cu = bpy.data.curves.new(self.b.name("pane.text"), "FONT")
+        cu.body = body
+        cu.align_x = align
+        cu.align_y = "TOP_BASELINE"
+        cu.size = size
+        if self.font is not None:
+            cu.font = self.font
+        cu.materials.append(mat)
+        ob = link(bpy.data.objects.new(cu.name, cu), self.b.parent)
+        ob.location = (x, self.y(v + slot / 2) - ASCENT * size, TEXT_Z)
+        if hasattr(ob, "visible_shadow"):
+            ob.visible_shadow = False
+        ob["am_room"] = room
+        return ob
+
+    def lines(self, text, size, slot, mat, x=None, room=None):
+        x = self.x0 if x is None else x
+        room = self.cw if room is None else room
+        for part in pane_lines(text, size, room):
+            self.line(part, size, x, self.v, slot, mat, room)
+            self.v += slot
+
+    def box(self, x, v, w, h, mat, depth=0.006, z=TEXT_Z - 0.007):
+        """A flat box, its top-left corner at (x, v)."""
+        return self.b.box(w, h, depth, mat, min(0.004, depth / 2, w / 4, h / 4),
+                          (x + w / 2, self.y(v + h / 2), z))
+
+    def rule(self):
+        self.box(self.x0, self.v + PANE["gap"] / 2 - 0.002, self.cw, 0.004, muted(), 0.002)
+        self.v += PANE["gap"]
+
+    def label(self, text, v, slot):
+        self.line(text.upper(), PANE["label"], self.x0, v, slot, muted(), self.vc - 0.03)
+
+    def chip(self, chip, x, v):
+        size = PANE["fact"]
+        w = 0.1 + len(chip["text"]) * size * PANE["charWidth"] + 0.05
+        h = PANE["chip"]
+        tone = chip.get("tone", "neutral")
+        self.box(x, v, w, h, tone_mat(tone, self.m, pale=True), 0.006)
+        self.b.cylinder(0.018, 0.008, tone_mat(tone, self.m), (x + 0.05, self.y(v + h / 2), TEXT_Z - 0.003), segs=24)
+        self.line(chip["text"], size, x + 0.085, v, h, label_ink(), w - 0.1)
+        return w
+
+    def section(self, s):
+        kind = s["kind"]
+        x1, room = self.x0 + self.vc, self.cw - self.vc
+        if kind == "text":
+            self.lines(s["body"], PANE["text"], PANE["textLine"], label_ink())
+        elif kind == "facts":
+            if s.get("label"):
+                self.label(s["label"], self.v, PANE["labelLine"])
+                self.v += PANE["labelLine"]
+            for row in s["rows"]:
+                self.label(row["label"], self.v, PANE["factLine"])
+                self.lines(row["value"], PANE["fact"], PANE["factLine"], label_ink(), x1, room)
+        elif kind == "rated":
+            chip = s["chip"]
+            self.label(s["label"], self.v, PANE["chip"])
+            self.chip(chip, x1, self.v)
+            self.v += PANE["chip"]
+            if chip.get("note"):
+                self.lines(chip["note"], PANE["note"], PANE["noteLine"], muted(), x1, room)
+            self.v += PANE["rowPad"]
+        elif kind == "rating":
+            self.label(s["label"], self.v, PANE["chip"])
+            x = x1
+            for mark in s["marks"]:
+                tone = mark.get("tone", "neutral")
+                self.box(x, self.v, 0.2, PANE["chip"], tone_mat(tone, self.m, pale=True))
+                self.line(mark["letter"], PANE["note"], x + 0.035, self.v, PANE["chip"], muted(), 0.06)
+                self.line(mark["level"], PANE["fact"], x + 0.105, self.v, PANE["chip"], tone_mat(tone, self.m), 0.08)
+                x += 0.23
+            self.v += PANE["chip"]
+            if s.get("note"):
+                self.lines(s["note"], PANE["note"], PANE["noteLine"], muted(), x1, room)
+            self.v += PANE["rowPad"]
+        elif kind == "timeline":
+            self.label(s["label"], self.v, PANE["labelLine"])
+            self.v += PANE["labelLine"]
+            self.timeline(s["milestones"], s["asOf"])
+            if s.get("summary"):
+                self.lines(s["summary"], PANE["text"], PANE["textLine"], label_ink())
+
+    def timeline(self, milestones, as_of):
+        def year(iso):
+            y, mo, d = (int(p) for p in iso.split("-"))
+            return y + (mo - 1) / 12 + (d - 1) / 365
+        today = year(as_of)
+        stones = sorted(((year(st["date"]), st.get("tone", "neutral")) for st in milestones))
+        lo = math.floor(min([today] + [t for t, _ in stones[:1]]) - 0.5)
+        hi = math.ceil(max([today] + [t for t, _ in stones[-1:]]) + 0.8)
+
+        def at(t):
+            return self.x0 + (t - lo) / (hi - lo) * self.cw
+        bar = PANE["bar"]
+        self.box(self.x0, self.v, self.cw, bar, tone_mat("neutral", self.m, pale=True), 0.004)
+        for i, (t, tone) in enumerate(stones):
+            end = stones[i + 1][0] if i + 1 < len(stones) else hi
+            if at(end) - at(t) > 0.005:
+                self.box(at(t), self.v, at(end) - at(t), bar, tone_mat(tone, self.m), 0.008, TEXT_Z - 0.005)
+        self.box(at(today) - 0.004, self.v - 0.02, 0.008, bar + 0.04, ink(), 0.012, TEXT_Z - 0.004)
+        step = 4 if hi - lo > 10 else 2
+        first = int(math.ceil(lo / step) * step)
+        for yr in range(first, hi + 1, step):
+            self.box(at(yr) - 0.002, self.v + bar, 0.004, 0.02, muted(), 0.003)
+            self.line(str(yr), PANE["label"], at(yr), self.v + bar + 0.015, PANE["ticks"] - 0.015, muted(), 0.3, "CENTER")
+        self.v += bar + PANE["ticks"]
+
+    def passport(self, p):
+        self.box(-self.w / 2 + 0.02, 0.0, self.w - 0.04, PANE["band"], self.m.deep, 0.01)
+        self.v = PANE["band"] + PANE["pad"]
+        self.line(p["eyebrow"].upper(), PANE["eyebrow"], self.x0, self.v, PANE["eyebrowLine"], self.m.deep, self.cw)
+        self.v += PANE["eyebrowLine"]
+        self.lines(p["title"], PANE["title"], PANE["titleLine"], label_ink())
+        if p.get("subtitle"):
+            self.lines(p["subtitle"], PANE["subtitle"], PANE["subtitleLine"], muted())
+        for s in p.get("sections", []):
+            self.rule()
+            self.section(s)
+        if p.get("footer"):
+            self.rule()
+            self.line(p["footer"], PANE["footer"], self.x0, self.v, PANE["footerLine"], muted(), self.cw)
+            self.v += PANE["footerLine"]
+        return self.v + PANE["pad"]
+
+
+def pane_place(e, side, orientation, w, h, azimuth=0.0):
+    """Where a pane's middle stands and how it turns, relative to its plinth's centre on
+    the floor: ((x, y, z), face tilt about x, turn about z). An upright or floating pane
+    turns to face the camera's azimuth; a lectern or a flat pane stays square to the
+    plinth, on the floor the layout kept for it."""
+    turn = azimuth * DEG
+    pw, pd = e.get("w") or P_W, e.get("d") or P_D
+    beside, behind = pw / 2 + PANE["floorGap"], pd / 2 + PANE["floorGap"]
+    sx = {"right": 1, "left": -1}.get(side, 0)
+    sy = {"behind": 1, "front": -1}.get(side, 0)
+    if orientation == "floating":
+        return (0.0, 0.2, PANE["floatLift"] + h / 2), 90 * DEG, turn
+    if orientation == "upright":
+        if sx:
+            return (sx * (beside + w / 2), PANE["stemY"], PANE["uprightLift"] + h / 2), 90 * DEG, turn
+        lift = PANE["behindLift"] if sy > 0 else PANE["uprightLift"]
+        return (0.0, sy * (behind + PANE["stemZone"] / 2), lift + h / 2), 90 * DEG, turn
+    slope = PANE["lecternSlope"] * DEG
+    depth = h * math.cos(slope) if orientation == "lectern" else h
+    z = PANE["lecternLift"] + h / 2 * math.sin(slope) if orientation == "lectern" else 0.03
+    tilt = slope if orientation == "lectern" else 0.0
+    if sx:
+        return (sx * (beside + w / 2), 0.0, z), tilt, 0.0
+    return (0.0, sy * (behind + depth / 2), z), tilt, 0.0
+
+
+def build_pane(e, root, mode, tint, font, anchored=True, azimuth=0.0):
+    """One element's pane: a holder at its middle (turned about z), the face in it (tilted),
+    glass, rim and passport on the face, and a stem or tether. Parented to the plinth."""
+    pane = e["pane"]
+    w, h, p = pane["w"], pane["h"], pane["passport"]
+    layer = ELEMENTS.get(e["type"], {}).get("layer", "neutral")
+    m = Mats(layer)
+    (px, py, pz), tilt, turn = pane_place(e, pane["side"], mode, w, h, azimuth)
+    floor = Vector((e.get("x", 0.0), e.get("y", 0.0), e.get("z", 0.0)))
+    holder = empty(f"{e['key']}.pane", None, 0.05)
+    holder.location = floor + Vector((px, py, pz))
+    holder.rotation_euler = (0, 0, turn)
+    face = place_obj(empty(f"{e['key']}.pane.face", holder, 0.05), (0, 0, 0), (tilt, 0, 0))
+    b = B(face, f"{e['key']}.pane")
+    slab = b.box(w + 0.08, h + 0.08, 0.024, pane_glass(tint, layer), 0.006, (0, 0, 0))
+    if hasattr(slab, "visible_shadow"):
+        slab.visible_shadow = False
+    outer, inner = rrect(w + 0.1, h + 0.1, 0.08)[0], rrect(w + 0.068, h + 0.068, 0.064)[0]
+    rim = b.up([outer, inner], 0.034, pane_rim(), 0.004)
+    if hasattr(rim, "visible_shadow"):
+        rim.visible_shadow = False
+    lay = Face(b, w, h, m, font)
+    built = lay.passport(p)
+    stem = None
+    bpy.context.view_layer.update()
+    bottom = face.matrix_world @ Vector((0, -h / 2 - 0.05, 0))
+    if not anchored:
+        pass
+    elif mode in ("upright", "lectern"):
+        top = bottom if mode == "upright" else holder.matrix_world.translation - Vector((0, 0, 0.03))
+        base = Vector((top.x, top.y, floor.z))
+        sb = B(None, f"{e['key']}.pane.stem")
+        stem = sb.rod(tuple(base), tuple(top), STEM_R, material("am.pane.stem", srgb_to_linear("#C9CED2"), 0.25))
+        foot = sb.cylinder(FOOT_R, 0.025, material("am.pane.stem", srgb_to_linear("#C9CED2"), 0.25),
+                           tuple(base + Vector((0, 0, 0.0125))))
+        for ob in (stem, foot):
+            if ob is not None:
+                ob.parent = root
+                ob.matrix_parent_inverse = root.matrix_world.inverted()
+    elif mode == "floating":
+        sb = B(None, f"{e['key']}.pane.tether")
+        stem = sb.rod(tuple(floor + Vector((0, 0, TETHER_FROM))), tuple(bottom), 0.007,
+                      material("am.pane.tether", srgb_to_linear("#8C949B"), 0.4, alpha=0.6))
+        if stem is not None:
+            stem.parent = root
+            stem.matrix_parent_inverse = root.matrix_world.inverted()
+    holder.parent = root
+    holder.matrix_parent_inverse = root.matrix_world.inverted()
+    for o in [holder] + descendants(holder):
+        o.hide_select = True
+    return Pane(e["key"], holder, face, mode, w, h, built, stem)
+
+
+def build_panes(view, built, mode, azimuth, elevation, font):
+    """Every element's pane, as the view's style or `mode` says. Returns the panes and the
+    orientation they took."""
+    style = view.get("panes") or {}
+    mode = mode or style.get("orientation", "auto")
+    if mode == "off":
+        return [], mode
+    orientation = pane_orientation(mode, elevation)
+    tint = style.get("tint", "clear")
+    panes = []
+    for e in view["elements"]:
+        if e.get("pane") and e["key"] in built:
+            panes.append(build_pane(e, built[e["key"]][0], orientation, tint, font, style.get("anchored", True), azimuth))
+    return panes, orientation
+
+
+def face_camera(panes, cam, style):
+    """Turn each pane about the vertical towards the camera, as it moves too."""
+    if not (style or {}).get("faceCamera"):
+        return
+    for pane in panes:
+        keep = pane.holder.constraints.new("LOCKED_TRACK")
+        keep.target = cam
+        keep.track_axis = "TRACK_NEGATIVE_Y"
+        keep.lock_axis = "LOCK_Z"
+
+
+def pane_corners(panes):
+    bpy.context.view_layer.update()
+    return [pane.face.matrix_world @ Vector((sx * (pane.w / 2 + 0.05), sy * (pane.h / 2 + 0.05), 0))
+            for pane in panes for sx in (-1, 1) for sy in (-1, 1)]
+
+
+def measure_panes(panes, view):
+    """How far each pane's height is from the layout's, how many lines came out wider than
+    their room, and how many panes stand over a plinth not their own."""
+    bpy.context.view_layer.update()
+    worst, wide = 0.0, 0
+    for pane in panes:
+        worst = max(worst, abs(pane.built - pane.h))
+    for pane in panes:
+        for ob in descendants(pane.face):
+            if ob.type == "FONT" and ob.get("am_room") is not None and ob.dimensions.x > ob["am_room"] + 1e-3:
+                wide += 1
+    plinths = [(e["key"], e.get("x", 0.0), e.get("y", 0.0), (e.get("w") or P_W) / 2, (e.get("d") or P_D) / 2)
+               for e in view["elements"] if not e.get("container")]
+    over = 0
+    for pane in panes:
+        pts = [pane.face.matrix_world @ Vector((sx * pane.w / 2, sy * pane.h / 2, 0)) for sx in (-1, 1) for sy in (-1, 1)]
+        x0, x1 = min(p.x for p in pts), max(p.x for p in pts)
+        y0, y1 = min(p.y for p in pts), max(p.y for p in pts)
+        low = min(p.z for p in pts)
+        for key, px, py, hw, hd in plinths:
+            if key == pane.key:
+                continue
+            # an upright pane high above a plinth (behind its own sculpture) stands over nothing
+            if low < 1.2 and x0 < px + hw and px - hw < x1 and y0 < py + hd and py - hd < y1:
+                over += 1
+    return worst, wide, over
+
+
 # ── views ─────────────────────────────────────────────────────────────────────
 EXAMPLE_VIEW = {
     "elements": [
@@ -1184,7 +1562,7 @@ def frame(scene, cam, corners, azimuth, elevation, margin=0.05):
     aim(far)
 
 
-def stage(roots, azimuth, elevation, res, samples):
+def stage(roots, azimuth, elevation, res, samples, extra=()):
     scene = bpy.context.scene
     world = scene.world or bpy.data.worlds.new("World")
     scene.world = world
@@ -1219,6 +1597,7 @@ def stage(roots, azimuth, elevation, res, samples):
         p, hw, hd = r.matrix_world.translation, r.get("am_w", P_W) / 2, r.get("am_d", P_D) / 2
         top = 1.15 if not r.children or r.get("am_w", P_W) <= P_W else 0.6
         corners += [Vector((p.x + sx * hw, p.y + sy * hd, z)) for sx in (-1, 1) for sy in (-1, 1) for z in (0.0, p.z + top)]
+    corners += list(extra)  # the panes, so none is cut off at the edge
 
     cd = bpy.data.cameras.new("Camera")
     cd.lens = 70
@@ -1972,6 +2351,7 @@ def main():
     ap.add_argument("--animation", help="render the flyover to this .mp4")
     ap.add_argument("--fps", type=int, default=FPS)
     ap.add_argument("--frame", type=int, help="with --render: the flyover's frame to render")
+    ap.add_argument("--panes", choices=PANE_MODES, help="how the passports' panes stand (default: the view's style, else auto)")
     args = ap.parse_args(argv)
 
     if bpy.app.background:
@@ -2001,13 +2381,19 @@ def main():
 
     if args.animation and args.flyover is None:
         args.flyover = ""
+    azimuth = args.azimuth if args.azimuth is not None else (22 if args.catalogue else 35)
+    elevation = args.elevation if args.elevation is not None else (50 if args.catalogue else 36)
+    panes, orientation = build_panes(view, built, args.panes, azimuth, elevation, font)
+    if panes:
+        worst, wide, over = measure_panes(panes, view)
+        print(f"archimate3d: {len(panes)} panes {orientation}, heights within {worst:.4f} of the layout's, "
+              f"{wide} lines wider than their room, {over} over another plinth")
     flow = None
     if bpy.app.background or args.render or args.highlight or args.flyover is not None:
         w, h = args.size or ((1920, 1080) if args.animation else (1920, 1200))
-        azimuth = args.azimuth if args.azimuth is not None else (22 if args.catalogue else 35)
-        elevation = args.elevation if args.elevation is not None else (50 if args.catalogue else 36)
         roots = [r for r, _ in built.values()]
-        stage(roots, azimuth, elevation, (w, h), args.samples)
+        stage(roots, azimuth, elevation, (w, h), args.samples, pane_corners(panes))
+        face_camera(panes, bpy.context.scene.camera, view.get("panes"))
         flow = point(args, bpy.context.scene, bpy.context.scene.camera, view, built, roots, font)
     # Blender reads a bare relative name against the .blend, not the shell: make them absolute
     if args.blend:

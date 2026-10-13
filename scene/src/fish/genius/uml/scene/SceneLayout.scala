@@ -21,23 +21,25 @@ object SceneLayout:
   val JUNCTION_SIZE: Double = 1.24
 
   // Spacing in scene units. maxPerRow caps the plinths side by side; 0 means about the
-  // square root of the graph's size.
+  // square root of the graph's size. panes says how the passports' panes stand, which
+  // decides how much floor the layout keeps beside each plinth.
   final case class Options(
     nodeSpacing: Double = 0.9,
     layerSpacing: Double = 1.6,
     containerPadding: Double = 0.4,
     containerHeader: Double = 1.0,
-    maxPerRow: Int = 0)
+    maxPerRow: Int = 0,
+    panes: PaneStyle = PaneStyle())
 
   def layout(graph: SceneGraph, options: Options = Options()): Either[SceneError, Scene] =
     graph.problems match
-      case first :: rest              => Left(SceneError.InvalidGraph(::(first, rest)))
-      case Nil if graph.nodes.isEmpty => Right(Scene(graph.name, 0, 0, Nil, Nil))
-      case Nil                        =>
+      case first :: rest => Left(SceneError.InvalidGraph(::(first, rest)))
+      case Nil if graph.nodes.isEmpty => Right(Scene(graph.name, 0, 0, Nil, Nil, Nil, options.panes))
+      case Nil =>
         val structure = SceneStructure.of(graph)
         attempt(structure, options, modelOrder = true)
           .orElse(attempt(structure, options, modelOrder = false))
-          .map((sides, built) => scene(graph, structure, sides, built))
+          .map((sides, built) => scene(graph, structure, sides, built, options.panes))
 
   private val ROUNDING      = 1000.0
   private val SETTLE_ROUNDS = 3
@@ -88,9 +90,11 @@ object SceneLayout:
     structure: SceneStructure,
     sides: Map[SceneId, Sides],
     built: ElkPass.Built,
+    panes: PaneStyle,
   ): Scene =
-    val elements      =
-      structure.nodes.flatMap(node => built.rectOf(node.id).map(element(structure, built, node, _)))
+    val paneSides     = PaneLayout.sides(structure, sides, panes)
+    val elements      = structure.nodes.flatMap: node =>
+      built.plinthOf(node.id).map(element(structure, built, node, _, paneSides.get(node.id)))
     val byKey         = elements.map(element => element.key -> element).toMap
     val routes        = SceneRoutes(elements)
     val relationships = structure.edges.flatMap: edge =>
@@ -119,7 +123,7 @@ object SceneLayout:
           FlowLeg(step.source, step.target, step.label, carrier(relationships, step))
         ),
       )
-    Scene(graph.name, round(built.width), round(built.depth), elements, relationships, flows)
+    Scene(graph.name, round(built.width), round(built.depth), elements, relationships, flows, panes)
 
   end scene
 
@@ -136,6 +140,7 @@ object SceneLayout:
     built: ElkPass.Built,
     node: SceneNode,
     rect: ElkPass.Rect,
+    paneSide: Option[PaneSide],
   ): SceneElement =
     val centre = built.toScene(rect.x + rect.w / 2, rect.y + rect.h / 2)
     SceneElement(
@@ -149,6 +154,11 @@ object SceneLayout:
       z = round((structure.chain(node.id).size - 1) * PLINTH_HEIGHT),
       parent = structure.parentOf.get(node.id),
       container = node.isContainer,
+      pane =
+        for
+          side     <- paneSide
+          passport <- node.passport
+        yield ScenePane(side, PaneLayout.WIDTH, PaneLayout.height(passport), passport),
     )
 
   end element

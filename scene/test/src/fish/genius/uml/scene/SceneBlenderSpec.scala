@@ -2,6 +2,7 @@ package fish.genius.uml.scene
 
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path}
+import java.time.LocalDate
 
 import scala.jdk.CollectionConverters.*
 
@@ -35,6 +36,13 @@ object SceneBlenderSpec extends ZIOSpecDefault:
     gap: Double,
     leafShare: Double,
     loop: Option[Double])
+
+  final private case class Panes(
+    count: Int,
+    orientation: String,
+    heightOff: Double,
+    wide: Int,
+    over: Int)
 
   final private case class Floating(
     names: Int,
@@ -75,6 +83,12 @@ object SceneBlenderSpec extends ZIOSpecDefault:
     def floating: Option[Floating] =
       first("""(\d+) floating labels, (\d+) not freed, (\d+) covering pairs""")
         .collect { case List(n, s, c) => Floating(n.toInt, s.toInt, c.toInt) }
+
+    def panes: Option[Panes] =
+      first(
+        """(\d+) panes (\w+), heights within ([\d.]+) of the layout's, (\d+) lines wider than their room, (\d+) over"""
+      )
+        .collect { case List(n, o, h, w, v) => Panes(n.toInt, o, h.toDouble, w.toInt, v.toInt) }
 
     def notFound: List[String] =
       lines.flatMap("""nothing called '(.*)' in the view""".r.findFirstMatchIn(_).map(_.group(1)))
@@ -190,6 +204,36 @@ object SceneBlenderSpec extends ZIOSpecDefault:
       List(FlowRoute(SceneId("next door"), "Next door", List(FlowLeg(SceneId("a"), SceneId("b"), "hands over", None)))),
     )
 
+  // The small view with a passport on every element: every kind of section, a long title.
+  private val withPassports =
+    def passport(title: String) = Passport(
+      "Element",
+      title,
+      Some("a subtitle"),
+      List(
+        PassportSection.Text("A description long enough to wrap onto a second line on the pane, and a third."),
+        PassportSection.Facts(Some("Ownership"), List(Fact("Accountable", "Sales Operations and Customer Care"))),
+        PassportSection.Timeline(
+          "Lifecycle",
+          List(
+            Milestone("Planned", LocalDate.of(2019, 9, 1), Tone.Neutral),
+            Milestone("Active", LocalDate.of(2021, 3, 15), Tone.Layer),
+            Milestone("Deprecated", LocalDate.of(2028, 1, 1), Tone.Caution),
+          ),
+          LocalDate.of(2026, 10, 13),
+          Some("Active since March 2021"),
+        ),
+        PassportSection.Rated("Criticality", Chip("Critical", Tone.Critical, Some("No order ships without it"))),
+        PassportSection.Rating("Security", List(Mark("C", "H", Tone.Warning), Mark("I", "E", Tone.Critical))),
+      ),
+      Some("as of 13 Oct 2026"),
+    )
+    small.copy(nodes =
+      small.nodes.map(n => n.copy(passport = Some(passport(s"${n.label}, the long name of this element"))))
+    )
+
+  end withPassports
+
   private val MP4 = "ftyp".getBytes(StandardCharsets.US_ASCII) // after the box size
   private val PNG = Array(0x89, 'P', 'N', 'G').map(_.toByte)
 
@@ -204,6 +248,22 @@ object SceneBlenderSpec extends ZIOSpecDefault:
           scene <- laidOut(SceneChecks.large)
           run   <- inDirectory(build(_, scene, "--size", "2400x1500"))
         yield assertTrue(run.placardPx.exists(_ < 9), run.floating.contains(Floating(named(scene), 0, 0)))
+      ,
+      test("a passport's pane comes out as tall as the layout made it, every line in its room, over no plinth"):
+        for
+          upright <- built(withPassports, "--check")
+          flat    <- built(withPassports, "--elevation", "72")
+          lectern <- built(withPassports, "--panes", "lectern")
+          floats  <- built(withPassports, "--panes", "floating")
+          off     <- built(withPassports, "--panes", "off")
+        yield assertTrue(
+          upright.panes.contains(Panes(3, "upright", 0, 0, 0)),
+          flat.panes.contains(Panes(3, "flat", 0, 0, 0)),
+          lectern.panes.contains(Panes(3, "lectern", 0, 0, 0)),
+          floats.panes.exists(p => p.count == 3 && p.orientation == "floating" && p.wide == 0),
+          off.panes.isEmpty,
+          upright.checkGap.exists(_ < 0.05),
+        )
       ,
       test("--labels float and --labels placard force either"):
         for

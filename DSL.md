@@ -950,11 +950,12 @@ without it, and two runs of such a graph may differ, each keeping every rule abo
 
 `Scene` is JSON through zio-json: per element its key, `type` (the builder's shape name,
 `SceneNames.of`), name, centre `x`/`y`, footprint `w`/`d`, base height `z`, `parent` and
-`container`; per relationship its key, `type`, `sourcePort` and `targetPort`
+`container`, and its `pane` when it has one (above); per relationship its key, `type`, `sourcePort` and `targetPort`
 (`north`, `south`, `east`, `west`; north is away from the viewer), `bends` and `clear`;
 per flow its key, name and `steps`, each with `source`, `target`, `label` and the
-`relationship` it runs along, when one joins its ends. A scene without `flows` reads as
-one with none.
+`relationship` it runs along, when one joins its ends; and the scene's pane style as
+`panes`. A scene without `flows` reads as one with none, one without `panes` with the
+default style.
 
 ### In Blender
 
@@ -974,6 +975,74 @@ that would cover one already placed moves up, at most eight times; the builder p
 how many names stayed covered and how many pairs still overlap, so a view too crowded
 for its render size shows in the output. `--labels placard` and `--labels float` force
 either.
+
+### Passports: a glass pane beside the plinth
+
+A leaf element can carry a `Passport`: what it is, told on a glass pane that stands next to
+its plinth. The passport is generic: the scene does not know where the facts come from, so
+a caller composes one per node from its own model, already in the reader's language.
+
+```scala
+import java.time.LocalDate
+
+val crm = SceneNode(SceneId("crm"), NodeKind.Element(ApplicationComponent), "Customer Hub",
+  passport = Some(Passport(
+    eyebrow = "Application component",
+    title = "Customer Hub",
+    subtitle = Some("CRM · SaaS"),
+    sections = List(
+      PassportSection.Text("System of record for accounts, contacts and opportunities."),
+      PassportSection.Facts(Some("Ownership"), List(Fact("Accountable", "Sales Operations"))),
+      PassportSection.Timeline("Lifecycle",
+        List(Milestone("Active", LocalDate.of(2021, 3, 15), Tone.Layer),
+             Milestone("Deprecated", LocalDate.of(2028, 1, 1), Tone.Caution)),
+        asOf = LocalDate.of(2026, 10, 13), summary = Some("Active since March 2021")),
+      PassportSection.Rated("Criticality", Chip("High", Tone.Warning, Some("Sales cannot quote without it"))),
+      PassportSection.Rating("Security", List(Mark("C", "H", Tone.Warning), Mark("I", "M", Tone.Caution))),
+    ),
+    footer = Some("as of 13 Oct 2026"),
+  )))
+
+SceneLayout.layout(graph, SceneLayout.Options(panes = PaneStyle()))
+```
+
+- The sections are `Text` (wrapped to the pane's width), `Facts` (label and value rows under
+  an optional heading), `Rated` (one rating as a chip, with a note), `Rating` (a rating in
+  letters, such as C·I·A) and `Timeline` (dated milestones on a bar, each colouring the
+  stretch up to the next, with a mark at `asOf`). A `Tone` says what a chip, mark or stretch
+  means (`Neutral`, `Layer`, `Good`, `Info`, `Caution`, `Warning`, `Critical`); the builder
+  picks the colour, and `Layer` is the element's own layer colour.
+- `PaneStyle(orientation, side, faceCamera, anchored, tint)` holds for the whole scene and
+  is written into it as `panes`. `orientation` is `Auto` (the default), `Upright` (on a stem
+  beside the plinth), `Lectern` (leaning back at the placard's 35°), `Flat` (on the floor)
+  or `Floating` (above the sculpture, on a tether). `Auto` stands the panes upright while
+  the camera is low and lays them flat once it looks down more than 56°. `side` is the side
+  a pane prefers (`Right` by default); `faceCamera` keeps an upright or floating pane turned
+  to the camera while it moves; `anchored = false` leaves out the stems and tethers; `tint`
+  is `Clear` or `Layer`.
+- The layout keeps floor free for each pane, so a pane stands on no other plinth, pane or
+  connector: a leaf's ELK node grows by the pane's floor on its side, the plinth keeps its
+  size, and its ports stay in line with the middle of its sides. A pane gives way to a
+  connector: when one leaves its plinth on the pane's side, the pane takes the opposite
+  side, then behind, then in front. `Auto` keeps room for flat, the larger of the two it may
+  become; `Floating` takes no floor. Only a leaf element shows a pane, not a container, a
+  grouping or a junction.
+- `PaneLayout.height(passport)` is a pane's height, 2.1 units wide: the layout breaks text
+  into lines by characters (`PaneLayout.lines`, greedy, never inside a word) at fixed sizes
+  and line heights (`PaneLayout.metrics`). The builder lays a pane out with the same table,
+  so the two agree without measuring text twice. In the scene each element with a pane
+  carries `pane` with its `side`, `w`, `h` and `passport`; a section is written with its
+  `kind` (`text`, `facts`, `rated`, `rating`, `timeline`).
+
+In Blender a pane is a frosted glass slab (Principled BSDF, transmission) in a thin metal
+rim, its passport in text objects, so a render is sharp at any size. It is parented to its
+plinth and moves with it. An upright or floating pane turns to face the camera's azimuth;
+a lectern or flat pane stays square to its plinth, on the floor the layout kept.
+`--panes auto|upright|lectern|flat|floating|off` overrides the scene's style. The builder
+prints how many panes it built and how they stand, how far their heights are from the
+layout's, how many lines came out wider than their room, and how many panes stand over a
+plinth not their own. In an overview of a large view a pane is too small to read; it is
+made for a close camera, a still of a few elements or a flyover.
 
 ### Pointing: highlight and flyover
 

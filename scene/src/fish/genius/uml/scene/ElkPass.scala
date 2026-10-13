@@ -44,10 +44,22 @@ private[scene] object ElkPass:
   final case class Built(
     root: ElkNode,
     nodes: Map[SceneId, ElkNode],
-    edges: Map[SceneId, ElkEdge]):
+    edges: Map[SceneId, ElkEdge],
+    reserves: Map[SceneId, PaneLayout.Reserve] = Map.empty):
     def width: Double                     = root.getWidth / SCALE
     def depth: Double                     = root.getHeight / SCALE
     def rectOf(id: SceneId): Option[Rect] = nodes.get(id).map(rect)
+
+    // the plinth itself: the node, less the floor kept for its pane
+    def plinthOf(id: SceneId): Option[Rect] =
+      rectOf(id).map: node =>
+        reserves.get(id).fold(node): r =>
+          Rect(
+            node.x + r.left * SCALE,
+            node.y + r.back * SCALE,
+            SceneLayout.PLINTH_WIDTH * SCALE,
+            SceneLayout.PLINTH_DEPTH * SCALE,
+          )
 
     // ELK's top-left origin, y down → the scene's centred origin, y away from the viewer
     def toScene(x: Double, y: Double): ScenePoint =
@@ -178,8 +190,9 @@ private[scene] object ElkPass:
     root.setProperty(CoreOptions.ALGORITHM, ALGORITHM)
     root.setProperty(CoreOptions.HIERARCHY_HANDLING, HierarchyHandling.INCLUDE_CHILDREN)
     configure(root, options, modelOrder)
+    val kept   = PaneLayout.reserves(structure, sides, options.panes)
     val nodes  = structure.roots.foldLeft(Map.empty[SceneId, ElkNode])((acc, node) =>
-      acc ++ add(structure, node, root, options, modelOrder)
+      acc ++ add(structure, node, root, options, modelOrder, kept)
     )
     // the invisible edges that fold a row too wide into several (see foldsOf)
     for
@@ -193,7 +206,9 @@ private[scene] object ElkPass:
       )
     val ports  = wanted.distinct
       .flatMap((id, side) =>
-        nodes.get(id).map(elkNode => (id, side) -> port(elkNode, side, structure.isContainer(id)))
+        nodes.get(id).map(elkNode =>
+          (id, side) -> port(elkNode, side, structure.isContainer(id), kept.get(id))
+        )
       )
       .toMap
     val edges  = structure.edges.flatMap: edge =>
@@ -204,7 +219,7 @@ private[scene] object ElkPass:
         val elkEdge = ElkGraphUtil.createSimpleEdge(from, to)
         elkEdge.setIdentifier(edge.id.value)
         edge.id -> elkEdge
-    Built(root, nodes, edges.toMap)
+    Built(root, nodes, edges.toMap, kept)
   end build
 
   private def add(
@@ -213,6 +228,7 @@ private[scene] object ElkPass:
     parent: ElkNode,
     options: SceneLayout.Options,
     modelOrder: Boolean,
+    kept: Map[SceneId, PaneLayout.Reserve],
   ): Map[SceneId, ElkNode] =
     val elkNode   = ElkGraphUtil.createNode(parent)
     val partition = structure.partition.getOrElse(node.id, SceneStructure.BUSINESS)
@@ -221,10 +237,11 @@ private[scene] object ElkPass:
     if node.isContainer then
       container(elkNode, node.kind, options, modelOrder)
       node.children.foldLeft(Map(node.id -> elkNode))((acc, child) =>
-        acc ++ add(structure, child, elkNode, options, modelOrder)
+        acc ++ add(structure, child, elkNode, options, modelOrder, kept)
       )
     else
-      val size = footprint(node.kind)
+      // a pane's floor makes the node larger than its plinth
+      val size = kept.get(node.id).fold(footprint(node.kind))(r => (width = r.w, depth = r.d))
       elkNode.setDimensions(size.width * SCALE, size.depth * SCALE)
       elkNode.setProperty(CoreOptions.PORT_CONSTRAINTS, PortConstraints.FIXED_POS)
       Map(node.id -> elkNode)
@@ -259,20 +276,27 @@ private[scene] object ElkPass:
   end container
 
   // A leaf's port sits exactly in the middle of its side; a container's is centred by ELK.
+  // With a pane's floor beside the plinth, the port stays on the node's edge, in line with
+  // the middle of the plinth's side, and the route runs straight on to the plinth.
   private def port(
     elkNode: ElkNode,
     side: PortName,
     isContainer: Boolean,
+    kept: Option[PaneLayout.Reserve],
   ): ElkPort =
     val elkPort = ElkGraphUtil.createPort(elkNode)
     elkPort.setDimensions(0, 0)
     elkPort.setProperty(CoreOptions.PORT_SIDE, portSide(side))
     if !isContainer then
+      val across =
+        kept.fold(elkNode.getWidth / 2)(r => (r.left + SceneLayout.PLINTH_WIDTH / 2) * SCALE)
+      val along  =
+        kept.fold(elkNode.getHeight / 2)(r => (r.back + SceneLayout.PLINTH_DEPTH / 2) * SCALE)
       side match
-        case PortName.North => elkPort.setLocation(elkNode.getWidth / 2, 0)
-        case PortName.South => elkPort.setLocation(elkNode.getWidth / 2, elkNode.getHeight)
-        case PortName.West  => elkPort.setLocation(0, elkNode.getHeight / 2)
-        case PortName.East  => elkPort.setLocation(elkNode.getWidth, elkNode.getHeight / 2)
+        case PortName.North => elkPort.setLocation(across, 0)
+        case PortName.South => elkPort.setLocation(across, elkNode.getHeight)
+        case PortName.West  => elkPort.setLocation(0, along)
+        case PortName.East  => elkPort.setLocation(elkNode.getWidth, along)
     elkPort
 
   end port

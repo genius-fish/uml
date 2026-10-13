@@ -1,5 +1,7 @@
 package fish.genius.uml.scene
 
+import java.time.LocalDate
+
 import zio.json.*
 import zio.test.*
 
@@ -91,10 +93,157 @@ object SceneLayoutSpec extends ZIOSpecDefault:
 
   private def y(label: String): Double = el(scene, label).map(_.y).getOrElse(Double.NaN)
 
+  // A passport with every kind of section.
+  private def passport(title: String, words: Int = 12): Passport =
+    Passport(
+      eyebrow = "Application component",
+      title = title,
+      subtitle = Some("CRM · SaaS"),
+      sections = List(
+        PassportSection.Text(List.fill(words)("account").mkString(" ")),
+        PassportSection.Facts(Some("Ownership"), List(Fact("Accountable", "Sales Operations"))),
+        PassportSection.Timeline(
+          "Lifecycle",
+          List(
+            Milestone("Active", LocalDate.of(2021, 3, 15), Tone.Layer),
+            Milestone("Deprecated", LocalDate.of(2028, 1, 1), Tone.Caution),
+          ),
+          LocalDate.of(2026, 10, 13),
+          Some("Active since Mar 2021"),
+        ),
+        PassportSection.Rated("Criticality", Chip("High", Tone.Warning, Some("Sales cannot quote without it"))),
+        PassportSection.Rating("Security", List(Mark("C", "H", Tone.Warning), Mark("I", "M", Tone.Caution))),
+      ),
+      footer = Some("as of 13 Oct 2026"),
+    )
+
+  private def carrying(toCarry: SceneGraph, labels: Set[String]): SceneGraph =
+    def withPassport(n: SceneNode): SceneNode =
+      n.copy(
+        passport = Option.when(labels(n.label))(passport(n.label)),
+        children = n.children.map(withPassport),
+      )
+    toCarry.copy(nodes = toCarry.nodes.map(withPassport))
+
+  private def laidWith(toLay: SceneGraph, style: PaneStyle): Scene =
+    SceneLayout
+      .layout(toLay, SceneLayout.Options(panes = style))
+      .fold(error => Scene(s"failed: $error", 0, 0, Nil, Nil), identity)
+
+  // three side by side in a row, each joined to the next: the middle one has connectors
+  // on both its sides
+  private val row = SceneGraph(
+    "Row",
+    List(node("West", ApplicationComponent), node("Middle", ApplicationComponent), node("East", ApplicationComponent)),
+    List(edge("West", "Middle", Flow), edge("Middle", "East", Flow)),
+  )
+
   override def spec: Spec[TestEnvironment & Scope, Any] =
     suite("scene / SceneLayout")(
       test("every node gets a plinth, and no two plinths on one floor overlap"):
         assertTrue(scene.elements.size == graph.allNodes.size, SceneChecks.overlaps(scene).isEmpty)
+      ,
+      test("a passport's pane gets floor beside its plinth, on no other plinth, pane or connector"):
+        val withPanes = carrying(graph, graph.allNodes.map(_.label).toSet)
+        val laidOut   = laidWith(withPanes, PaneStyle())
+        val leaves    = laidOut.elements.filter(e => !e.container && !e.shape.endsWith("junction"))
+        assertTrue(
+          leaves.forall(_.pane.isDefined),
+          laidOut.elements.filter(e => e.container || e.shape.endsWith("junction")).forall(_.pane.isEmpty),
+          SceneChecks.overlaps(laidOut).isEmpty,
+          SceneChecks.paneOverlaps(laidOut).isEmpty,
+          SceneChecks.routesOverPanes(laidOut).isEmpty,
+          SceneChecks.diagonals(laidOut).isEmpty,
+          SceneChecks.throughPlinths(laidOut).isEmpty,
+          laidOut.relationships.forall(_.clear),
+        )
+      ,
+      test("a large graph full of passports keeps every pane clear"):
+        val withPanes = carrying(SceneChecks.large, SceneChecks.large.allNodes.map(_.label).toSet)
+        val laidOut   = laidWith(withPanes, PaneStyle())
+        assertTrue(
+          laidOut.elements.count(_.pane.isDefined) > 60,
+          SceneChecks.overlaps(laidOut).isEmpty,
+          SceneChecks.paneOverlaps(laidOut).isEmpty,
+          SceneChecks.diagonals(laidOut).isEmpty,
+        )
+      ,
+      test("a plinth keeps its size; its pane's floor goes on its preferred side"):
+        val laidOut = laidWith(carrying(row, Set("West")), PaneStyle(side = PaneSide.Left))
+        val west    = el(laidOut, "West")
+        assertTrue(
+          west.exists(e => e.w == SceneLayout.PLINTH_WIDTH && e.d == SceneLayout.PLINTH_DEPTH),
+          west.flatMap(_.pane).map(_.side).contains(PaneSide.Left),
+        )
+      ,
+      test("a pane gives way to a connector: to the opposite side, and behind when both are taken"):
+        // side by side, each joined to the next through east and west
+        val structure = SceneStructure.of(carrying(row, Set("West", "Middle", "East")))
+        val across    = structure.edges.map(_.id -> Sides(PortName.East, PortName.West)).toMap
+        val sides     = PaneLayout.sides(structure, across, PaneStyle(side = PaneSide.Right))
+        assertTrue(
+          sides.get(SceneId("West")).contains(PaneSide.Left),
+          sides.get(SceneId("Middle")).contains(PaneSide.Behind),
+          sides.get(SceneId("East")).contains(PaneSide.Right),
+        )
+      ,
+      test("laid out, every pane stands on a side no connector leaves by"):
+        val laidOut = laidWith(carrying(row, Set("West", "Middle", "East")), PaneStyle())
+        val taken   = laidOut.relationships.flatMap(r => List(r.source -> r.sourcePort, r.target -> r.targetPort)).toSet
+        def port(side: PaneSide) = side match
+          case PaneSide.Right  => PortName.East
+          case PaneSide.Left   => PortName.West
+          case PaneSide.Behind => PortName.North
+          case PaneSide.Front  => PortName.South
+        assertTrue(
+          laidOut.elements.forall(e => e.pane.exists(p => !taken((e.key, port(p.side))))),
+          SceneChecks.routesOverPanes(laidOut).isEmpty,
+        )
+      ,
+      test("a floating pane takes no floor: the plinths stand as they would without it"):
+        val floating = laidWith(carrying(row, Set("West", "Middle", "East")), PaneStyle(PaneOrientation.Floating))
+        val bare     = laid(row)
+        assertTrue(
+          floating.elements.map(e => (e.name, e.x, e.y)) == bare.elements.map(e => (e.name, e.x, e.y)),
+          floating.elements.forall(_.pane.isDefined),
+        )
+      ,
+      test("a pane is as tall as its passport needs, and a longer text makes it taller"):
+        val short = PaneLayout.height(passport("CRM"))
+        val long  = PaneLayout.height(passport("CRM", words = 60))
+        val title = PaneLayout.height(passport("Customer Relationship Management Platform for Sales"))
+        assertTrue(short > 1.0, long > short, title > short)
+      ,
+      test("text wraps greedily by characters, never splitting a word"):
+        val lines = PaneLayout.lines("one two three four five six", PaneLayout.TEXT, 0.5)
+        assertTrue(
+          lines.mkString(" ") == "one two three four five six",
+          lines.size > 1,
+          lines.forall(_.split(" ").forall(w => "one two three four five six".split(" ").contains(w))),
+          PaneLayout.lines("", PaneLayout.TEXT, 1.0) == List(""),
+          PaneLayout.lines("supercalifragilistic", PaneLayout.TEXT, 0.1) == List("supercalifragilistic"),
+        )
+      ,
+      test("a scene with panes round-trips through JSON, sections by lower-case kind"):
+        val laidOut =
+          laidWith(carrying(graph, Set("Customer", "Order")), PaneStyle(PaneOrientation.Lectern, PaneSide.Front))
+        val json    = laidOut.toJsonPretty
+        assertTrue(
+          json.contains("\"kind\" : \"timeline\""),
+          json.contains("\"orientation\" : \"lectern\""),
+          json.contains("\"tone\" : \"warning\""),
+          json.contains("\"asOf\" : \"2026-10-13\""),
+          json.fromJson[Scene] == Right(laidOut),
+        )
+      ,
+      test("a scene written before panes reads with the default style and none"):
+        val old = """{"name":"Old","width":0,"depth":0,"elements":[{"key":"a","type":"node","name":"A",""" +
+          """"x":0,"y":0,"w":2,"d":1.3,"z":0,"parent":null,"container":false}],"relationships":[]}"""
+        assertTrue(old.fromJson[Scene].map(s => (s.panes, s.elements.map(_.pane))) == Right((PaneStyle(), List(None))))
+      ,
+      test("an unknown section kind is refused, not dropped"):
+        val bad = """{"eyebrow":"X","title":"Y","sections":[{"kind":"poem","body":"z"}]}"""
+        assertTrue(bad.fromJson[Passport].left.exists(_.contains("poem")))
       ,
       test("layers lie back to front: motivation, business, application, technology"):
         assertTrue(

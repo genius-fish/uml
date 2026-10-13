@@ -7,7 +7,8 @@ import fish.genius.uml.dsl.archimate.{RelationshipType, ShapeType}
 // What a scene is laid out from: ArchiMate elements, nested by containment, and the
 // relationships between them. Which element contains which is the caller's to say
 // (a 2D diagram draws the same thing as a boundary); in the scene the children stand
-// on their container's plinth.
+// on their container's plinth. A leaf element may carry a passport, which the scene
+// shows on a glass pane beside its plinth (PaneLayout).
 
 opaque type SceneId = String
 
@@ -33,7 +34,8 @@ final case class SceneNode(
   id: SceneId,
   kind: NodeKind,
   label: String,
-  children: List[SceneNode] = Nil):
+  children: List[SceneNode] = Nil,
+  passport: Option[Passport] = None):
   def isContainer: Boolean = children.nonEmpty
 
   // this node and everything standing on it, parents before children

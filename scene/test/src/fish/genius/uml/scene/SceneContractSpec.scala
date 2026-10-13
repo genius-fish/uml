@@ -2,6 +2,7 @@ package fish.genius.uml.scene
 
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path}
+import java.time.LocalDate
 
 import scala.util.Try
 
@@ -39,6 +40,33 @@ object SceneContractSpec extends ZIOSpecDefault:
     case Json.Arr(values) => values.flatMap(keys).toSet
     case _                => Set.empty
 
+  // a passport with every field and every kind of section
+  private val everySection = Passport(
+    "Node",
+    "A",
+    Some("sub"),
+    List(
+      PassportSection.Text("t"),
+      PassportSection.Facts(Some("l"), List(Fact("k", "v"))),
+      PassportSection.Rated("r", Chip("c", Tone.Good, Some("n"))),
+      PassportSection.Rating("s", List(Mark("C", "H", Tone.Warning)), Some("n")),
+      PassportSection.Timeline(
+        "t",
+        List(Milestone("m", LocalDate.of(2026, 1, 1), Tone.Layer)),
+        LocalDate.of(2026, 10, 13),
+        Some("s"),
+      ),
+    ),
+    Some("f"),
+  )
+
+  // the builder's PANE table: "width": 2.1, ...
+  private val paneTable =
+    """"([A-Za-z]+)": ([\d.]+)""".r
+      .findAllMatchIn(script.slice(script.indexOf("PANE = {"), script.indexOf("}", script.indexOf("PANE = {"))))
+      .map(m => m.group(1) -> m.group(2).toDouble)
+      .toMap
+
   override def spec: Spec[TestEnvironment & Scope, Any] =
     suite("scene / the contract between the layout and the Blender builder")(
       test("the builder knows every shape the layout names"):
@@ -60,13 +88,38 @@ object SceneContractSpec extends ZIOSpecDefault:
           script.contains("""add_argument("--labels", choices=LABEL_MODES, default="auto""""),
         )
       ,
+      test("the builder lays a pane out with the layout's measures"):
+        assertTrue(paneTable.size == PaneLayout.metrics.size, PaneLayout.metrics.toMap == paneTable)
+      ,
+      test("the builder knows every section kind, tone and pane orientation the layout writes"):
+        val kinds = everySection.sections.flatMap(_.toJsonAST.toOption).collect:
+          case Json.Obj(fields) => fields.collectFirst { case ("kind", Json.Str(kind)) => kind }
+        assertTrue(
+          kinds.flatten.size == 5,
+          kinds.flatten.forall(kind => script.contains(s"kind == \"$kind\"")),
+          Tone.values.toList.filterNot(_ == Tone.Layer).map(_.toJson).forall(tone => script.contains(s"$tone:")),
+          PaneOrientation.values.toList.map(_.toJson).forall(script.contains),
+        )
+      ,
       test("the builder reads every field the layout writes"):
         val scene  = Scene(
           "One",
           8,
           4,
           List(
-            SceneElement(SceneId("a"), "node", "A", -2, 0, 2, 1.3, 0, Some(SceneId("p")), container = false),
+            SceneElement(
+              SceneId("a"),
+              "node",
+              "A",
+              -2,
+              0,
+              2,
+              1.3,
+              0,
+              Some(SceneId("p")),
+              container = false,
+              pane = Some(ScenePane(PaneSide.Right, PaneLayout.WIDTH, 1.6, everySection)),
+            ),
             SceneElement(SceneId("b"), "node", "B", 2, 0, 2, 1.3, 0, None, container = false),
           ),
           List(
@@ -88,6 +141,7 @@ object SceneContractSpec extends ZIOSpecDefault:
               List(FlowLeg(SceneId("a"), SceneId("b"), "asks", Some(SceneId("ab")))),
             )
           ),
+          PaneStyle(),
         )
         val fields = scene.toJsonAST.toOption.map(keys).getOrElse(Set.empty) --
           Set("name", "width", "depth", "elements", "relationships", "clear")

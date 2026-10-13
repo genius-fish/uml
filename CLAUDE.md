@@ -60,7 +60,10 @@ The pipeline is **DSL → immutable `PUmlNode` AST → PlantUML `String` → ren
   "Scenes: ArchiMate in 3D". The builder in `scene/resources/` and the layout's JSON are one
   contract: a field renamed in `Scene.scala` is renamed in `archimate3d_blender.py`.
   `SceneContractSpec` pins it, and checks the builder's options against DSL.md (handed in
-  by `scene.test.forkEnv`). `SceneBlenderSpec` runs the builder headless and is ignored
+  by `scene.test.forkEnv`). A passport's pane is sized twice from one table: `PaneLayout`
+  (the layout keeps floor for it) and the builder's `PANE` (it lays the pane out); the
+  spec holds the two equal, and the builder prints how far a pane it built is from the
+  layout's height. `SceneBlenderSpec` runs the builder headless and is ignored
   unless `BLENDER_AVAILABLE=1` (`BLENDER=…` names the binary): run it after any change to
   the builder, `BLENDER_AVAILABLE=1 make test`. It needs a Blender that runs EEVEE headless
   (5.x). The builder measures what it builds (connector ends on ports, label overlap, a
