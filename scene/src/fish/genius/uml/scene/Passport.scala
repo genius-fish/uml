@@ -132,6 +132,8 @@ object ScenePane:
 
 // The sections by hand, as {"kind": "text", "body": …}: zio-json's own discriminator
 // would name them by their Scala case, and the builder dispatches on lower-case kinds.
+// `encode` is the exhaustive side: a new case does not compile until it has a kind, and
+// then needs one in `decode` too (SceneLayoutSpec round-trips every kind).
 object PassportSection:
   import zio.json.ast.Json
 

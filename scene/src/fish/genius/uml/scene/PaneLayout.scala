@@ -233,12 +233,12 @@ object PaneLayout:
   // The side each pane stands on: the style's, unless a connector leaves the plinth there.
   private[scene] def sides(
     structure: SceneStructure,
-    sides: Map[SceneId, Sides],
+    ports: Map[SceneId, Sides],
     style: PaneStyle,
   ): Map[SceneId, PaneSide] =
     val used = structure.edges
       .flatMap: edge =>
-        sides.get(edge.id).toList.flatMap(s => List(edge.source -> s.from, edge.target -> s.to))
+        ports.get(edge.id).toList.flatMap(s => List(edge.source -> s.from, edge.target -> s.to))
       .groupMap(_._1)(_._2)
     structure.nodes
       .filter(shows)
@@ -252,10 +252,10 @@ object PaneLayout:
   // Each pane's floor, as ELK reserves it.
   private[scene] def reserves(
     structure: SceneStructure,
-    sides: Map[SceneId, Sides],
+    ports: Map[SceneId, Sides],
     style: PaneStyle,
   ): Map[SceneId, Reserve] =
-    this.sides(structure, sides, style).flatMap: (id, side) =>
+    sides(structure, ports, style).flatMap: (id, side) =>
       structure.byId.get(id).flatMap(_.passport).flatMap: passport =>
         reserve(
           style.orientation,
