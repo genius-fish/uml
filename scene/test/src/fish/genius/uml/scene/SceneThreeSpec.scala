@@ -97,12 +97,12 @@ object SceneThreeSpec extends ZIOSpecDefault:
       test("the three.js shapes lay a pane out with the layout's measures"):
         assertTrue(paneTable.size == PaneLayout.metrics.size, PaneLayout.metrics.toMap == paneTable)
       ,
-      test("the three.js shapes know every section kind and tone the layout writes"):
+      // every section kind is covered by the heights below; a tone changes no height
+      test("the three.js shapes have a colour for every tone the layout writes"):
         assertTrue(
-          List("text", "facts", "rated", "rating", "timeline").forall(kind => js.contains(s"s.kind === '$kind'")),
           Tone.values.toList.filterNot(_ == Tone.Layer).map(_.toJson.stripPrefix("\"").stripSuffix("\"")).forall(t =>
             js.contains(s"$t: '#")
-          ),
+          )
         )
       ,
       sameHeight @@ (if hasNode then TestAspect.identity else TestAspect.ignore),

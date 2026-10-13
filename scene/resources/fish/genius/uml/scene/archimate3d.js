@@ -801,6 +801,15 @@
     return wide;
   }
   var paneFaces = [];
+  // A scene rebuilt for new names lets go of its panes' faces, so they are not repainted forever.
+  function dropPanes(scene) {
+    scene.traverse(function (o) {
+      var f = o.userData && o.userData.face;
+      if (!f) return;
+      f.texture.dispose();
+      paneFaces = paneFaces.filter(function (g) { return g !== f; });
+    });
+  }
 
   // A passport on a glass pane, placed beside a plinth at the origin as the Blender
   // builder places it. opts: orientation (upright, lectern, flat, floating; auto takes
@@ -914,8 +923,10 @@
       lights(scene, 2.6, 1024);
     } else if (id.indexOf('pane-') === 0) {
       var etype = id.slice(5), ee = E[etype];
-      content = grp(element(etype, label), pane((names && names.passport) || SAMPLE_PASSPORT,
-        { layer: ee ? ee.layer : 'neutral', azimuth: 30 }));
+      // a data-passport that is not JSON shows the element alone, not the sample as if it were the data
+      var given = names ? names.passport : null;
+      content = grp(element(etype, label));
+      if (given !== false) content.add(pane(given || SAMPLE_PASSPORT, { layer: ee ? ee.layer : 'neutral', azimuth: 30 }));
       content.updateMatrixWorld(true);
       var ps = new T.Box3().setFromObject(content).getBoundingSphere(new T.Sphere());
       frame = { target: ps.center, radius: ps.radius * 0.85 };
@@ -1007,7 +1018,7 @@
     };
   }
   function parsed(text) {
-    try { return JSON.parse(text); } catch (err) { if (window.console) console.error('archimate3d: data-passport is not JSON'); return null; }
+    try { return JSON.parse(text); } catch (err) { if (window.console) console.error('archimate3d: data-passport is not JSON'); return false; }
   }
   // A canvas whose element or names changed since it was built is rebuilt.
   function viewFor(canvas) {
@@ -1016,6 +1027,7 @@
     if (v && v.sig === sig) return v;
     var built = buildScene(id, names);
     if (v) {
+      dropPanes(v.scene);
       v.scene = built.scene;
       v.frame = built.frame;
       v.sig = sig;
