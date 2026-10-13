@@ -1154,7 +1154,7 @@ def pane_glass(kind, layer):
     rgb = srgb_to_linear(base)
     if kind in ("layer", "frosted"):
         rgb = [c + (1 - c) * (0.35 if kind == "layer" else 0.25) for c in rgb]
-    name = f"am.pane.glass.{kind}.{layer if kind != 'clear' else 'clear'}"
+    name = f"am.pane.glass.{kind}.{layer if kind in ('layer', 'frosted') else 'clear'}"
     mat = bpy.data.materials.get(name)
     if mat:
         return mat
@@ -1549,17 +1549,22 @@ def render_device():
         prefs = bpy.context.preferences.addons["cycles"].preferences
     except (KeyError, AttributeError):
         return "CPU"
+    # Not testable without a GPU Blender can use: SceneBlenderSpec only sees the CPU path.
     for kind in ("OPTIX", "CUDA", "HIP", "ONEAPI", "METAL"):
         try:
             prefs.compute_device_type = kind
             prefs.get_devices()
-        except (TypeError, ValueError):
+        except Exception:  # a kind this build lacks, or a driver that will not load
             continue
         gpus = [d for d in prefs.devices if d.type == kind]
         if gpus:
             for d in prefs.devices:
                 d.use = d.type == kind
             return "GPU"
+    try:
+        prefs.compute_device_type = "NONE"
+    except Exception:
+        pass
     return "CPU"
 
 

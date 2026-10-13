@@ -265,6 +265,7 @@ object SceneBlenderSpec extends ZIOSpecDefault:
           flat.says("pane glass frosted"),
           lectern.says("pane glass frosted"),
           floats.panes.exists(p => p.count == 3 && p.orientation == "floating" && p.wide == 0),
+          floats.says("pane glass clear"),
           off.panes.isEmpty,
           upright.checkGap.exists(_ < 0.05),
         )
@@ -287,6 +288,17 @@ object SceneBlenderSpec extends ZIOSpecDefault:
             sized.lines.exists(_.matches("""archimate3d: rendering on the (CPU|GPU) at 320x200, 4 samples""")),
             plain.says("at 3840x2400, 256 samples"),
           )
+      ,
+      test("a larger render floats the same names: label size and legibility scale with its width"):
+        for
+          scene <- laidOut(SceneChecks.large)
+          small <- inDirectory(build(_, scene, "--size", "1920x1200"))
+          large <- inDirectory(build(_, scene, "--size", "3840x2400"))
+        yield assertTrue(
+          small.floating.contains(Floating(named(scene), 0, 0)),
+          large.floating.contains(Floating(named(scene), 0, 0)),
+          small.placardPx.zip(large.placardPx).exists((s, l) => math.abs(l / s - 2) < 0.1),
+        )
       ,
       test("--labels float and --labels placard force either"):
         for
