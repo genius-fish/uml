@@ -1881,6 +1881,7 @@ def spots():
 
 PANE_LIGHT = 30.0          # watts, for the light on a lit element's pane
 PANE_SPREAD = 25 * DEG     # its beam: wide enough for the pane, not the floor round it
+PANE_LIGHT_PAD = 0.4       # the light is this much wider and taller than its pane
 PANE_LIGHT_DIST = 1.4      # how far in front of its pane the light hangs
 
 
@@ -1889,7 +1890,7 @@ def pane_light(pane, power=PANE_LIGHT):
     turns to the camera. It lights the passport, not the camera's view of the glass."""
     ld = bpy.data.lights.new(f"{pane.key}.pane.light", "AREA")
     ld.shape = "RECTANGLE"
-    ld.size, ld.size_y = pane.w + 0.4, pane.h + 0.4
+    ld.size, ld.size_y = pane.w + PANE_LIGHT_PAD, pane.h + PANE_LIGHT_PAD
     ld.energy = power
     if hasattr(ld, "spread"):
         ld.spread = PANE_SPREAD
@@ -2002,8 +2003,14 @@ CAPTION_CHARS = 60         # a longer label is cut short, so the card stays in t
 READ_S = 3.2               # a passport moment holds this long on its pane
 READ_MARGIN = 0.1          # and frames the pane with this share of the frame free round it
 READ_ELEVATION = 12        # looking up at an upright pane's face from a little above
+READ_MAX_ELEVATION = 80    # a flat pane is read from this steep, not straight down
+READ_PUSH = 0.3            # a moment creeps forward this share of a step's push-in
+PANE_GROW = 0.05           # what a shot holds round a pane's face
 
-Flight = namedtuple("Flight", "frames steps along margin clearance gap leaf_share loop moments pane_margin read_share")
+Flight = namedtuple("Flight", [
+    "frames", "steps", "along", "margin", "clearance", "gap", "leaf_share", "loop",
+    "moments", "pane_margin", "read_share", "flipped",
+])
 
 
 def find_flow(view, wanted):
@@ -2187,7 +2194,7 @@ def shot_corners(source, target):
     return corners + [Vector((middle.x + sx * half, middle.y + sy * half, 0.0)) for sx in (-1, 1) for sy in (-1, 1)]
 
 
-def face_corners(pane, grow=0.05):
+def face_corners(pane, grow=PANE_GROW):
     """A pane's four corners in the world, as its face stands now."""
     return [pane.face.matrix_world @ Vector((sx * (pane.w / 2 + grow), sy * (pane.h / 2 + grow), 0))
             for sx in (-1, 1) for sy in (-1, 1)]
@@ -2256,15 +2263,19 @@ def read_pose(scene, cam, pane, faces_camera, toward):
         across = flat.normalized() if flat.length > 1e-6 else Vector((0, -1, 0))
         up = Vector((0, 0, 1))
         right = up.cross(across).normalized()
-        corners = [centre + right * (sx * (pane.w / 2 + 0.05)) + up * (sy * (pane.h / 2 + 0.05))
+        corners = [centre + right * (sx * (pane.w / 2 + PANE_GROW)) + up * (sy * (pane.h / 2 + PANE_GROW))
                    for sx in (-1, 1) for sy in (-1, 1)]
         azimuth = math.degrees(math.atan2(across.x, -across.y))
         elevation = READ_ELEVATION
     else:
-        normal = (pane.face.matrix_world.to_3x3() @ Vector((0, 0, 1))).normalized()
+        axes = pane.face.matrix_world.to_3x3()
+        normal, up = (axes @ Vector((0, 0, 1))).normalized(), (axes @ Vector((0, 1, 0))).normalized()
         corners = face_corners(pane)
-        azimuth = math.degrees(math.atan2(normal.x, -normal.y))
-        elevation = min(80.0, math.degrees(math.asin(max(-1.0, min(1.0, normal.z)))))
+        # from the side the face leans to; a flat face leans nowhere, so from below its
+        # top edge, which keeps the passport the right way up on the screen
+        side = Vector((normal.x, normal.y)) if math.hypot(normal.x, normal.y) > 1e-3 else -Vector((up.x, up.y))
+        azimuth = math.degrees(math.atan2(side.x, -side.y))
+        elevation = min(READ_MAX_ELEVATION, math.degrees(math.asin(max(-1.0, min(1.0, normal.z)))))
     # frame() aims by Euler angles; during a flight the camera turns by quaternions
     mode, cam.rotation_mode = cam.rotation_mode, "XYZ"
     frame(scene, cam, corners, azimuth, elevation, READ_MARGIN)
@@ -2310,8 +2321,10 @@ def measure_flight(scene, cam, built, shots):
 def measure_flight_panes(scene, cam, panes, shots, moments):
     """How the flight shows the passports: how far inside the frame the panes of each
     step's elements stay at its arrival, mid-run and departure (None without any), and the
-    smallest share of the frame's height a pane fills while it is read (None without any)."""
-    margin, share = None, None
+    smallest share of the frame's height a pane fills while it is read (None without any),
+    and how many moments show their pane upside down (its top edge lower on the screen
+    than its bottom)."""
+    margin, share, flipped = None, None, 0
     for step, frames, _ in shots:
         held = [panes[k] for k in {step["source"], step["target"]} if k in panes]
         for frame_no in frames if held else ():
@@ -2321,12 +2334,15 @@ def measure_flight_panes(scene, cam, panes, shots, moments):
                     m = min(p.x, 1 - p.x, p.y, 1 - p.y)
                     margin = m if margin is None else min(margin, m)
     for pane, frames in moments:
+        scene.frame_set(frames[1])
+        top, bottom = project(scene, cam, [pane.face.matrix_world @ Vector((0, y, 0)) for y in (pane.h / 2, -pane.h / 2)])
+        flipped += 1 if top.y <= bottom.y else 0
         for frame_no in frames:
             scene.frame_set(frame_no)
             ys = [p.y for p in project(scene, cam, face_corners(pane, 0.0))]
             seen = max(ys) - min(ys)
             share = seen if share is None else min(share, seen)
-    return margin, share
+    return margin, share, flipped
 
 
 def flyover(scene, cam, view, built, flow, font=None, fps=FPS, panes=()):
@@ -2376,11 +2392,11 @@ def flyover(scene, cam, view, built, flow, font=None, fps=FPS, panes=()):
             if k in by_key and k not in read:
                 read.add(k)
                 at, turn = read_pose(scene, cam, by_key[k], faces_camera, location)
-                held, done = f + s(GLIDE_S), f + s(GLIDE_S) + s(READ_S)
-                track.hold(held, at, turn)
-                track.hold(done, at + (turn @ Vector((0, 0, -1))) * PUSH_IN * 0.3, turn)
-                moments.append((by_key[k], (held, (held + done) // 2, done)))
-                f = done
+                read_start, read_end = f + s(GLIDE_S), f + s(GLIDE_S) + s(READ_S)
+                track.hold(read_start, at, turn)
+                track.hold(read_end, at + (turn @ Vector((0, 0, -1))) * PUSH_IN * READ_PUSH, turn)
+                moments.append((by_key[k], (read_start, (read_start + read_end) // 2, read_end)))
+                f = read_end
     for light in list(lights.values()) + list(pane_lights.values()):
         keyframe(light.data, "energy", f + s(FADE_S), 0.0)
     if not scene.get("am_dimmed"):  # a --highlight keeps the scene dimmed throughout
@@ -2391,17 +2407,27 @@ def flyover(scene, cam, view, built, flow, font=None, fps=FPS, panes=()):
     track.hold(f, *overview)
     scene.frame_start, scene.frame_end = 1, f
     margin, clearance, leaf_share, loop = measure_flight(scene, cam, built, shots)
-    pane_margin, read_share = measure_flight_panes(scene, cam, by_key, shots, moments)
+    pane_margin, read_share, flipped = measure_flight_panes(scene, cam, by_key, shots, moments)
     scene.frame_set(1)
-    return Flight(f, len(steps), along, margin, clearance, gap, leaf_share, loop, len(moments), pane_margin, read_share)
+    return Flight(frames=f, steps=len(steps), along=along, margin=margin, clearance=clearance, gap=gap,
+                  leaf_share=leaf_share, loop=loop, moments=len(moments), pane_margin=pane_margin,
+                  read_share=read_share, flipped=flipped)
 
 
-def render_animation(scene, path, samples=32):
-    """The timeline to an H.264 video, with EEVEE and Blender's own encoder."""
+VIDEO_SAMPLES = 64         # EEVEE samples per frame of a video
+
+
+def render_animation(scene, path, samples=VIDEO_SAMPLES):
+    """The timeline to an H.264 video, with EEVEE and Blender's own encoder. Raytracing is
+    on, or a pane's glass renders as an opaque grey slab: EEVEE refracts only with it."""
     engines = {e.identifier for e in scene.render.bl_rna.properties["engine"].enum_items}
     scene.render.engine = "BLENDER_EEVEE" if "BLENDER_EEVEE" in engines else "BLENDER_EEVEE_NEXT"
     if hasattr(scene.eevee, "taa_render_samples"):
         scene.eevee.taa_render_samples = samples
+    if hasattr(scene.eevee, "use_raytracing"):
+        scene.eevee.use_raytracing = True
+    print(f"archimate3d: the video renders with EEVEE, {samples} samples, raytracing "
+          f"{'on' if getattr(scene.eevee, 'use_raytracing', False) else 'unavailable'}")
     image = scene.render.image_settings
     if hasattr(image, "media_type"):
         image.media_type = "VIDEO"
@@ -2418,7 +2444,8 @@ def point(args, scene, cam, view, built, roots, font, panes=()):
     if args.highlight:
         elements, connectors, unknown = highlight(scene, view, built, args.highlight.split(","), panes)
         print(f"archimate3d: {len(elements)} elements and {len(connectors)} connectors in the light, "
-              f"{len(spots())} spots, ambient light at {scene.get('am_ambient', 1.0):.2f}")
+              f"{len(spots())} spots, ambient light at {scene.get('am_ambient', 1.0):.2f}, "
+              f"{sum(1 for ob in bpy.data.objects if ob.name.endswith('.pane.light'))} pane lights")
         for token in unknown:
             print(f"archimate3d: nothing called {token!r} in the view")
     flow = find_flow(view, args.flyover) if args.flyover is not None else None
@@ -2438,7 +2465,8 @@ def point(args, scene, cam, view, built, roots, font, panes=()):
         if flight.pane_margin is not None:
             read = f"{flight.read_share:.3f}" if flight.read_share is not None else "none"
             print(f"archimate3d: {flight.moments} passport moments; the panes of each step stay "
-                  f"{flight.pane_margin:.3f} inside the frame, and a pane read fills {read} of its height")
+                  f"{flight.pane_margin:.3f} inside the frame, and a pane read fills {read} of its height, "
+                  f"{flight.flipped} upside down")
         return flow
     print(f"archimate3d: a placard's name renders about {placard_px(scene, cam, roots):.1f} px tall")
     if wants_floating(args.labels, scene, cam, roots):

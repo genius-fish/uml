@@ -1112,7 +1112,8 @@ largest share of the frame's width a leaf's plinth takes (how close the camera c
 and how wide a step to itself opens its ring. A flow it cannot find, by key or name, is
 reported, and `--animation` then writes nothing.
 
-`--animation out.mp4` renders that timeline to an H.264 video with EEVEE and Blender's
+`--animation out.mp4` renders that timeline to an H.264 video with EEVEE (64 samples,
+raytracing on, so a pane's glass refracts as it does in Cycles) and Blender's
 own encoder (no ffmpeg needed), at 1920 by 1080 unless `--size` says otherwise and 30
 frames a second unless `--fps` does. `--frame N --render still.png` renders one frame of
 the flight as a still, with Cycles; useful for a thumbnail or to check the camera.

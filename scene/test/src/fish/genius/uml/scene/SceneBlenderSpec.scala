@@ -47,7 +47,8 @@ object SceneBlenderSpec extends ZIOSpecDefault:
   final private case class Reading(
     moments: Int,
     paneMargin: Double,
-    readShare: Option[Double])
+    readShare: Option[Double],
+    flipped: Int)
 
   final private case class Floating(
     names: Int,
@@ -96,8 +97,11 @@ object SceneBlenderSpec extends ZIOSpecDefault:
         .collect { case List(n, o, h, w, v) => Panes(n.toInt, o, h.toDouble, w.toInt, v.toInt) }
 
     def reading: Option[Reading] =
-      first("""(\d+) passport moments; the panes of each step stay ([\d.-]+) inside the frame, and a pane read fills ([\d.]+|none)""")
-        .collect { case List(n, m, r) => Reading(n.toInt, m.toDouble, r.toDoubleOption) }
+      first(
+        """(\d+) passport moments; the panes of each step stay ([\d.-]+) inside the frame, and a pane read fills ([\d.]+|none) of its height, (\d+) upside down"""
+      ).collect { case List(n, m, r, u) => Reading(n.toInt, m.toDouble, r.toDoubleOption, u.toInt) }
+
+    def paneLights: Option[Int] = first("""(\d+) pane lights""").map(_.head.toInt)
 
     def notFound: List[String] =
       lines.flatMap("""nothing called '(.*)' in the view""".r.findFirstMatchIn(_).map(_.group(1)))
@@ -309,25 +313,36 @@ object SceneBlenderSpec extends ZIOSpecDefault:
           small.placardPx.zip(large.placardPx).exists((s, l) => math.abs(l / s - 2) < 0.1),
         )
       ,
-      test("a flyover lights and reads every passport once, and flies as before without any"):
+      test("a flyover lights and reads every passport once, the right way up, and flies as before without any"):
+        def readable(run: Run) =
+          run.reading.exists(r => r.moments == 3 && r.paneMargin > 0.05 && r.readShare.exists(_ > 0.7) && r.flipped == 0)
         for
-          read  <- built(withPassports, "--flyover", "buying", "--fps", "6")
-          plain <- built(small, "--flyover", "buying", "--fps", "6")
+          read    <- built(withPassports, "--flyover", "buying", "--fps", "6")
+          flat    <- built(withPassports, "--flyover", "buying", "--fps", "6", "--panes", "flat")
+          lectern <- built(withPassports, "--flyover", "buying", "--fps", "6", "--panes", "lectern")
+          plain   <- built(small, "--flyover", "buying", "--fps", "6")
         yield assertTrue(
           // the customer, the process and the shop each carry a pane: three moments
-          read.reading.exists(r => r.moments == 3 && r.paneMargin > 0.05 && r.readShare.exists(_ > 0.5)),
+          readable(read),
+          readable(flat),
+          readable(lectern),
           // at 6 fps: the 63 frames of the plain flight + 3 moments × (glide 7 + read 19)
           read.flight.exists(f => f.steps == 2 && f.frames == 63 + 3 * (7 + 19)),
           read.flight.exists(f => f.margin > 0.05 && f.clearance > 0),
           plain.reading.isEmpty,
           plain.flight.exists(_.frames == 63),
         )
+        end for
       ,
       test("--labels float and --labels placard force either"):
         for
           floated <- built(small, "--labels", "float")
           placard <- built(SceneChecks.large, "--labels", "placard")
         yield assertTrue(floated.floating.map(_.names).contains(3), placard.floating.isEmpty)
+      ,
+      test("--highlight lights the panes of the elements it names"):
+        for run <- built(withPassports, "--highlight", "Web Shop, the long name of this element")
+        yield assertTrue(run.lit.exists(_.elements == 1), run.paneLights.contains(1))
       ,
       test("--highlight lights elements by name in any case, connectors either way round, each once"):
         for run <- built(small, "--highlight", "web shop,ordering>customer,Customer,customer,nowhere")
@@ -351,6 +366,7 @@ object SceneBlenderSpec extends ZIOSpecDefault:
             run.flight.exists(f => f.margin > 0.1 && f.clearance > 0 && f.gap < 0.4),
             run.flight.exists(f => f.leafShare < LEAF_SHARE_LIMIT && f.loop.isEmpty),
             valid,
+            run.says("the video renders with EEVEE, 64 samples, raytracing on"),
           )
       ,
       test("a flyover follows the connectors as drawn, straight ones too, and a highlight dims only once"):
