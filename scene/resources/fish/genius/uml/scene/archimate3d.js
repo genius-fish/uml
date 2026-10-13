@@ -15,7 +15,11 @@
  * Use: <canvas data-am="business-actor"> inside a root, then AM3D.mount(root, opts)
  * with opts { azimuth, elevation, spin }. The placard shows the element's ArchiMate
  * name unless the canvas sets data-label (data-label="" leaves it blank); the hero
- * scene takes its five names from data-labels="a|b|c|d|e".
+ * scene takes its five names from data-labels="a|b|c|d|e". <canvas data-am="pane-application-component">
+ * shows the element with a passport on a glass pane beside it: a sample one, or the
+ * passport in data-passport (JSON, as the scene writes it). AM3D.pane(passport, opts)
+ * builds a pane on its own, placed beside a plinth at the origin as the Blender builder
+ * places it; AM3D.paneHeight(passport) is its height, as SceneLayout's PaneLayout says.
  */
 (function () {
   'use strict';
@@ -644,6 +648,231 @@
     return g;
   }
 
+  // ── passports: a glass pane beside the plinth ─────────────────────────────
+  // The same measures as SceneLayout's PaneLayout.metrics and the Blender builder's
+  // PANE table (SceneContractSpec holds all three equal), and the same line breaking,
+  // so a pane here is as tall as the layout made it. paneLayout is pure: it returns the
+  // pane's height and what to draw, in scene units from the face's top-left corner;
+  // the face is then painted on a canvas, as the placards are.
+  var PANE = { "width": 2.1, "pad": 0.1, "band": 0.03, "charWidth": 0.56, "valueColumn": 0.36,
+    "eyebrow": 0.05, "eyebrowLine": 0.08, "title": 0.12, "titleLine": 0.14,
+    "subtitle": 0.055, "subtitleLine": 0.08, "text": 0.055, "textLine": 0.08,
+    "label": 0.04, "labelLine": 0.07, "fact": 0.055, "factLine": 0.085, "chip": 0.09,
+    "note": 0.045, "noteLine": 0.065, "rowPad": 0.025, "bar": 0.035, "ticks": 0.07,
+    "gap": 0.05, "footer": 0.04, "footerLine": 0.06,
+    "floorGap": 0.3, "stemY": 0.35, "stemZone": 0.3, "uprightLift": 0.42, "behindLift": 1.25,
+    "lecternLift": 0.36, "lecternSlope": 35.0, "floatLift": 1.7, "autoFlat": 56.0 };
+  var TONES = { neutral: '#80868C', good: '#2E7D4F', info: '#2A6FB0', caution: '#A8840F',
+    warning: '#C2621A', critical: '#B3261E' };
+  var PANE_INK = '#24272D', PANE_MUTED = '#4F565E', ASCENT = 0.23, PANE_PX = 1100 / 2.1;
+  var SAMPLE_PASSPORT = {
+    eyebrow: 'Application component', title: 'Customer Hub', subtitle: 'CRM · SaaS',
+    sections: [
+      { kind: 'text', body: 'System of record for accounts, contacts and opportunities.' },
+      { kind: 'facts', label: 'Ownership', rows: [{ label: 'Owner', value: 'Sales' }] },
+      { kind: 'timeline', label: 'Lifecycle', asOf: '2026-10-13', summary: 'Active since Mar 2021',
+        milestones: [{ label: 'Active', date: '2021-03-15', tone: 'layer' },
+          { label: 'Phasing out', date: '2028-01-01', tone: 'caution' }] },
+      { kind: 'rated', label: 'Criticality', chip: { text: 'High', tone: 'warning', note: 'Sales cannot quote without it' } },
+      { kind: 'rating', label: 'Security', marks: [{ letter: 'C', level: 'H', tone: 'warning' },
+        { letter: 'I', level: 'M', tone: 'caution' }, { letter: 'A', level: 'E', tone: 'critical' }] }
+    ],
+    footer: 'as of 13 Oct 2026'
+  };
+
+  // The lines a text breaks into: greedy by characters, as PaneLayout.lines.
+  function paneLines(text, size, width) {
+    var room = Math.max(1, Math.floor(width / (size * PANE.charWidth))), lines = [], line = '';
+    String(text).split(/\s+/).filter(Boolean).forEach(function (word) {
+      var longer = line ? line + ' ' + word : word;
+      if (Array.from(longer).length > room && line) { lines.push(line); line = word; } else line = longer;
+    });
+    if (line) lines.push(line);
+    return lines.length ? lines : [''];
+  }
+  function paneLayout(p) {
+    var w = PANE.width, x0 = PANE.pad, cw = w - 2 * PANE.pad, vc = cw * PANE.valueColumn, x1 = x0 + vc, room = cw - vc;
+    var ops = [], v = 0;
+    function text(s, size, x, at, slot, color, width, align) {
+      ops.push({ t: 'text', s: s, size: size, x: x, v: at, slot: slot, color: color, room: width, align: align || 'left' });
+    }
+    function lines(s, size, slot, color, x, width) {
+      paneLines(s, size, width == null ? cw : width).forEach(function (l) { text(l, size, x == null ? x0 : x, v, slot, color, width == null ? cw : width); v += slot; });
+    }
+    function box(x, at, bw, bh, color) { ops.push({ t: 'box', x: x, v: at, w: bw, h: bh, color: color }); }
+    function label(s, at, slot) { text(String(s).toUpperCase(), PANE.label, x0, at, slot, PANE_MUTED, vc - 0.03); }
+    function rule() { box(x0, v + PANE.gap / 2 - 0.002, cw, 0.004, 'rule'); v += PANE.gap; }
+    function chip(c, x, at) {
+      var cwid = 0.1 + Array.from(c.text).length * PANE.fact * PANE.charWidth + 0.05, tone = c.tone || 'neutral';
+      box(x, at, cwid, PANE.chip, { tone: tone, pale: true });
+      ops.push({ t: 'dot', x: x + 0.05, v: at + PANE.chip / 2, r: 0.018, color: { tone: tone } });
+      text(c.text, PANE.fact, x + 0.085, at, PANE.chip, PANE_INK, cwid - 0.1);
+    }
+    function timeline(stones, asOf) {
+      function year(iso) { var q = String(iso).split('-').map(Number); return q[0] + (q[1] - 1) / 12 + (q[2] - 1) / 365; }
+      var today = year(asOf), st = stones.map(function (m) { return [year(m.date), m.tone || 'neutral']; })
+        .sort(function (a, b) { return a[0] - b[0]; });
+      var lo = Math.floor(Math.min.apply(null, [today].concat(st.slice(0, 1).map(function (a) { return a[0]; }))) - 0.5);
+      var hi = Math.ceil(Math.max.apply(null, [today].concat(st.slice(-1).map(function (a) { return a[0]; }))) + 0.8);
+      function X(t) { return x0 + (t - lo) / (hi - lo) * cw; }
+      box(x0, v, cw, PANE.bar, { tone: 'neutral', pale: true });
+      st.forEach(function (a, i) {
+        var end = i + 1 < st.length ? st[i + 1][0] : hi;
+        if (X(end) - X(a[0]) > 0.005) box(X(a[0]), v, X(end) - X(a[0]), PANE.bar, { tone: a[1] });
+      });
+      box(X(today) - 0.004, v - 0.02, 0.008, PANE.bar + 0.04, PANE_INK);
+      var step = hi - lo > 10 ? 4 : 2;
+      for (var y = Math.ceil(lo / step) * step; y <= hi; y += step) {
+        box(X(y) - 0.002, v + PANE.bar, 0.004, 0.02, PANE_MUTED);
+        text(String(y), PANE.label, X(y), v + PANE.bar + 0.015, PANE.ticks - 0.015, PANE_MUTED, 0.3, 'center');
+      }
+      v += PANE.bar + PANE.ticks;
+    }
+    function section(s) {
+      if (s.kind === 'text') lines(s.body, PANE.text, PANE.textLine, PANE_INK);
+      else if (s.kind === 'facts') {
+        if (s.label) { label(s.label, v, PANE.labelLine); v += PANE.labelLine; }
+        (s.rows || []).forEach(function (r) { label(r.label, v, PANE.factLine); lines(r.value, PANE.fact, PANE.factLine, PANE_INK, x1, room); });
+      } else if (s.kind === 'rated') {
+        label(s.label, v, PANE.chip); chip(s.chip, x1, v); v += PANE.chip;
+        if (s.chip.note) lines(s.chip.note, PANE.note, PANE.noteLine, PANE_MUTED, x1, room);
+        v += PANE.rowPad;
+      } else if (s.kind === 'rating') {
+        label(s.label, v, PANE.chip);
+        var x = x1;
+        (s.marks || []).forEach(function (m) {
+          var tone = m.tone || 'neutral';
+          box(x, v, 0.2, PANE.chip, { tone: tone, pale: true });
+          text(m.letter, PANE.note, x + 0.035, v, PANE.chip, PANE_MUTED, 0.06);
+          text(m.level, PANE.fact, x + 0.105, v, PANE.chip, { tone: tone }, 0.08);
+          x += 0.23;
+        });
+        v += PANE.chip;
+        if (s.note) lines(s.note, PANE.note, PANE.noteLine, PANE_MUTED, x1, room);
+        v += PANE.rowPad;
+      } else if (s.kind === 'timeline') {
+        label(s.label, v, PANE.labelLine); v += PANE.labelLine;
+        timeline(s.milestones || [], s.asOf);
+        if (s.summary) lines(s.summary, PANE.text, PANE.textLine, PANE_INK);
+      }
+    }
+    box(0.02, 0, w - 0.04, PANE.band, 'deep');
+    v = PANE.band + PANE.pad;
+    text(String(p.eyebrow).toUpperCase(), PANE.eyebrow, x0, v, PANE.eyebrowLine, 'deep', cw);
+    v += PANE.eyebrowLine;
+    lines(p.title, PANE.title, PANE.titleLine, PANE_INK);
+    if (p.subtitle) lines(p.subtitle, PANE.subtitle, PANE.subtitleLine, PANE_MUTED);
+    (p.sections || []).forEach(function (s) { rule(); section(s); });
+    if (p.footer) { rule(); text(p.footer, PANE.footer, x0, v, PANE.footerLine, PANE_MUTED, cw); v += PANE.footerLine; }
+    return { w: w, h: Math.round((v + PANE.pad) * 1000) / 1000, ops: ops };
+  }
+
+  function paneColour(c, layer) {
+    var L = LAYERS[layer] || LAYERS.neutral;
+    if (c === 'deep') return L.deep;
+    if (c === 'rule') return 'rgba(79,86,94,0.35)';
+    if (typeof c === 'string') return c;
+    var hex = c.tone === 'layer' ? (c.pale ? L.base : L.deep) : (TONES[c.tone] || TONES.neutral);
+    if (!c.pale) return hex;
+    return '#' + new T.Color(hex).lerp(new T.Color('#FFFFFF'), c.tone === 'layer' ? 0.5 : 0.78).getHexString();
+  }
+  // Paints a laid-out pane; returns how many lines came out wider than their room.
+  function paintPane(f) {
+    var ctx = f.canvas.getContext('2d');
+    if (!ctx) return 0;
+    var S = PANE_PX, wide = 0;
+    ctx.clearRect(0, 0, f.canvas.width, f.canvas.height);
+    ctx.fillStyle = 'rgba(255,255,255,0.22)';
+    ctx.fillRect(0, 0, f.canvas.width, f.canvas.height);
+    f.layout.ops.forEach(function (o) {
+      ctx.fillStyle = paneColour(o.color, f.layer);
+      if (o.t === 'box') ctx.fillRect(o.x * S, o.v * S, Math.max(1, o.w * S), Math.max(1, o.h * S));
+      else if (o.t === 'dot') { ctx.beginPath(); ctx.arc(o.x * S, o.v * S, o.r * S, 0, Math.PI * 2); ctx.fill(); }
+      else {
+        ctx.font = (o.size >= PANE.title ? '600 ' : '400 ') + o.size * S + 'px ' + FONT;
+        ctx.textAlign = o.align;
+        ctx.textBaseline = 'alphabetic';
+        ctx.fillText(o.s, o.x * S, (o.v + o.slot / 2 + ASCENT * o.size) * S);
+        if (ctx.measureText(o.s).width > o.room * S + 1) wide++;
+      }
+    });
+    f.texture.needsUpdate = true;
+    f.wide = wide;
+    return wide;
+  }
+  var paneFaces = [];
+
+  // A passport on a glass pane, placed beside a plinth at the origin as the Blender
+  // builder places it. opts: orientation (upright, lectern, flat, floating; auto takes
+  // elevation), side (right, left, behind, front), layer, tint (clear, layer),
+  // azimuth (degrees, the camera's: an upright or floating pane turns to face it),
+  // anchored (a stem or tether), elevation (for auto).
+  function pane(passport, opts) {
+    opts = opts || {};
+    var lay = paneLayout(passport), w = lay.w, h = lay.h, layer = opts.layer || 'neutral', L = LAYERS[layer] || LAYERS.neutral;
+    var orientation = opts.orientation || 'auto';
+    if (orientation === 'auto') orientation = (opts.elevation || 24) > PANE.autoFlat ? 'flat' : 'upright';
+    var canvas = document.createElement('canvas');
+    canvas.width = Math.round(w * PANE_PX);
+    canvas.height = Math.round(h * PANE_PX);
+    var texture = new T.CanvasTexture(canvas);
+    texture.encoding = T.sRGBEncoding;
+    texture.anisotropy = 8;
+    var f = { canvas: canvas, texture: texture, layout: lay, layer: layer, wide: 0 };
+    paintPane(f);
+    paneFaces.push(f);
+    var tint = opts.tint === 'layer' ? new T.Color(L.base).lerp(new T.Color('#FFFFFF'), 0.35) : new T.Color('#EEF4F6');
+    var glass = new T.MeshPhysicalMaterial({ color: tint, roughness: 0.32, metalness: 0, clearcoat: 1,
+      transparent: true, opacity: 0.34, depthWrite: false });
+    var rim = shared.rim || (shared.rim = new T.MeshStandardMaterial({ color: new T.Color('#8E99A1'), roughness: 0.28, metalness: 0.7 }));
+    var outer = rrect(w + 0.1, h + 0.1, 0.08), inner = rrect(w + 0.068, h + 0.068, 0.064);
+    outer.holes.push(new T.Path(inner.getPoints(12).reverse()));
+    var face = new T.Mesh(new T.PlaneGeometry(w, h), new T.MeshBasicMaterial({ map: texture, transparent: true,
+      toneMapped: false, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }));
+    face.position.z = 0.016;
+    face.renderOrder = 2;
+    var frame = mesh(extrude(outer, 0.034, 0.004), rim);
+    frame.castShadow = false; // its outline on the floor reads as a stray rectangle
+    var held = grp(mesh(extrude(rrect(w + 0.08, h + 0.08, 0.07), 0.024, 0.006), glass), frame, face);
+    var hw = P.w / 2, hd = P.d / 2, beside = hw + PANE.floorGap, behind = hd + PANE.floorGap;
+    var side = opts.side || 'right', sx = side === 'right' ? 1 : side === 'left' ? -1 : 0, sy = side === 'behind' ? 1 : side === 'front' ? -1 : 0;
+    var slope = PANE.lecternSlope * DEG, turn = (opts.azimuth || 0) * DEG, x = 0, y = 0, z = 0, tilt = 0, yaw = 0;
+    if (orientation === 'floating') { y = 0.2; z = PANE.floatLift + h / 2; yaw = turn; }
+    else if (orientation === 'upright') {
+      yaw = turn;
+      if (sx) { x = sx * (beside + w / 2); y = PANE.stemY; z = PANE.uprightLift + h / 2; }
+      else { y = sy * (behind + PANE.stemZone / 2); z = (sy > 0 ? PANE.behindLift : PANE.uprightLift) + h / 2; }
+    } else {
+      var depth = orientation === 'lectern' ? h * Math.cos(slope) : h;
+      z = orientation === 'lectern' ? PANE.lecternLift + h / 2 * Math.sin(slope) : 0.03;
+      tilt = orientation === 'lectern' ? slope - Math.PI / 2 : -Math.PI / 2;
+      if (sx) x = sx * (beside + w / 2); else y = sy * (behind + depth / 2);
+    }
+    // the builder's (x right, y away, z up) is three.js's (x, z, -y)
+    var holder = grp(held);
+    holder.position.set(x, z, -y);
+    holder.rotation.y = yaw;
+    held.rotation.x = tilt;
+    var out = grp(holder);
+    if (opts.anchored !== false && orientation !== 'flat') {
+      out.updateMatrixWorld(true);
+      var stemMat = shared.stem || (shared.stem = new T.MeshStandardMaterial({ color: new T.Color('#C9CED2'), roughness: 0.25, metalness: 0.6 }));
+      if (orientation === 'floating') {
+        var low = new T.Vector3(0, -h / 2 - 0.05, 0).applyMatrix4(held.matrixWorld);
+        out.add(rod([0, 1.2, 0], low.toArray(), 0.007, stemMat));
+      } else {
+        var top = orientation === 'upright' ? new T.Vector3(0, -h / 2 - 0.05, 0).applyMatrix4(held.matrixWorld)
+          : new T.Vector3(x, z - 0.03, -y);
+        out.add(rod([top.x, 0, top.z], top.toArray(), 0.018, stemMat));
+        var foot = disc(0.13, 0.025, stemMat);
+        foot.position.set(top.x, 0.0125, top.z);
+        out.add(foot);
+      }
+    }
+    out.userData = { pane: true, orientation: orientation, w: w, h: h, face: f };
+    return out;
+  }
+
   // ── scenes ─────────────────────────────────────────────────────────────────
   function lights(scene, span, mapSize) {
     scene.add(new T.HemisphereLight(0xffffff, 0xb8b2a6, 0.55));
@@ -683,6 +912,14 @@
       content = portsDemo(label == null ? 'Element name' : label);
       frame = { target: new T.Vector3(0.3, 0.42, 0.3), radius: 1.85 };
       lights(scene, 2.6, 1024);
+    } else if (id.indexOf('pane-') === 0) {
+      var etype = id.slice(5), ee = E[etype];
+      content = grp(element(etype, label), pane((names && names.passport) || SAMPLE_PASSPORT,
+        { layer: ee ? ee.layer : 'neutral', azimuth: 30 }));
+      content.updateMatrixWorld(true);
+      var ps = new T.Box3().setFromObject(content).getBoundingSphere(new T.Sphere());
+      frame = { target: ps.center, radius: ps.radius * 0.85 };
+      lights(scene, 4, 2048);
     } else if (id.indexOf('plinth-') === 0) {
       var form = id.slice(7), m = mats('neutral');
       if (label == null) label = titleOf(form);
@@ -765,8 +1002,12 @@
   function namesOf(canvas) {
     return {
       label: canvas.hasAttribute('data-label') ? canvas.getAttribute('data-label') : null,
-      list: canvas.hasAttribute('data-labels') ? canvas.getAttribute('data-labels').split('|') : null
+      list: canvas.hasAttribute('data-labels') ? canvas.getAttribute('data-labels').split('|') : null,
+      passport: canvas.hasAttribute('data-passport') ? parsed(canvas.getAttribute('data-passport')) : null
     };
+  }
+  function parsed(text) {
+    try { return JSON.parse(text); } catch (err) { if (window.console) console.error('archimate3d: data-passport is not JSON'); return null; }
   }
   // A canvas whose element or names changed since it was built is rebuilt.
   function viewFor(canvas) {
@@ -792,6 +1033,7 @@
   // Names are painted with the page's font; repaint them once it has loaded.
   function refreshLabels() {
     labels.forEach(paintLabel);
+    paneFaces.forEach(paintPane);
     schedule();
   }
   if (document.fonts) {
@@ -805,5 +1047,6 @@
     schedule();
   }
 
-  window.AM3D = { mount: mount, element: element, scene: buildScene, ELEMENTS: E, LAYERS: LAYERS, PLINTH: P, PLACARD: PLACARD, version: '0.2.0' };
+  window.AM3D = { mount: mount, element: element, pane: pane, scene: buildScene, ELEMENTS: E, LAYERS: LAYERS, PLINTH: P,
+    PLACARD: PLACARD, PANE: PANE, paneHeight: function (p) { return paneLayout(p).h; }, version: '0.3.0' };
 })();

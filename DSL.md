@@ -1038,7 +1038,16 @@ In Blender a pane is a frosted glass slab (Principled BSDF, transmission) in a t
 rim, its passport in text objects, so a render is sharp at any size. It is parented to its
 plinth and moves with it. An upright or floating pane turns to face the camera's azimuth;
 a lectern or flat pane stays square to its plinth, on the floor the layout kept.
-`--panes auto|upright|lectern|flat|floating|off` overrides the scene's style. The builder
+`--panes auto|upright|lectern|flat|floating|off` overrides the scene's style.
+
+The three.js shapes (`SceneBuilder.threeJs`) carry the pane too, for a preview in a
+browser: `AM3D.pane(passport, opts)` builds one beside a plinth at the origin, placed as
+the builder places it (`opts`: `orientation`, `side`, `layer`, `tint`, `azimuth`,
+`anchored`, and `elevation` for `auto`), and `<canvas data-am="pane-application-component">`
+shows an element with its pane (a sample passport, or the JSON in `data-passport`). The
+face is painted on a canvas, as the placards are, laid out with the same table and line
+breaking; `AM3D.paneHeight(passport)` equals `PaneLayout.height`, which `SceneThreeSpec`
+checks by running the shapes in node (ignored without node). The builder
 prints how many panes it built and how they stand, how far their heights are from the
 layout's, how many lines came out wider than their room, and how many panes stand over a
 plinth not their own. In an overview of a large view a pane is too small to read; it is
