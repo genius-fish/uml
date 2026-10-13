@@ -1092,6 +1092,18 @@ glowing, so the flow so far stays visible; at the end the camera returns to the 
 and the light comes back. A step takes about 3.3 seconds. Floating labels stay off: the
 camera comes close enough for the placards.
 
+Passports ride along. A step lights the panes of its two elements with a soft light held
+by each pane, so a lit pane reads while the rest dims (a `--highlight` does the same for
+the elements it names), and its shot frames those panes with the plinths. After a step,
+each of its elements whose pane was not read yet gets a passport moment: the camera
+glides square on to the pane, close enough that it fills about three quarters of the
+frame's height, holds 3.2 seconds, and flies on. A pane that turns to the camera
+(`faceCamera`) is read from the side the camera comes from, a little above; a lectern or
+flat pane along its face. Each pane is read once a flight, and a flow without passports
+flies as it did. The builder prints how many moments it made, how far inside the frame
+the panes of each step stay and the smallest share of the frame's height a pane fills
+while it is read.
+
 The builder measures the flight it made and prints it: how many steps ran along a
 connector, how far inside the frame both plinths of every step stay (at its arrival,
 mid-run and departure), with its route, how far below the caption bar, how far each route

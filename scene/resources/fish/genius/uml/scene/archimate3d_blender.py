@@ -1879,6 +1879,29 @@ def spots():
     return [ob for ob in bpy.data.objects if ob.type == "LIGHT" and ob.data.type == "SPOT"]
 
 
+PANE_LIGHT = 30.0          # watts, for the light on a lit element's pane
+PANE_SPREAD = 25 * DEG     # its beam: wide enough for the pane, not the floor round it
+PANE_LIGHT_DIST = 1.4      # how far in front of its pane the light hangs
+
+
+def pane_light(pane, power=PANE_LIGHT):
+    """A soft light in front of a pane, held by its face, so it follows the pane as it
+    turns to the camera. It lights the passport, not the camera's view of the glass."""
+    ld = bpy.data.lights.new(f"{pane.key}.pane.light", "AREA")
+    ld.shape = "RECTANGLE"
+    ld.size, ld.size_y = pane.w + 0.4, pane.h + 0.4
+    ld.energy = power
+    if hasattr(ld, "spread"):
+        ld.spread = PANE_SPREAD
+    ob = link(bpy.data.objects.new(ld.name, ld), pane.face)
+    ob.location = (0, 0, PANE_LIGHT_DIST)  # a light shines down its -Z: onto the face
+    for flag in ("visible_camera", "visible_glossy"):
+        if hasattr(ob, flag):
+            setattr(ob, flag, False)
+    ob.hide_select = True
+    return ob
+
+
 def connector_parts(name):
     """Everything drawn for one connector: its line, dashes or dots, head and tail."""
     wanted = {f"{name}.{part}" for part in CONNECTOR_PARTS}
@@ -1928,14 +1951,18 @@ def resolve(view, tokens):
     return found_elements, found_connectors, unknown
 
 
-def highlight(scene, view, built, tokens):
-    """Dim the scene and light what the tokens name: a spot on each element, a glow on
-    each connector and a softer spot on its ends. Returns what resolve found."""
+def highlight(scene, view, built, tokens, panes=()):
+    """Dim the scene and light what the tokens name: a spot on each element (and a light
+    on its pane), a glow on each connector and a softer spot on its ends. Returns what
+    resolve found."""
     elements, connectors, unknown = resolve(view, tokens)
     if not elements and not connectors:
         return elements, connectors, unknown
     dim(scene)
     lit = {key: spot_on(built[key][0], f"{key}.spot") for key in elements}
+    for pane in panes:
+        if pane.key in elements:
+            pane_light(pane)
     by_name = {rel_name(r): r for r in view.get("relationships", [])}
     for name in connectors:
         light_up(name, accent())
@@ -1972,7 +1999,11 @@ CAPTION_MARGIN = 1.2       # the caption card's width beyond the text, in captio
 CAPTION_HEIGHT = 1.8       # the caption card's height, in caption heights
 CAPTION_CHARS = 60         # a longer label is cut short, so the card stays in the frame
 
-Flight = namedtuple("Flight", "frames steps along margin clearance gap leaf_share loop")
+READ_S = 3.2               # a passport moment holds this long on its pane
+READ_MARGIN = 0.1          # and frames the pane with this share of the frame free round it
+READ_ELEVATION = 12        # looking up at an upright pane's face from a little above
+
+Flight = namedtuple("Flight", "frames steps along margin clearance gap leaf_share loop moments pane_margin read_share")
 
 
 def find_flow(view, wanted):
@@ -2156,23 +2187,31 @@ def shot_corners(source, target):
     return corners + [Vector((middle.x + sx * half, middle.y + sy * half, 0.0)) for sx in (-1, 1) for sy in (-1, 1)]
 
 
-def flight_poses(scene, cam, built, steps):
+def face_corners(pane, grow=0.05):
+    """A pane's four corners in the world, as its face stands now."""
+    return [pane.face.matrix_world @ Vector((sx * (pane.w / 2 + grow), sy * (pane.h / 2 + grow), 0))
+            for sx in (-1, 1) for sy in (-1, 1)]
+
+
+def flight_poses(scene, cam, built, steps, panes=None):
     """Where the camera stands for each step and the azimuth it looks from: framed on
-    what shot_corners holds, from the side."""
+    what shot_corners holds and the panes of the step's two elements, from the side."""
     base = cam.get("am_azimuth", 35.0)
+    panes = panes or {}
     poses = []
     for st in steps:
         source, target = built[st["source"]][0], built[st["target"]][0]
         azimuth = step_azimuth(source, target, base)
-        frame(scene, cam, shot_corners(source, target), azimuth, STEP_ELEVATION, STEP_MARGIN)
+        held = [c for k in {st["source"], st["target"]} if k in panes for c in face_corners(panes[k])]
+        frame(scene, cam, shot_corners(source, target) + held, azimuth, STEP_ELEVATION, STEP_MARGIN)
         poses.append((cam.location.copy(), cam.rotation_euler.to_quaternion(), azimuth))
     return poses
 
 
-def step_spots(lights, step, arrive, leave, fade):
+def step_spots(lights, step, arrive, leave, fade, full=SPOT_POWER):
     """The step's two elements lit from its arrival until it leaves; the others dark."""
     for k, light in lights.items():
-        power = SPOT_POWER if k in (step["source"], step["target"]) else 0.0
+        power = full if k in (step["source"], step["target"]) else 0.0
         keyframe(light.data, "energy", arrive - fade, light.data.energy)
         keyframe(light.data, "energy", arrive, power)
         keyframe(light.data, "energy", leave, power)
@@ -2204,6 +2243,34 @@ def step_pulse(number, path, arrive, run_end):
     keyframe(follow, "offset_factor", arrive, 0.0)
     keyframe(follow, "offset_factor", run_end, 1.0)
     show(pulse, ((1, 0), (arrive - 1, 0), (arrive, 1), (run_end, 1), (run_end + 1, 0)))
+
+
+def read_pose(scene, cam, pane, faces_camera, toward):
+    """Where the camera stands to read a pane: square on to its face, the pane filling the
+    frame but for READ_MARGIN. A pane that turns to the camera is read from the side the
+    camera comes from (`toward`, a point), a little above; any other along its face's
+    normal."""
+    centre = pane.face.matrix_world.translation
+    if faces_camera:
+        flat = Vector((toward.x - centre.x, toward.y - centre.y, 0))
+        across = flat.normalized() if flat.length > 1e-6 else Vector((0, -1, 0))
+        up = Vector((0, 0, 1))
+        right = up.cross(across).normalized()
+        corners = [centre + right * (sx * (pane.w / 2 + 0.05)) + up * (sy * (pane.h / 2 + 0.05))
+                   for sx in (-1, 1) for sy in (-1, 1)]
+        azimuth = math.degrees(math.atan2(across.x, -across.y))
+        elevation = READ_ELEVATION
+    else:
+        normal = (pane.face.matrix_world.to_3x3() @ Vector((0, 0, 1))).normalized()
+        corners = face_corners(pane)
+        azimuth = math.degrees(math.atan2(normal.x, -normal.y))
+        elevation = min(80.0, math.degrees(math.asin(max(-1.0, min(1.0, normal.z)))))
+    # frame() aims by Euler angles; during a flight the camera turns by quaternions
+    mode, cam.rotation_mode = cam.rotation_mode, "XYZ"
+    frame(scene, cam, corners, azimuth, elevation, READ_MARGIN)
+    pose = cam.location.copy(), cam.rotation_euler.to_quaternion()
+    cam.rotation_mode = mode
+    return pose
 
 
 def project(scene, cam, points):
@@ -2240,17 +2307,43 @@ def measure_flight(scene, cam, built, shots):
     return margin, caption_bottom - highest, leaf_share, (min(loops) if loops else None)
 
 
-def flyover(scene, cam, view, built, flow, font=None, fps=FPS):
+def measure_flight_panes(scene, cam, panes, shots, moments):
+    """How the flight shows the passports: how far inside the frame the panes of each
+    step's elements stay at its arrival, mid-run and departure (None without any), and the
+    smallest share of the frame's height a pane fills while it is read (None without any)."""
+    margin, share = None, None
+    for step, frames, _ in shots:
+        held = [panes[k] for k in {step["source"], step["target"]} if k in panes]
+        for frame_no in frames if held else ():
+            scene.frame_set(frame_no)
+            for pane in held:
+                for p in project(scene, cam, face_corners(pane, 0.0)):
+                    m = min(p.x, 1 - p.x, p.y, 1 - p.y)
+                    margin = m if margin is None else min(margin, m)
+    for pane, frames in moments:
+        for frame_no in frames:
+            scene.frame_set(frame_no)
+            ys = [p.y for p in project(scene, cam, face_corners(pane, 0.0))]
+            seen = max(ys) - min(ys)
+            share = seen if share is None else min(share, seen)
+    return margin, share
+
+
+def flyover(scene, cam, view, built, flow, font=None, fps=FPS, panes=()):
     """Animate the camera through a flow's steps: the overview in full light, then per
-    step a glide to its two elements, both lit as the rest dims, a pulse and its trail
-    from source to target, the step's caption; then back to the overview, the light up
-    again. Returns a Flight: its frames, its steps, how many ran along a connector, and
-    what measure_flight and route_gap found."""
+    step a glide to its two elements, both lit (with their panes) as the rest dims, a
+    pulse and its trail from source to target, the step's caption; after a step, a
+    passport moment for each of its elements whose pane was not read yet: the camera
+    holds square on the pane, close enough to read it. Then back to the overview, the
+    light up again. Returns a Flight: its frames, its steps, how many ran along a
+    connector, and what measure_flight, route_gap and measure_flight_panes found."""
     scene.render.fps = fps
     s = lambda seconds: max(1, round(seconds * fps))
     steps = [st for st in flow.get("steps", []) if st["source"] in built and st["target"] in built]
     overview = (cam.location.copy(), cam.rotation_euler.to_quaternion())
-    poses = flight_poses(scene, cam, built, steps)
+    by_key = {pane.key: pane for pane in panes}
+    faces_camera = bool((view.get("panes") or {}).get("faceCamera"))
+    poses = flight_poses(scene, cam, built, steps, by_key)
     track = CameraTrack(cam, overview[1])
     track.hold(1, *overview)
     f = 1 + s(OPEN_S)
@@ -2258,9 +2351,10 @@ def flyover(scene, cam, view, built, flow, font=None, fps=FPS):
     opened = f
     lights = {k: spot_on(built[k][0], f"{k}.flyover.spot")
               for k in sorted({e for st in steps for e in (st["source"], st["target"])})}
-    for light in lights.values():
+    pane_lights = {k: pane_light(by_key[k]) for k in lights if k in by_key}
+    for light in list(lights.values()) + list(pane_lights.values()):
         keyframe(light.data, "energy", 1, 0.0)
-    shots, along, gap = [], 0, 0.0
+    shots, along, gap, moments, read = [], 0, 0.0, [], set()
     for number, (step, (location, rotation, azimuth)) in enumerate(zip(steps, poses), 1):
         arrive = f + s(GLIDE_S)
         run_end = arrive + s(RUN_S)
@@ -2268,6 +2362,7 @@ def flyover(scene, cam, view, built, flow, font=None, fps=FPS):
         track.hold(arrive, location, rotation)
         track.hold(leave, location + (rotation @ Vector((0, 0, -1))) * PUSH_IN, rotation)
         step_spots(lights, step, arrive, leave, s(FADE_S))
+        step_spots(pane_lights, step, arrive, leave, s(FADE_S), PANE_LIGHT)
         route, carrier = step_route(view, built, step, azimuth)
         if carrier is not None:
             along += 1
@@ -2277,7 +2372,16 @@ def flyover(scene, cam, view, built, flow, font=None, fps=FPS):
              ((1, 0), (arrive - s(FADE_S), 0), (arrive, 1), (leave, 1), (leave + s(FADE_S), 0)))
         shots.append((step, (arrive, (arrive + run_end) // 2, leave), route))
         f = leave
-    for light in lights.values():
+        for k in (step["source"], step["target"]):
+            if k in by_key and k not in read:
+                read.add(k)
+                at, turn = read_pose(scene, cam, by_key[k], faces_camera, location)
+                held, done = f + s(GLIDE_S), f + s(GLIDE_S) + s(READ_S)
+                track.hold(held, at, turn)
+                track.hold(done, at + (turn @ Vector((0, 0, -1))) * PUSH_IN * 0.3, turn)
+                moments.append((by_key[k], (held, (held + done) // 2, done)))
+                f = done
+    for light in list(lights.values()) + list(pane_lights.values()):
         keyframe(light.data, "energy", f + s(FADE_S), 0.0)
     if not scene.get("am_dimmed"):  # a --highlight keeps the scene dimmed throughout
         dim_between(scene, (opened, opened + s(GLIDE_S), f, f + s(CLOSE_S)))
@@ -2287,8 +2391,9 @@ def flyover(scene, cam, view, built, flow, font=None, fps=FPS):
     track.hold(f, *overview)
     scene.frame_start, scene.frame_end = 1, f
     margin, clearance, leaf_share, loop = measure_flight(scene, cam, built, shots)
+    pane_margin, read_share = measure_flight_panes(scene, cam, by_key, shots, moments)
     scene.frame_set(1)
-    return Flight(f, len(steps), along, margin, clearance, gap, leaf_share, loop)
+    return Flight(f, len(steps), along, margin, clearance, gap, leaf_share, loop, len(moments), pane_margin, read_share)
 
 
 def render_animation(scene, path, samples=32):
@@ -2308,10 +2413,10 @@ def render_animation(scene, path, samples=32):
     bpy.ops.render.render(animation=True)
 
 
-def point(args, scene, cam, view, built, roots, font):
+def point(args, scene, cam, view, built, roots, font, panes=()):
     """Light, fly or float labels, as the options ask. Returns the flow it flew, or None."""
     if args.highlight:
-        elements, connectors, unknown = highlight(scene, view, built, args.highlight.split(","))
+        elements, connectors, unknown = highlight(scene, view, built, args.highlight.split(","), panes)
         print(f"archimate3d: {len(elements)} elements and {len(connectors)} connectors in the light, "
               f"{len(spots())} spots, ambient light at {scene.get('am_ambient', 1.0):.2f}")
         for token in unknown:
@@ -2321,7 +2426,7 @@ def point(args, scene, cam, view, built, roots, font):
         wanted = f"{args.flyover!r} " if args.flyover else ""
         print(f"archimate3d: no flow {wanted}in the view; nothing to fly through")
     if flow:
-        flight = flyover(scene, cam, view, built, flow, font, args.fps)
+        flight = flyover(scene, cam, view, built, flow, font, args.fps, panes)
         print(f"archimate3d: flyover of {flow.get('name') or flow.get('key')}: {flight.steps} steps, "
               f"{flight.along} along a connector, {flight.frames} frames at {args.fps} fps")
         print(f"archimate3d: every step's plinths and route stay {flight.margin:.3f} inside the frame and "
@@ -2330,6 +2435,10 @@ def point(args, scene, cam, view, built, roots, font):
               f"of the frame's width")
         if flight.loop is not None:
             print(f"archimate3d: a step to itself opens its ring {flight.loop:.3f} of the frame's width")
+        if flight.pane_margin is not None:
+            read = f"{flight.read_share:.3f}" if flight.read_share is not None else "none"
+            print(f"archimate3d: {flight.moments} passport moments; the panes of each step stay "
+                  f"{flight.pane_margin:.3f} inside the frame, and a pane read fills {read} of its height")
         return flow
     print(f"archimate3d: a placard's name renders about {placard_px(scene, cam, roots):.1f} px tall")
     if wants_floating(args.labels, scene, cam, roots):
@@ -2440,7 +2549,7 @@ def main():
         roots = [r for r, _ in built.values()]
         stage(roots, azimuth, elevation, (w, h), args.samples, pane_corners(panes))
         face_camera(panes, bpy.context.scene.camera, view.get("panes"))
-        flow = point(args, bpy.context.scene, bpy.context.scene.camera, view, built, roots, font)
+        flow = point(args, bpy.context.scene, bpy.context.scene.camera, view, built, roots, font, panes)
     # Blender reads a bare relative name against the .blend, not the shell: make them absolute
     if args.blend:
         bpy.ops.wm.save_as_mainfile(filepath=os.path.abspath(args.blend))

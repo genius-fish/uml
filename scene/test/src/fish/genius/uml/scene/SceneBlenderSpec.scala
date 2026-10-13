@@ -44,6 +44,11 @@ object SceneBlenderSpec extends ZIOSpecDefault:
     wide: Int,
     over: Int)
 
+  final private case class Reading(
+    moments: Int,
+    paneMargin: Double,
+    readShare: Option[Double])
+
   final private case class Floating(
     names: Int,
     stuck: Int,
@@ -89,6 +94,10 @@ object SceneBlenderSpec extends ZIOSpecDefault:
         """(\d+) panes (\w+), heights within ([\d.]+) of the layout's, (\d+) lines wider than their room, (\d+) over"""
       )
         .collect { case List(n, o, h, w, v) => Panes(n.toInt, o, h.toDouble, w.toInt, v.toInt) }
+
+    def reading: Option[Reading] =
+      first("""(\d+) passport moments; the panes of each step stay ([\d.-]+) inside the frame, and a pane read fills ([\d.]+|none)""")
+        .collect { case List(n, m, r) => Reading(n.toInt, m.toDouble, r.toDoubleOption) }
 
     def notFound: List[String] =
       lines.flatMap("""nothing called '(.*)' in the view""".r.findFirstMatchIn(_).map(_.group(1)))
@@ -298,6 +307,20 @@ object SceneBlenderSpec extends ZIOSpecDefault:
           small.floating.contains(Floating(named(scene), 0, 0)),
           large.floating.contains(Floating(named(scene), 0, 0)),
           small.placardPx.zip(large.placardPx).exists((s, l) => math.abs(l / s - 2) < 0.1),
+        )
+      ,
+      test("a flyover lights and reads every passport once, and flies as before without any"):
+        for
+          read  <- built(withPassports, "--flyover", "buying", "--fps", "6")
+          plain <- built(small, "--flyover", "buying", "--fps", "6")
+        yield assertTrue(
+          // the customer, the process and the shop each carry a pane: three moments
+          read.reading.exists(r => r.moments == 3 && r.paneMargin > 0.05 && r.readShare.exists(_ > 0.5)),
+          // at 6 fps: the 63 frames of the plain flight + 3 moments × (glide 7 + read 19)
+          read.flight.exists(f => f.steps == 2 && f.frames == 63 + 3 * (7 + 19)),
+          read.flight.exists(f => f.margin > 0.05 && f.clearance > 0),
+          plain.reading.isEmpty,
+          plain.flight.exists(_.frames == 63),
         )
       ,
       test("--labels float and --labels placard force either"):
