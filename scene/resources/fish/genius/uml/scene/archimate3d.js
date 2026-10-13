@@ -830,9 +830,13 @@
     var f = { canvas: canvas, texture: texture, layout: lay, layer: layer, wide: 0 };
     paintPane(f);
     paneFaces.push(f);
-    var tint = opts.tint === 'layer' ? new T.Color(L.base).lerp(new T.Color('#FFFFFF'), 0.35) : new T.Color('#EEF4F6');
-    var glass = new T.MeshPhysicalMaterial({ color: tint, roughness: 0.32, metalness: 0, clearcoat: 1,
-      transparent: true, opacity: 0.34, depthWrite: false });
+    // a pane on or near the floor is frosted and layer-tinted, as in the Blender builder: clear
+    // glass over the bright floor lets the text fade into it
+    var frosted = orientation === 'lectern' || orientation === 'flat';
+    var tint = frosted ? new T.Color(L.base).lerp(new T.Color('#FFFFFF'), 0.25)
+      : opts.tint === 'layer' ? new T.Color(L.base).lerp(new T.Color('#FFFFFF'), 0.35) : new T.Color('#EEF4F6');
+    var glass = new T.MeshPhysicalMaterial({ color: tint, roughness: frosted ? 0.55 : 0.32, metalness: 0, clearcoat: 1,
+      transparent: true, opacity: frosted ? 0.72 : 0.34, depthWrite: false });
     var rim = shared.rim || (shared.rim = new T.MeshStandardMaterial({ color: new T.Color('#8E99A1'), roughness: 0.28, metalness: 0.7 }));
     var outer = rrect(w + 0.1, h + 0.1, 0.08), inner = rrect(w + 0.068, h + 0.068, 0.064);
     outer.holes.push(new T.Path(inner.getPoints(12).reverse()));

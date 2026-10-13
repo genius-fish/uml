@@ -1140,18 +1140,28 @@ def pane_orientation(mode, elevation):
     return mode
 
 
-def pane_glass(tint, layer):
-    base = LAYERS.get(layer, LAYERS["neutral"])[0] if tint == "layer" else "#DCE7EC"
+# Clear glass over the bright floor lets the text fade into it, so a pane on or near the
+# floor (lectern, flat) is frosted and tinted with its layer, whatever the style's tint.
+FLOOR_PANES = ("lectern", "flat")
+
+
+def pane_glass_kind(tint, orientation):
+    return "frosted" if orientation in FLOOR_PANES else tint
+
+
+def pane_glass(kind, layer):
+    base = LAYERS.get(layer, LAYERS["neutral"])[0] if kind in ("layer", "frosted") else "#DCE7EC"
     rgb = srgb_to_linear(base)
-    if tint == "layer":
-        rgb = [c + (1 - c) * 0.35 for c in rgb]
-    name = f"am.pane.glass.{tint}.{layer if tint == 'layer' else 'clear'}"
+    if kind in ("layer", "frosted"):
+        rgb = [c + (1 - c) * (0.35 if kind == "layer" else 0.25) for c in rgb]
+    name = f"am.pane.glass.{kind}.{layer if kind != 'clear' else 'clear'}"
     mat = bpy.data.materials.get(name)
     if mat:
         return mat
-    mat = material(name, rgb, 0.32)
+    transmission, rough = (0.3, 0.55) if kind == "frosted" else (0.82, 0.32)
+    mat = material(name, rgb, rough)
     bsdf = mat.node_tree.nodes.get("Principled BSDF")
-    for key, value in (("Transmission Weight", 0.82), ("Transmission", 0.82), ("IOR", 1.45)):
+    for key, value in (("Transmission Weight", transmission), ("Transmission", transmission), ("IOR", 1.45)):
         if bsdf and key in bsdf.inputs:
             bsdf.inputs[key].default_value = value
     if hasattr(mat, "use_raytrace_refraction"):  # EEVEE, for the flyover's video
@@ -1366,7 +1376,7 @@ def build_pane(e, root, mode, tint, font, anchored=True, azimuth=0.0):
     holder.rotation_euler = (0, 0, turn)
     face = place_obj(empty(f"{e['key']}.pane.face", holder, 0.05), (0, 0, 0), (tilt, 0, 0))
     b = B(face, f"{e['key']}.pane")
-    slab = b.box(w + 0.08, h + 0.08, 0.024, pane_glass(tint, layer), 0.006, (0, 0, 0))
+    slab = b.box(w + 0.08, h + 0.08, 0.024, pane_glass(pane_glass_kind(tint, mode), layer), 0.006, (0, 0, 0))
     if hasattr(slab, "visible_shadow"):
         slab.visible_shadow = False
     outer, inner = rrect(w + 0.1, h + 0.1, 0.08)[0], rrect(w + 0.068, h + 0.068, 0.064)[0]
@@ -1529,6 +1539,30 @@ def catalogue_view():
 
 
 # ── stage: floor, light, camera, render ───────────────────────────────────────
+STILL_SIZE = (3840, 2400)  # a still's default resolution; a video's is 1920x1080
+STILL_SAMPLES = 256        # Cycles samples per pixel, denoised
+
+
+def render_device():
+    """The GPU when this Blender can render on one (OptiX, CUDA, HIP, oneAPI, Metal), else the CPU."""
+    try:
+        prefs = bpy.context.preferences.addons["cycles"].preferences
+    except (KeyError, AttributeError):
+        return "CPU"
+    for kind in ("OPTIX", "CUDA", "HIP", "ONEAPI", "METAL"):
+        try:
+            prefs.compute_device_type = kind
+            prefs.get_devices()
+        except (TypeError, ValueError):
+            continue
+        gpus = [d for d in prefs.devices if d.type == kind]
+        if gpus:
+            for d in prefs.devices:
+                d.use = d.type == kind
+            return "GPU"
+    return "CPU"
+
+
 def frame(scene, cam, corners, azimuth, elevation, margin=0.05):
     """Aim the camera from azimuth/elevation and fit the corners in the frame,
     by the projected extent rather than a bounding sphere."""
@@ -1610,7 +1644,8 @@ def stage(roots, azimuth, elevation, res, samples, extra=()):
 
     scene.render.engine = "CYCLES"
     scene.cycles.samples = samples
-    scene.cycles.device = "CPU"
+    scene.cycles.device = render_device()
+    print(f"archimate3d: rendering on the {scene.cycles.device} at {res[0]}x{res[1]}, {samples} samples")
     scene.cycles.use_denoising = True
     scene.view_settings.view_transform = "Standard"
     try:
@@ -1621,8 +1656,13 @@ def stage(roots, azimuth, elevation, res, samples, extra=()):
 
 # ── floating labels ───────────────────────────────────────────────────────────
 LABEL_MODES = ("auto", "placard", "float")
-LABEL_PX = 16              # a floating name's height in the render, in pixels
-LEGIBLE_PX = 9             # a placard name below this is not read: float the names
+LABEL_PX = 16              # a floating name's height in a render 1920 wide, in pixels
+LEGIBLE_PX = 9             # a placard name below this, 1920 wide, is not read: float the names
+LABEL_WIDTH = 1920         # both scale with the render's width, so a larger render looks the same
+
+
+def px_scale(scene):
+    return scene.render.resolution_x / LABEL_WIDTH
 PLACARD_NAME = 0.12        # a placard name's height in scene units, about
 LEAF_TOP = 1.6             # a leaf's name floats this high, above its sculpture
 CONTAINER_TOP = 0.75       # a container's floats lower, under its children's names
@@ -1647,7 +1687,7 @@ def _px_per_unit(scene, cam, point):
 
 def label_size(scene, cam, point):
     """Scene units that render LABEL_PX tall at `point`, at any render size or aspect."""
-    return LABEL_PX / _px_per_unit(scene, cam, point)
+    return LABEL_PX * px_scale(scene) / _px_per_unit(scene, cam, point)
 
 
 def placard_px(scene, cam, roots):
@@ -1657,9 +1697,9 @@ def placard_px(scene, cam, roots):
 
 
 def wants_floating(mode, scene, cam, roots):
-    """auto floats the names when a placard would render smaller than LEGIBLE_PX."""
+    """auto floats the names when a placard would render smaller than LEGIBLE_PX (scaled)."""
     if mode == "auto":
-        return placard_px(scene, cam, roots) < LEGIBLE_PX
+        return placard_px(scene, cam, roots) < LEGIBLE_PX * px_scale(scene)
     return mode == "float"
 
 
@@ -1675,8 +1715,8 @@ def _screen_box(scene, cam, point, name):
 
     centre = world_to_camera_view(scene, cam, point)
     width, height = _label_extent(name)
-    half_w = LABEL_PX * width / scene.render.resolution_x / 2
-    half_h = LABEL_PX * height / scene.render.resolution_y / 2
+    half_w = LABEL_PX * px_scale(scene) * width / scene.render.resolution_x / 2
+    half_h = LABEL_PX * px_scale(scene) * height / scene.render.resolution_y / 2
     return centre.x - half_w, centre.y - half_h, centre.x + half_w, centre.y + half_h
 
 
@@ -2338,8 +2378,8 @@ def main():
     ap.add_argument("--font", help="a .ttf/.otf for the names (default: Blender's own)")
     ap.add_argument("--blend", help="save the .blend here")
     ap.add_argument("--render", help="render a still to this .png")
-    ap.add_argument("--samples", type=int, default=96)
-    ap.add_argument("--size", type=resolution, help="WIDTHxHEIGHT (default 1920x1200, or 1920x1080 for --animation)")
+    ap.add_argument("--samples", type=int, default=STILL_SAMPLES)
+    ap.add_argument("--size", type=resolution, help="WIDTHxHEIGHT (default 3840x2400, or 1920x1080 for --animation)")
     ap.add_argument("--azimuth", type=float)
     ap.add_argument("--elevation", type=float)
     ap.add_argument("--check", action="store_true", help="move an element and verify the connectors follow")
@@ -2388,9 +2428,10 @@ def main():
         worst, wide, over = measure_panes(panes, view)
         print(f"archimate3d: {len(panes)} panes {orientation}, heights within {worst:.4f} of the layout's, "
               f"{wide} lines wider than their room, {over} over another plinth")
+        print(f"archimate3d: pane glass {pane_glass_kind((view.get('panes') or {}).get('tint', 'clear'), orientation)}")
     flow = None
     if bpy.app.background or args.render or args.highlight or args.flyover is not None:
-        w, h = args.size or ((1920, 1080) if args.animation else (1920, 1200))
+        w, h = args.size or ((1920, 1080) if args.animation else STILL_SIZE)
         roots = [r for r, _ in built.values()]
         stage(roots, azimuth, elevation, (w, h), args.samples, pane_corners(panes))
         face_camera(panes, bpy.context.scene.camera, view.get("panes"))

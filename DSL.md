@@ -965,12 +965,19 @@ a container is parented to it. `--check` moves an element and reports how far th
 connector ends are from their ports. `--straight` ignores the layout's routes. Tested
 headless on Blender 5.0.1 and 5.2.2.
 
+A still renders with Cycles at 3840 by 2400 and 256 samples, denoised, unless `--size`
+and `--samples` say otherwise; on the GPU when this Blender can render on one (OptiX,
+CUDA, HIP, oneAPI or Metal), else on the CPU. The builder prints which, with the size and
+samples.
+
 A placard is small: in an overview of a large view its name renders a few pixels tall.
 `--labels auto` (the default) then also floats each name above its element, about 16 px
-tall in the render at any render size or aspect, on a light card. A floating name copies
+tall in a render 1920 wide and as large a share of any other render, at any aspect, on a
+light card. A floating name copies
 the scene camera's rotation, so it stands upright in the render; it is parented to its
 element and moves with it. The builder prints how tall a placard's name renders, and
-`auto` floats the names when that is under 9 px. Taken front to back, a floating name
+`auto` floats the names when that is under 9 px in a render 1920 wide (the same share of
+a larger one). Taken front to back, a floating name
 that would cover one already placed moves up, at most eight times; the builder prints
 how many names stayed covered and how many pairs still overlap, so a view too crowded
 for its render size shows in the output. `--labels placard` and `--labels float` force
@@ -1038,7 +1045,9 @@ In Blender a pane is a frosted glass slab (Principled BSDF, transmission) in a t
 rim, its passport in text objects, so a render is sharp at any size. It is parented to its
 plinth and moves with it. An upright or floating pane turns to face the camera's azimuth;
 a lectern or flat pane stays square to its plinth, on the floor the layout kept.
-`--panes auto|upright|lectern|flat|floating|off` overrides the scene's style.
+`--panes auto|upright|lectern|flat|floating|off` overrides the scene's style. A lectern or
+flat pane lies over the bright floor, where clear glass lets the text fade into it, so it
+is always frosted and tinted with its layer; the builder prints the glass it used.
 
 The three.js shapes (`SceneBuilder.threeJs`) carry the pane too, for a preview in a
 browser: `AM3D.pane(passport, opts)` builds one beside a plinth at the origin, placed as

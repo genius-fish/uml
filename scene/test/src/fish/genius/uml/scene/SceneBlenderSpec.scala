@@ -260,10 +260,33 @@ object SceneBlenderSpec extends ZIOSpecDefault:
           upright.panes.contains(Panes(3, "upright", 0, 0, 0)),
           flat.panes.contains(Panes(3, "flat", 0, 0, 0)),
           lectern.panes.contains(Panes(3, "lectern", 0, 0, 0)),
+          // clear glass over the floor lets the text fade: a pane on or near it is frosted
+          upright.says("pane glass clear"),
+          flat.says("pane glass frosted"),
+          lectern.says("pane glass frosted"),
           floats.panes.exists(p => p.count == 3 && p.orientation == "floating" && p.wide == 0),
           off.panes.isEmpty,
           upright.checkGap.exists(_ < 0.05),
         )
+      ,
+      test("a still renders at 3840x2400 with 256 samples unless told otherwise, and says where"):
+        inDirectory: dir =>
+          for
+            sized <- laidOut(small).flatMap(build(
+              dir,
+              _,
+              "--render",
+              dir.resolve("s.png").toString,
+              "--samples",
+              "4",
+              "--size",
+              "320x200",
+            ))
+            plain <- laidOut(small).flatMap(build(dir, _))
+          yield assertTrue(
+            sized.lines.exists(_.matches("""archimate3d: rendering on the (CPU|GPU) at 320x200, 4 samples""")),
+            plain.says("at 3840x2400, 256 samples"),
+          )
       ,
       test("--labels float and --labels placard force either"):
         for
