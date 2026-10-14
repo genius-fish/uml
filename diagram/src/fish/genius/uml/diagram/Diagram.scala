@@ -334,7 +334,7 @@ object Diagram:
     case PortName.East  => (e.x + e.w / 2, e.y)
 
   // one line to set: its text, its size, its weight and its tone
-  final private case class Line(
+  final private[diagram] case class Line(
     text: String,
     size: Double,
     weight: Weight = Weight.Regular,
@@ -410,7 +410,7 @@ object Diagram:
 
   // lines stacked from `top` down, each centred on x (or starting from it) on its
   // baseline; a gap goes before the line at `gapBefore`, where the note starts
-  private def stack(
+  private[diagram] def stack(
     x: Double,
     top: Double,
     lines: List[Line],
@@ -610,7 +610,7 @@ object Diagram:
   end element
 
   // an icon drawn in a unit square, placed at (x, y), scaled to s, as a mark of its box
-  private def place(
+  private[diagram] def place(
     prims: List[Prim],
     x: Double,
     y: Double,

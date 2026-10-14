@@ -1249,3 +1249,56 @@ apart, in the order they part.
   that crosses a container's edge in another frame; when the room it kept is off the
   route, `Diagram` puts the label on the route's longest stretch instead, where it covers
   no box and no header.
+
+### Sequences: messages between parts
+
+`Sequence.draw(graph, options)` draws a sequence of messages in the same look, so a
+document that draws its landscapes with `Diagram` sets its sequence diagrams in one
+style with them. It returns a `Diagram.Drawing`, and the same three writers put it out.
+
+```scala
+import fish.genius.uml.diagram.*
+import fish.genius.uml.diagram.Sequence.*
+import fish.genius.uml.dsl.archimate.ShapeType
+
+val shop = Some(Group("Web Shop", Some(ShapeType.ApplicationComponent)))
+val drawing = Sequence.draw(
+  Graph(
+    "Checkout",
+    List(
+      Lifeline("customer", "Customer", ShapeType.BusinessActor, Some("Business Actor")),
+      Lifeline("api", "Order API", ShapeType.ApplicationComponent, Some("[Container: Scala]"), shop),
+      Lifeline("db", "Order Store", ShapeType.ApplicationComponent, None, shop),
+    ),
+    List(
+      Step.Send("customer", "api", "Place the order", Kind.Call, Some("HTTPS {Order}")),
+      Step.Loop("until stored", List(Step.Send("api", "db", "Store it"))),
+      Step.Send("api", "customer", "Order confirmed", Kind.Reply),
+    ),
+  )
+)
+os.write.over(os.pwd / "checkout.tex", Tikz.standalone(drawing))
+```
+
+- **A part** (`Lifeline`) has a head at the top: a box in its shape's layer colour with
+  its icon in the corner, its name and its caption centred, and a fine dashed lifeline
+  under it in the box's edge colour. The parts of one `Group` that stand side by side
+  share a field (a container of the group's shape, or a dashed grouping without one)
+  with the group's name in its header.
+- **A message** (`Step.Send`) is a horizontal line from one lifeline to another, its
+  number and its label above it, and `detail` (technology, payload) under the label in
+  a quieter italic. A `Call` ends in a filled arrowhead, a `Reply` is dashed with an open
+  one, a `Signal` is solid with an open one. A message to itself turns back on its own
+  lifeline. A message to an id that is not a part is left out. `Options.numbered`
+  (on by default) numbers them in order.
+- **A loop** (`Step.Loop`) is a frame round its messages, with a tag saying *loop* and
+  its condition beside it; a frame inside another sits a little further in. A loop with
+  no message in it is left out.
+
+The columns stand as close as the heads allow, then as far apart as each label needs
+(the shortest spans first, so a long message only widens what the short ones between
+its ends did not). A label keeps off the edge of a field it crosses: it stands on the
+longest stretch between the edges, which is widened until it fits. A label wraps at
+`Options.labelWidth` or as wide as its stretch already is, whichever is wider, narrowed
+until the diagram keeps within `Options.pageWidth`. A lifeline is broken where a word
+stands on it, so a label reads clean without a patch behind it.

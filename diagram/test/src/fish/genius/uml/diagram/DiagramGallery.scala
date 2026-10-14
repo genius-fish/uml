@@ -102,6 +102,40 @@ object DiagramGallery extends ZIOSpecDefault:
       kinds.zipWithIndex.map((k, i) => edge(s"e$i", s"s$i", s"t$i", k, Some(k.toString))),
     )
 
+  // a checkout told as messages: an actor, a system of three parts on its field, an
+  // outside service, a loop and a message to itself
+  val checkout: Sequence.Graph =
+    import Sequence.*
+    val shop = Some(Group("Web Shop", Some(ShapeType.ApplicationComponent)))
+    Graph(
+      "Checkout",
+      List(
+        Lifeline("customer", "Customer", ShapeType.BusinessActor, Some("Business Actor")),
+        Lifeline("spa", "Storefront", ShapeType.ApplicationComponent, Some("[Container: React]"), shop),
+        Lifeline("api", "Order API", ShapeType.ApplicationComponent, Some("[Container: Scala, ZIO]"), shop),
+        Lifeline("db", "Order Store", ShapeType.ApplicationComponent, Some("[Container: PostgreSQL]"), shop),
+        Lifeline("psp", "Payment Service Provider", ShapeType.ApplicationComponent, Some("[IT System]")),
+      ),
+      List(
+        Step.Send("customer", "spa", "Confirms the basket"),
+        Step.Send("spa", "api", "Place the order", Kind.Call, Some("HTTPS, JSON {Order}")),
+        Step.Send("api", "api", "Check stock and price"),
+        Step.Send("api", "db", "Store the order as pending", Kind.Call, Some("JDBC")),
+        Step.Send("api", "psp", "Request payment authorisation", Kind.Call, Some("HTTPS {Amount, Card token}")),
+        Step.Loop(
+          "until authorised or timed out",
+          List(
+            Step.Send("psp", "api", "Payment status", Kind.Signal, Some("Webhook"))
+          ),
+        ),
+        Step.Send("api", "db", "Mark the order paid"),
+        Step.Send("api", "spa", "Order confirmed", Kind.Reply, Some("{Order number}")),
+        Step.Send("spa", "customer", "Shows the confirmation", Kind.Reply),
+      ),
+    )
+
+  end checkout
+
   val graphs: List[(String, SceneGraph)] =
     List("landscape" -> DiagramSpec.landscape, "layers" -> layers, "relationships" -> relationships)
 
@@ -119,6 +153,13 @@ object DiagramGallery extends ZIOSpecDefault:
           (name, Diagram.draw(graph)),
           (s"$name-innovenso", Diagram.draw(graph, Diagram.Options(Diagram.Style(typeface = Typeface.montserrat)))),
         )
+      ++ List(
+        ("checkout", Right(Sequence.draw(checkout))),
+        (
+          "checkout-innovenso",
+          Right(Sequence.draw(checkout, Sequence.Options(Diagram.Style(typeface = Typeface.montserrat)))),
+        ),
+      )
       sys.env.get("DIAGRAM_GALLERY").map(Path.of(_)).foreach: dir =>
         Files.createDirectories(dir)
         drawn.foreach:
