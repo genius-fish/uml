@@ -69,6 +69,11 @@ The pipeline is **DSL → immutable `PUmlNode` AST → PlantUML `String` → ren
   (5.x). The builder measures what it builds (connector ends on ports, label overlap, a
   flight's framing and route gap) and prints it; the spec asserts those lines, so a visual
   claim gets a printed measure before it gets a test.
+- **`diagram`** — depends on `scene`. Draws a `SceneGraph` as a flat ArchiMate diagram with the
+  scene's ELK layout (the four flat-diagram options of `SceneLayout.Options`), boxes sized to
+  what they say in the diagram's font, and the notation as plain geometry (`Prim`), written by
+  `Tikz`, `Svg` and `Png` (Java2D). DSL.md, "Diagrams: ArchiMate drawn flat". Set
+  `DIAGRAM_OUT=dir` when running `DiagramSpec` to get the sample as `.tex`, `.svg` and `.png`.
 - **`examples`** — depends on `core`, `render` and `scene`. Runnable end-to-end showcases.
 
 ### DSL capture (the non-obvious part — `core/.../dsl/`)

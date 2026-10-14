@@ -30,22 +30,29 @@ enum NodeKind derives CanEqual:
   case AndJunction
   case OrJunction
 
+// caption and note are for a flat diagram, which writes them in the box under the
+// label: the element's type (and technology), and a line or two about it.
 final case class SceneNode(
   id: SceneId,
   kind: NodeKind,
   label: String,
   children: List[SceneNode] = Nil,
-  passport: Option[Passport] = None):
+  passport: Option[Passport] = None,
+  caption: Option[String] = None,
+  note: Option[String] = None):
   def isContainer: Boolean = children.nonEmpty
 
   // this node and everything standing on it, parents before children
   def flatten: List[SceneNode] = this :: children.flatMap(_.flatten)
 
+// label is written along the connector; the layout keeps room for it when the
+// options say how large it is (SceneLayout.Options.labelSize).
 final case class SceneEdge(
   id: SceneId,
   source: SceneId,
   target: SceneId,
-  relationship: RelationshipType)
+  relationship: RelationshipType,
+  label: Option[String] = None)
 
 // A walk through the graph in order, such as the interactions of a sequence diagram:
 // each step goes from one node to another and says what passes between them. The

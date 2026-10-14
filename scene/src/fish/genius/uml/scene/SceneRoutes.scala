@@ -18,11 +18,12 @@ final private[scene] class SceneRoutes(elements: List[SceneElement]):
     bends: List[ScenePoint],
     target: SceneElement,
     to: PortName,
-    fromShift: Double = 0.0,
-    toShift: Double = 0.0,
+    startAt: Option[ScenePoint] = None,
+    endAt: Option[ScenePoint] = None,
   ): Route =
-    val (start, end) = (portOf(source, from, fromShift), portOf(target, to, toShift))
-    val snapped      = snap(start, from, bends, end, to)
+    // the middles of the sides, unless ELK placed the connector's own ports
+    val (start, end) = (startAt.getOrElse(portOf(source, from)), endAt.getOrElse(portOf(target, to)))
+    val snapped = snap(start, from, bends, end, to)
     if isClear(start :: snapped ::: List(end)) then Route(snapped, clear = true)
     else
       OrthogonalRouter
@@ -52,18 +53,12 @@ private[scene] object SceneRoutes:
   private val STRAIGHT    = 2e-3
   private val ON_THE_LINE = 1e-3
 
-  // the middle of a plinth side, where the builder puts the port, or `shift` along it
-  def portOf(
-    element: SceneElement,
-    side: PortName,
-    shift: Double = 0.0,
-  ): ScenePoint =
-    val (x, y) = (SceneLayout.round(element.x + shift), SceneLayout.round(element.y + shift))
-    side match
-      case PortName.North => ScenePoint(x, SceneLayout.round(element.y + element.d / 2))
-      case PortName.South => ScenePoint(x, SceneLayout.round(element.y - element.d / 2))
-      case PortName.West  => ScenePoint(SceneLayout.round(element.x - element.w / 2), y)
-      case PortName.East  => ScenePoint(SceneLayout.round(element.x + element.w / 2), y)
+  // the middle of a plinth side, where the builder puts the port
+  def portOf(element: SceneElement, side: PortName): ScenePoint = side match
+    case PortName.North => ScenePoint(element.x, SceneLayout.round(element.y + element.d / 2))
+    case PortName.South => ScenePoint(element.x, SceneLayout.round(element.y - element.d / 2))
+    case PortName.West  => ScenePoint(SceneLayout.round(element.x - element.w / 2), element.y)
+    case PortName.East  => ScenePoint(SceneLayout.round(element.x + element.w / 2), element.y)
 
   private def heading(side: PortName): OrthogonalRouter.Heading = side match
     case PortName.North => (0, 1)

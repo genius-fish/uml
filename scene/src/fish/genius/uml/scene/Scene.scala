@@ -37,8 +37,9 @@ final case class SceneElement(
 // A connector leaves its source through the middle of one plinth side and arrives at
 // the middle of one side of its target; between them it follows `bends`. `clear` is
 // false only when the plinths left no way around them, and the route may cross one.
-// `start` and `end` are set when the layout spread the ends along their sides
-// (SceneLayout.Options.spreadPorts): the points the connector leaves and arrives at.
+// `start` and `end` are set when the layout gave each connector its own port
+// (SceneLayout.Options.spreadPorts): the points it leaves and arrives at. `label` is
+// set when the edge had one and the layout knew its size.
 final case class SceneRelationship(
   key: SceneId,
   source: SceneId,
@@ -49,9 +50,18 @@ final case class SceneRelationship(
   bends: List[ScenePoint],
   clear: Boolean,
   start: Option[ScenePoint] = None,
-  end: Option[ScenePoint] = None)
+  end: Option[ScenePoint] = None,
+  label: Option[SceneLabel] = None)
 
 final case class ScenePoint(x: Double, y: Double)
+
+// A connector's label: its text, centred at x and y, in the room the layout kept for it.
+final case class SceneLabel(
+  text: String,
+  x: Double,
+  y: Double,
+  w: Double,
+  d: Double)
 
 // A SceneFlow as the builder walks it. Each leg goes from its source to its target:
 // along the connector `relationship` when one joins the two (in either direction),
@@ -80,6 +90,9 @@ object PortName:
 
 object ScenePoint:
   given JsonCodec[ScenePoint] = DeriveJsonCodec.gen
+
+object SceneLabel:
+  given JsonCodec[SceneLabel] = DeriveJsonCodec.gen
 
 object SceneElement:
   given JsonCodec[SceneElement] = DeriveJsonCodec.gen

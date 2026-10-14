@@ -10,7 +10,7 @@ import org.eclipse.elk.alg.layered.options.{
 }
 import org.eclipse.elk.core.RecursiveGraphLayoutEngine
 import org.eclipse.elk.core.data.LayoutMetaDataService
-import org.eclipse.elk.core.math.{ElkPadding, KVector}
+import org.eclipse.elk.core.math.ElkPadding
 import org.eclipse.elk.core.options.*
 import org.eclipse.elk.core.util.BasicProgressMonitor
 import org.eclipse.elk.graph.*
@@ -30,8 +30,8 @@ private[scene] object ElkPass:
   private val EDGE_NODE                = 0.35
   private val EDGE_EDGE                = 0.25
   private val TAB_DEPTH                = 0.2
-  private val CONTAINER_MARGIN         = 0.8
-  private val LOWEST_COLUMN            = 4
+
+  private val LOWEST_COLUMN = 4
 
   final case class Rect(
     x: Double,
@@ -67,6 +67,34 @@ private[scene] object ElkPass:
         SceneLayout.round((x - root.getWidth / 2) / SCALE),
         SceneLayout.round((root.getHeight / 2 - y) / SCALE),
       )
+
+    // where a connector leaves and arrives, as ELK placed its own ports
+    def endsOf(edge: ElkEdge): Option[(ScenePoint, ScenePoint)] =
+      val (offsetX, offsetY) = Option(edge.getContainingNode).map(absolute).getOrElse((0.0, 0.0))
+      edge.getSections.asScala.headOption.map: section =>
+        (
+          toScene(offsetX + section.getStartX, offsetY + section.getStartY),
+          toScene(offsetX + section.getEndX, offsetY + section.getEndY),
+        )
+
+    // the room ELK kept for a connector's label, given the label's text
+    def labelOf(edge: ElkEdge): Option[String => SceneLabel] =
+      val (offsetX, offsetY) = Option(edge.getContainingNode).map(absolute).getOrElse((0.0, 0.0))
+      edge.getLabels.asScala.headOption.map: label =>
+        val centre = toScene(
+          offsetX + label.getX + label.getWidth / 2,
+          offsetY + label.getY + label.getHeight / 2,
+        )
+        text =>
+          SceneLabel(
+            text,
+            centre.x,
+            centre.y,
+            SceneLayout.round(label.getWidth / SCALE),
+            SceneLayout.round(label.getHeight / SCALE),
+          )
+
+    end labelOf
 
     def bendsOf(edge: ElkEdge): List[ScenePoint] =
       val (offsetX, offsetY) = Option(edge.getContainingNode).map(absolute).getOrElse((0.0, 0.0))
@@ -204,20 +232,36 @@ private[scene] object ElkPass:
       structure.edges.find(_.id == id).toList.flatMap(edge =>
         List(edge.source -> ends.from, edge.target -> ends.to)
       )
-    val ports  = wanted.distinct
-      .flatMap((id, side) =>
-        nodes.get(id).map(elkNode =>
-          (id, side) -> port(elkNode, side, structure.isContainer(id), kept.get(id))
-        )
-      )
-      .toMap
-    val edges  = structure.edges.flatMap: edge =>
+    // one port per side, in its middle; spread, one per connector end, placed by ELK
+    val ports  =
+      if options.spreadPorts then Map.empty
+      else
+        wanted.distinct
+          .flatMap((id, side) =>
+            nodes.get(id).map(elkNode =>
+              (id, side) -> port(elkNode, side, structure.isContainer(id), kept.get(id))
+            )
+          )
+          .toMap
+    def own(id: SceneId, side: PortName): Option[ElkPort] =
+      nodes.get(id).map(elkNode => port(elkNode, side, isContainer = true, None))
+    val edges                                             = structure.edges.flatMap: edge =>
       val ends: Option[(ElkConnectableShape, ElkConnectableShape)] = sides.get(edge.id) match
+        case Some(laid) if options.spreadPorts =>
+          own(edge.source, laid.from).zip(own(edge.target, laid.to))
         case Some(laid) => ports.get((edge.source, laid.from)).zip(ports.get((edge.target, laid.to)))
         case None => nodes.get(edge.source).zip(nodes.get(edge.target))
       ends.map: (from, to) =>
         val elkEdge = ElkGraphUtil.createSimpleEdge(from, to)
         elkEdge.setIdentifier(edge.id.value)
+        for
+          text   <- edge.label
+          (w, d) <- options.labelSize(text)
+        do
+          val label = ElkGraphUtil.createLabel(text, elkEdge)
+          label.setDimensions(w * SCALE, d * SCALE)
+          label.setProperty(CoreOptions.EDGE_LABELS_PLACEMENT, EdgeLabelPlacement.CENTER)
+          label.setProperty(CoreOptions.EDGE_LABELS_INLINE, java.lang.Boolean.TRUE)
         edge.id -> elkEdge
     Built(root, nodes, edges.toMap, kept)
   end build
@@ -246,8 +290,12 @@ private[scene] object ElkPass:
         case None    =>
           options.footprint(node).fold(footprint(node.kind))((w, d) => (width = w, depth = d))
       elkNode.setDimensions(size.width * SCALE, size.depth * SCALE)
-      elkNode.setProperty(CoreOptions.PORT_CONSTRAINTS, PortConstraints.FIXED_POS)
+      // spread, ELK places a leaf's ports along their sides; else they sit in the middle
+      if options.spreadPorts && !kept.contains(node.id) then
+        elkNode.setProperty(CoreOptions.PORT_CONSTRAINTS, PortConstraints.FIXED_SIDE)
+      else elkNode.setProperty(CoreOptions.PORT_CONSTRAINTS, PortConstraints.FIXED_POS)
       Map(node.id -> elkNode)
+    end if
 
   end add
 
@@ -262,24 +310,16 @@ private[scene] object ElkPass:
   ): Unit =
     val padding    = options.containerPadding * SCALE
     val isGrouping = node.kind == NodeKind.Grouping
-    // a footprint for a container is the least it may be: as wide as its name, say
-    val (least, _) = options.footprint(node).getOrElse((0.0, 0.0))
     val header     = options.containerHeader * SCALE
+    // a flat diagram heads a grouping like any container, with its name at the top
     val back       =
-      if isGrouping then padding + TAB_DEPTH * SCALE
-      else if options.headerAtBack then header
+      if options.headerAtBack then header
+      else if isGrouping then padding + TAB_DEPTH * SCALE
       else padding
     val front      = if isGrouping || options.headerAtBack then padding else header
     configure(elkNode, options, modelOrder)
     elkNode.setProperty(CoreOptions.PADDING, ElkPadding(back, padding, front, padding))
     elkNode.setProperty(CoreOptions.NODE_SIZE_CONSTRAINTS, EnumSet.of(SizeConstraint.MINIMUM_SIZE))
-    elkNode.setProperty(
-      CoreOptions.NODE_SIZE_MINIMUM,
-      KVector(
-        math.max(SceneLayout.PLINTH_WIDTH + CONTAINER_MARGIN, least) * SCALE,
-        SceneLayout.PLINTH_DEPTH * SCALE + back + front,
-      ),
-    )
     elkNode.setProperty(CoreOptions.PORT_CONSTRAINTS, PortConstraints.FIXED_SIDE)
     elkNode.setProperty(CoreOptions.PORT_ALIGNMENT_DEFAULT, PortAlignment.CENTER)
 

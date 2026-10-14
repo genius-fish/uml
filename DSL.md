@@ -1130,3 +1130,79 @@ blender -b -P archimate3d_blender.py -- --view scene.json \
   --flyover "Place an order" --blend flight.blend --animation flight.mp4
 ```
 
+
+## Diagrams: ArchiMate drawn flat
+
+`genius-uml-diagram` draws a `SceneGraph` as a flat ArchiMate diagram without PlantUML.
+It lays the graph out with the same ELK pass as the 3D scene, so the diagram in a
+document and the scene in a flyover show the same landscape in the same places, and
+draws it as plain geometry that three writers put out:
+
+| Writer | Output | Needs |
+|---|---|---|
+| `Tikz.picture(drawing, palette)` | a `tikzpicture` in absolute centimetres | TikZ with `arrows.meta` (`Tikz.libraries`) |
+| `Tikz.standalone(drawing, palette)` | a `standalone` document around it, set in TeX Gyre Heros | pdflatex |
+| `Svg.document(drawing, palette)` | an SVG document | nothing |
+| `Png.image(drawing, dpi, palette)` | a PNG, drawn with Java2D | nothing |
+
+```scala
+import fish.genius.uml.diagram.*
+
+Diagram.draw(graph).map: drawing =>
+  os.write.over(os.pwd / "landscape.tex", Tikz.standalone(drawing))
+  os.write.over(os.pwd / "landscape.svg", Svg.document(drawing))
+  os.write.over(os.pwd / "landscape.png", Png.image(drawing))
+```
+
+### What a box says
+
+A box says its node's `label`, then its `caption` (the type and technology, smaller),
+then its `note` (a line or two about it, smaller still). A connector says its edge's
+`label`. The three are optional fields of `SceneNode` and `SceneEdge`; the 3D scene
+leaves them out. Every line is placed by `Diagram` on its baseline, so the PDF, SVG and
+PNG set the same text in the same place.
+
+Boxes are sized to what they say, measured in the diagram's font (the first of
+`Style.fontFamilies` that is installed: TeX Gyre Heros, Nimbus Sans, Liberation Sans,
+all with Helvetica's metrics). A box is 3 cm wide, 3.8 cm when it has a note or its name
+would take more than two lines, wider still for a word that does not fit; as tall as
+its lines need. The name and caption keep clear of the icon on both sides, so they stay
+centred. `Drawing.overflow` counts the lines wider than their room.
+
+A container's name and caption stand in a header strip at its top. ELK sizes a
+container from its children, so a long name may not fit beside the icon; it then breaks
+over as many lines as it needs, and the layout runs again with every header that much
+taller.
+
+### The notation
+
+ArchiMate 3.2's box notation: a square box for structure, rounded corners for behaviour
+and strategy, cut corners for motivation, and a band across the top for a passive object
+(data object, business object, contract, representation, artifact, material). Every
+element type has its icon in the top right corner (`Notation.icon`, a total match over
+`ShapeType`); a grouping is a dashed frame, a junction a dot. Every relationship type has
+its line and ends (`Notation.ends`): a filled diamond for composition, an open one for
+aggregation, a dot and arrow for assignment, a dashed line with an open triangle for
+realization, an open arrowhead for serving, a dotted line for access (the arrowhead
+pointing the way the data goes), and so on.
+
+The layer colours are named `am-business`, `am-application`, `am-technology`,
+`am-physical`, `am-strategy`, `am-motivation`, `am-implementation`, with `am-line` for
+the lines and text. `Notation.palette` holds ArchiMate's suggested fills. The TikZ
+picture *provides* them, so a document that defines `am-application` before it keeps its
+own; a `palette` passed to a writer replaces them outright.
+
+### The layout
+
+`Diagram` calls `SceneLayout.layout` with four options the 3D scene leaves off:
+
+- `footprint`: each leaf's size, from what its box says.
+- `headerAtBack`: a container's header at its top, where a diagram is read first.
+- `spreadPorts`: each connector gets its own port, which ELK places along the side, so
+  connectors meeting a box on one side do not run on top of one another.
+  `SceneRelationship.start` and `end` carry where it leaves and arrives.
+- `labelSize`: how large a connector's label is, so ELK keeps room for it.
+  `SceneRelationship.label` carries where it went. ELK places the label of a connector
+  that crosses a container's edge in another frame; when the room it kept is off the
+  route, `Diagram` puts the label on the route's longest stretch instead, where it covers
+  no box and no header.

@@ -22,13 +22,15 @@ object SceneLayout:
 
   // Spacing in scene units. maxPerRow caps the plinths side by side; 0 means about the
   // square root of the graph's size. panes says how the passports' panes stand, which
-  // decides how much floor the layout keeps beside each plinth. footprint sizes a leaf
-  // (width, depth) instead of the fixed plinth, as a flat diagram sizes a box to its
-  // name, and gives a container the least width it may have; headerAtBack puts a container's header
-  // strip at its back, where a flat
-  // diagram reads it first, instead of at its front. spreadPorts gives each connector
-  // on a side its own point along it, ordered by where its other end lies, instead of
-  // all meeting in the middle (a flat diagram, where they would run on top of one another).
+  // decides how much floor the layout keeps beside each plinth.
+  //
+  // The rest is for a flat diagram, and the scene leaves it off. footprint sizes a leaf
+  // (width, depth) instead of the fixed plinth, as a diagram sizes a box to its name
+  // (ELK sizes a container from its children). headerAtBack puts a container's
+  // header strip at its back, where a diagram reads it first. spreadPorts gives each
+  // connector its own port, which ELK places along the side, instead of all meeting in
+  // the middle and running on top of one another. labelSize says how large a
+  // connector's label is (width, depth), and the layout keeps room for it.
   final case class Options(
     nodeSpacing: Double = 0.9,
     layerSpacing: Double = 1.6,
@@ -38,7 +40,8 @@ object SceneLayout:
     panes: PaneStyle = PaneStyle(),
     footprint: SceneNode => Option[(Double, Double)] = _ => None,
     headerAtBack: Boolean = false,
-    spreadPorts: Boolean = false)
+    spreadPorts: Boolean = false,
+    labelSize: String => Option[(Double, Double)] = _ => None)
 
   def layout(graph: SceneGraph, options: Options = Options()): Either[SceneError, Scene] =
     graph.problems match
@@ -107,7 +110,6 @@ object SceneLayout:
       built.plinthOf(node.id).map(element(structure, built, node, _, paneSides.get(node.id)))
     val byKey         = elements.map(element => element.key -> element).toMap
     val routes        = SceneRoutes(elements)
-    val shifts        = if options.spreadPorts then spread(structure, sides, byKey) else Map.empty
     val relationships = structure.edges.flatMap: edge =>
       for
         laid   <- built.edges.get(edge.id)
@@ -115,9 +117,16 @@ object SceneLayout:
         source <- byKey.get(edge.source)
         target <- byKey.get(edge.target)
       yield
-        val (from, to) =
-          (shifts.getOrElse((edge.id, true), 0.0), shifts.getOrElse((edge.id, false), 0.0))
-        val route = routes.finish(source, ends.from, built.bendsOf(laid), target, ends.to, from, to)
+        val placed = Option.when(options.spreadPorts)(built.endsOf(laid)).flatten
+        val route  = routes.finish(
+          source,
+          ends.from,
+          built.bendsOf(laid),
+          target,
+          ends.to,
+          placed.map(_._1),
+          placed.map(_._2),
+        )
         SceneRelationship(
           key = edge.id,
           source = edge.source,
@@ -127,8 +136,9 @@ object SceneLayout:
           targetPort = ends.to,
           bends = route.bends,
           clear = route.clear,
-          start = Option.when(options.spreadPorts)(SceneRoutes.portOf(source, ends.from, from)),
-          end = Option.when(options.spreadPorts)(SceneRoutes.portOf(target, ends.to, to)),
+          start = placed.map(_._1),
+          end = placed.map(_._2),
+          label = edge.label.flatMap(text => built.labelOf(laid).map(_(text))),
         )
     val flows         = graph.flows.map: flow =>
       FlowRoute(
@@ -141,61 +151,6 @@ object SceneLayout:
     Scene(graph.name, round(built.width), round(built.depth), elements, relationships, flows, panes)
 
   end scene
-
-  private val SPREAD_STEP  = 0.35
-  private val SPREAD_SHARE = 0.6
-
-  // How far along its side each connector end moves from the middle, keyed by the
-  // connector and whether it is the source end: the ends that meet on one side are
-  // spaced evenly over its middle part, in the order their other ends lie along it.
-  private def spread(
-    structure: SceneStructure,
-    sides: Map[SceneId, Sides],
-    byKey: Map[SceneId, SceneElement],
-  ): Map[(SceneId, Boolean), Double] =
-    val ends = structure.edges.flatMap: edge =>
-      sides.get(edge.id).toList.flatMap: laid =>
-        List(
-          (edge.id, true, edge.source, laid.from, edge.target),
-          (edge.id, false, edge.target, laid.to, edge.source),
-        )
-    ends
-      .groupBy(
-        (
-          _,
-          _,
-          at,
-          side,
-          _,
-        ) => (at, side)
-      )
-      .toList
-      .flatMap:
-        case ((at, side), here) =>
-          byKey.get(at).toList.flatMap: element =>
-            val vertical = side == PortName.North || side == PortName.South
-            val length   = if vertical then element.w else element.d
-            val step     =
-              if here.size < 2 then 0.0
-              else math.min(SPREAD_STEP, length * SPREAD_SHARE / (here.size - 1))
-            val ordered  = here.sortBy(
-              (
-                id,
-                _,
-                _,
-                _,
-                other,
-              ) =>
-                byKey.get(other).fold((0.0, id.value))(o =>
-                  ((if vertical then o.x else o.y), id.value)
-                )
-            )
-            ordered.zipWithIndex.map:
-              case ((id, isSource, _, _, _), i) => (id, isSource) ->
-                round((i - (here.size - 1) / 2.0) * step)
-      .toMap
-
-  end spread
 
   // The connector a step runs along: one from its source to its target, else one the
   // other way round. A connector to an ancestor is not in the scene, so not a carrier.

@@ -40,6 +40,7 @@ enum Prim derives CanEqual:
     ry: Double,
     fill: Ink = Ink.Empty)
 
+  // a rectangle from its lower left corner; without `stroke` only its fill shows
   case Box(
     x: Double,
     y: Double,
@@ -47,14 +48,16 @@ enum Prim derives CanEqual:
     h: Double,
     radius: Double,
     fill: Ink,
-    dash: Dash = Dash.Solid)
+    dash: Dash = Dash.Solid,
+    stroke: Boolean = true)
 
-  // lines centred on `at`, or starting from it when `centred` is false
-  case Label(
-    at: Pt,
-    lines: List[String],
-    centred: Boolean = true,
-    bold: Boolean = false)
+  // one line of text on its baseline, centred on x or starting from it, at size points
+  case Text(
+    baseline: Pt,
+    text: String,
+    size: Double,
+    bold: Boolean = false,
+    centred: Boolean = true)
 
   case Connector(
     points: List[Pt],

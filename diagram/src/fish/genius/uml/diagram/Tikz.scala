@@ -3,33 +3,34 @@ package fish.genius.uml.diagram
 import java.util.Locale
 
 // A Drawing as a tikzpicture, in absolute centimetres: LaTeX computes nothing, it only
-// draws. The layer colours are provided, not defined, so a theme that defines
-// am-application (and the others) before the picture keeps its own.
+// draws. Each line of text is a node on its baseline, where Diagram put it. The layer
+// colours are provided, not defined, so a theme that defines am-application (and the
+// others) before the picture keeps its own; a palette passed here is defined outright.
 object Tikz:
 
   val libraries: String = "\\usetikzlibrary{arrows.meta}"
 
-  def picture(drawing: Diagram.Drawing): String =
-    val style   = drawing.style
-    val size    = f(style.fontSize)
-    val leaded  = f(style.fontSize * style.lineHeight)
-    val colours = Notation.palette.map((name, hex) => s"\\providecolor{$name}{HTML}{$hex}")
+  def picture(drawing: Diagram.Drawing, palette: Map[String, String] = Map.empty): String =
+    val colours = Notation.palette.map: (name, hex) =>
+      palette.get(name).fold(s"\\providecolor{$name}{HTML}{$hex}")(own =>
+        s"\\definecolor{$name}{HTML}{$own}"
+      )
     val body    = drawing.prims.map(prim)
     (colours ++
     List(
-      s"\\begin{tikzpicture}[x=1cm,y=1cm,line width=0.5pt,line join=round,draw=am-line," +
-      s"font=\\sffamily\\fontsize{$size}{$leaded}\\selectfont]"
-    ) ++ body ++ List("\\end{tikzpicture}")).mkString("\n")
+      "\\begin{tikzpicture}[x=1cm,y=1cm,line width=0.5pt,line join=round,draw=am-line,font=\\sffamily]"
+    ) ++
+    body ++ List("\\end{tikzpicture}")).mkString("\n")
 
   // a standalone document around the picture, for pdflatex
-  def standalone(drawing: Diagram.Drawing): String =
+  def standalone(drawing: Diagram.Drawing, palette: Map[String, String] = Map.empty): String =
     List(
       "\\documentclass[tikz,border=4pt]{standalone}",
       "\\usepackage[T1]{fontenc}",
       "\\usepackage{tgheros}",
       libraries,
       "\\begin{document}",
-      picture(drawing),
+      picture(drawing, palette),
       "\\end{document}",
     ).mkString("\n")
 
@@ -61,23 +62,26 @@ object Tikz:
     case Head.OpenTriangle   => "Triangle[open,fill=white,length=7pt,width=6pt]"
     case Head.Barb           => "Straight Barb[length=4pt,width=5pt]"
 
+  private val thin = Some("line width=0.4pt")
+
   private def prim(p: Prim): String = p match
-    case Prim.Poly(points, closed, fill, d)    =>
+    case Prim.Poly(points, closed, fill, d)       =>
       val path = points.map(pt).mkString(" -- ") + (if closed then " -- cycle" else "")
-      s"\\draw${options(ink(fill).map("fill=" + _), dash(d), Some("line width=0.4pt"))} $path;"
-    case Prim.Circle(c, r, fill)               =>
-      s"\\draw${options(ink(fill).map("fill=" + _), Some("line width=0.4pt"))} ${pt(c)} circle[radius=${f(r)}];"
-    case Prim.Ellipse(c, rx, ry, fill)         =>
-      s"\\draw${options(ink(fill).map("fill=" + _), Some("line width=0.4pt"))} ${pt(c)} ellipse[x radius=${f(rx)},y radius=${f(ry)}];"
-    case Prim.Box(x, y, w, h, r, fill, d)      =>
-      val round = Option.when(r > 0)(s"rounded corners=${f(r)}cm")
-      s"\\draw${options(ink(fill).map("fill=" + _), dash(d), round)} ${pt((x, y))} rectangle ${pt((x + w, y + h))};"
-    case Prim.Label(at, lines, centred, bold)  =>
-      val text   = lines.map(escape).mkString("\\\\")
-      val font   = if bold then "\\bfseries " else ""
-      val anchor = if centred then "align=center" else "anchor=west,align=left"
-      s"\\node[$anchor,inner sep=0pt] at ${pt(at)} {$font$text};"
-    case Prim.Connector(points, d, start, end) =>
+      s"\\draw${options(ink(fill).map("fill=" + _), dash(d), thin)} $path;"
+    case Prim.Circle(c, r, fill)                  =>
+      s"\\draw${options(ink(fill).map("fill=" + _), thin)} ${pt(c)} circle[radius=${f(r)}];"
+    case Prim.Ellipse(c, rx, ry, fill)            =>
+      s"\\draw${options(ink(fill).map("fill=" + _), thin)} ${pt(c)} ellipse[x radius=${f(rx)},y radius=${f(ry)}];"
+    case Prim.Box(x, y, w, h, r, fill, d, stroke) =>
+      val round   = Option.when(r > 0)(s"rounded corners=${f(r)}cm")
+      val command = if stroke then "\\draw" else "\\fill"
+      s"$command${options(ink(fill).map("fill=" + _), dash(d), round)} ${pt((x, y))} rectangle ${pt((x + w, y + h))};"
+    case Prim.Text(at, text, size, bold, centred) =>
+      val anchor = if centred then "base" else "base west"
+      val weight = if bold then "\\bfseries" else ""
+      s"\\node[anchor=$anchor,inner sep=0pt,font=\\sffamily$weight\\fontsize{${f(size)}}{${f(size *
+          1.2)}}\\selectfont] at ${pt(at)} {${escape(text)}};"
+    case Prim.Connector(points, d, start, end)    =>
       val arrows = s"arrows={${start.map(head).getOrElse("")}-${end.map(head).getOrElse("")}}"
       s"\\draw${options(dash(d), Some(arrows))} ${points.map(pt).mkString(" -- ")};"
 
