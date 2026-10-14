@@ -2320,10 +2320,12 @@ def measure_flight(scene, cam, built, shots):
 
 def measure_flight_panes(scene, cam, panes, shots, moments):
     """How the flight shows the passports: how far inside the frame the panes of each
-    step's elements stay at its arrival, mid-run and departure (None without any), and the
-    smallest share of the frame's height a pane fills while it is read (None without any),
-    and how many moments show their pane upside down (its top edge lower on the screen
-    than its bottom)."""
+    step's elements stay at its arrival, mid-run and departure (None without any), the
+    smallest share of the frame a pane fills while it is read, along the side that binds
+    (None without any), and how many moments show their pane upside down (its top edge
+    lower on the screen than its bottom). A read frames the pane to fit: a tall pane fills
+    the frame's height, a wide and low one (a passport with little to say) its width, so
+    the share is the larger of the two."""
     margin, share, flipped = None, None, 0
     for step, frames, _ in shots:
         held = [panes[k] for k in {step["source"], step["target"]} if k in panes]
@@ -2339,8 +2341,9 @@ def measure_flight_panes(scene, cam, panes, shots, moments):
         flipped += 1 if top.y <= bottom.y else 0
         for frame_no in frames:
             scene.frame_set(frame_no)
-            ys = [p.y for p in project(scene, cam, face_corners(pane, 0.0))]
-            seen = max(ys) - min(ys)
+            seen_at = project(scene, cam, face_corners(pane, 0.0))
+            xs, ys = [p.x for p in seen_at], [p.y for p in seen_at]
+            seen = max(max(xs) - min(xs), max(ys) - min(ys))
             share = seen if share is None else min(share, seen)
     return margin, share, flipped
 
@@ -2465,7 +2468,7 @@ def point(args, scene, cam, view, built, roots, font, panes=()):
         if flight.pane_margin is not None:
             read = f"{flight.read_share:.3f}" if flight.read_share is not None else "none"
             print(f"archimate3d: {flight.moments} passport moments; the panes of each step stay "
-                  f"{flight.pane_margin:.3f} inside the frame, and a pane read fills {read} of its height, "
+                  f"{flight.pane_margin:.3f} inside the frame, and a pane read fills {read} of the frame where it binds, "
                   f"{flight.flipped} upside down")
         return flow
     print(f"archimate3d: a placard's name renders about {placard_px(scene, cam, roots):.1f} px tall")

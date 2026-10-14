@@ -98,7 +98,7 @@ object SceneBlenderSpec extends ZIOSpecDefault:
 
     def reading: Option[Reading] =
       first(
-        """(\d+) passport moments; the panes of each step stay ([\d.-]+) inside the frame, and a pane read fills ([\d.]+|none) of its height, (\d+) upside down"""
+        """(\d+) passport moments; the panes of each step stay ([\d.-]+) inside the frame, and a pane read fills ([\d.]+|none) of the frame where it binds, (\d+) upside down"""
       ).collect { case List(n, m, r, u) => Reading(n.toInt, m.toDouble, r.toDoubleOption, u.toInt) }
 
     def paneLights: Option[Int] = first("""(\d+) pane lights""").map(_.head.toInt)
@@ -247,6 +247,15 @@ object SceneBlenderSpec extends ZIOSpecDefault:
 
   end withPassports
 
+  // one passport with nothing but its name: a wide, low pane, framed by its width
+  private val withShortPassport =
+    withPassports.copy(nodes =
+      withPassports.nodes match
+        case first :: rest =>
+          first.copy(passport = Some(Passport("Element", first.label, footer = Some("as of 13 Oct 2026")))) :: rest
+        case none          => none
+    )
+
   private val MP4 = "ftyp".getBytes(StandardCharsets.US_ASCII) // after the box size
   private val PNG = Array(0x89, 'P', 'N', 'G').map(_.toByte)
 
@@ -320,12 +329,14 @@ object SceneBlenderSpec extends ZIOSpecDefault:
           read    <- built(withPassports, "--flyover", "buying", "--fps", "6")
           flat    <- built(withPassports, "--flyover", "buying", "--fps", "6", "--panes", "flat")
           lectern <- built(withPassports, "--flyover", "buying", "--fps", "6", "--panes", "lectern")
+          short   <- built(withShortPassport, "--flyover", "buying", "--fps", "6")
           plain   <- built(small, "--flyover", "buying", "--fps", "6")
         yield assertTrue(
           // the customer, the process and the shop each carry a pane: three moments
           readable(read),
           readable(flat),
           readable(lectern),
+          readable(short),
           // at 6 fps: the 63 frames of the plain flight + 3 moments × (glide 7 + read 19)
           read.flight.exists(f => f.steps == 2 && f.frames == 63 + 3 * (7 + 19)),
           read.flight.exists(f => f.margin > 0.05 && f.clearance > 0),
