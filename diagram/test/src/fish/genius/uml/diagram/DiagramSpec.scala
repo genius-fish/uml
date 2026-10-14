@@ -152,6 +152,8 @@ object DiagramSpec extends ZIOSpecDefault:
           svg.startsWith("<svg") && svg.endsWith("</svg>"),
           "&(?!amp;|lt;|gt;|quot;)".r.findFirstIn(svg).isEmpty,
           png.take(4).toList == List(0x89, 'P', 'N', 'G').map(_.toByte),
+          // the SVG stands on its paper, so patches cut in it never show as blocks
+          Svg.document(drawing, Map("am-paper" -> "FBF6EC")).contains("""fill="#FBF6EC"/>"""),
         )
       ,
       test("the same graph gives the same drawing"):

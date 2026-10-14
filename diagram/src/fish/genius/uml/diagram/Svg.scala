@@ -134,6 +134,10 @@ object Svg:
           minY)}" viewBox="0 0 ${len(maxX - minX)} ${len(maxY - minY)}">""",
       s"<title>${escape(drawing.name)}</title>",
       s"<defs>${defs.mkString}</defs>",
+      // the page the diagram stands on, which its gaps and label patches are cut in
+      s"""<rect x="0" y="0" width="${len(maxX - minX)}" height="${len(maxY - minY)}" fill="${hex(
+          c.paper
+        )}"/>""",
       s"""<g stroke-linejoin="round" stroke-linecap="round" font-family="'${escape(
           drawing.family
         ).replace("'", "")}', Montserrat, Helvetica, Arial, sans-serif">""",
