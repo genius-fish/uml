@@ -35,12 +35,15 @@ object Diagram:
 
   end Style
 
+  // pageWidth is the width a diagram should keep within, in centimetres: a row wider
+  // folds, so the diagram is printed at its own size rather than scaled down
   final case class Options(
     style: Style = Style(),
     nodeSpacing: Double = 0.8,
     layerSpacing: Double = 1.1,
     containerPadding: Double = 0.35,
-    maxPerRow: Int = 0)
+    maxPerRow: Int = 0,
+    pageWidth: Double = 13.0)
 
   // What was drawn, and the scene it was drawn from; `overflow` counts the lines wider
   // than their room, which only a single word longer than the widest box can make.
@@ -79,6 +82,7 @@ object Diagram:
           spreadPorts = true,
           labelSize = text => labels.get(text).map(l => (l.w, l.h)),
           compact = true,
+          rowWidth = options.pageWidth,
         ),
       )
     // ELK sizes a container from its children, so a long name may not fit beside its
@@ -110,16 +114,19 @@ object Diagram:
         byId.get(e.key).toList.flatMap(n =>
           element(e, n, sized.get(n.id), headed.get(e.key), tall, style, measure)
         )
-      val routes             = scene.relationships.flatMap: r =>
+      val laidOut            = scene.relationships.flatMap: r =>
         for
           kind   <- kinds.get(r.key)
           source <- placed.get(r.source)
           target <- placed.get(r.target)
         yield
+          val from = r.start.fold(port(source, r.sourcePort))(p => (p.x, p.y))
+          val to   = r.end.fold(port(target, r.targetPort))(p => (p.x, p.y))
+          (r, kind, straighten(from :: r.bends.map(p => (p.x, p.y)) ::: List(to)))
+      val spread             = nudge(laidOut.map(_._3))
+      val routes             = laidOut.zip(spread).map:
+        case ((r, kind, _), points) =>
           val (dash, start, end) = Notation.ends(kind)
-          val from               = r.start.fold(port(source, r.sourcePort))(p => (p.x, p.y))
-          val to                 = r.end.fold(port(target, r.targetPort))(p => (p.x, p.y))
-          val points             = straighten(from :: r.bends.map(p => (p.x, p.y)) ::: List(to))
           (r, points, Prim.Connector(points, dash, start, end))
       // what a label may not cover: the leaves, and the containers' headers
       val taken              = scene.elements.map: e =>
@@ -160,8 +167,9 @@ object Diagram:
 
   end draw
 
-  private val GAP  = 0.06
-  private val STEP = 0.1
+  private val GAP      = 0.06
+  private val ICON_AIR = 0.08
+  private val STEP     = 0.1
 
   // A route without the tiny steps ELK leaves where two stretches nearly line up,
   // which a rounded bend turns into a kink. The part of the route on one side of such
@@ -188,6 +196,71 @@ object Diagram:
         else points
 
   end straighten
+
+  private val APART = 0.12
+  private val SAME  = 0.04
+
+  // Lines that run on top of one another moved apart. Inner stretches of different
+  // routes that lie on the same line (within SAME) and overlap are spread across it,
+  // APART from each other, centred where they were, in the order the stretches after
+  // them go, so they part without crossing. A route's first and last stretch stay, so
+  // its ends stay on their boxes.
+  private def nudge(routes: List[List[Pt]]): List[List[Pt]] =
+    final case class Stretch(
+      route: Int,
+      at: Int,
+      upright: Boolean,
+      line: Double,
+      lo: Double,
+      hi: Double,
+      next: Double)
+    val stretches                        = routes.zipWithIndex.flatMap: (ps, r) =>
+      (1 until ps.size - 2).toList.flatMap: i =>
+        val (a, b) = (ps(i), ps(i + 1))
+        val after  = ps.lift(i + 2).getOrElse(b)
+        if math.abs(a._1 - b._1) < 1e-6 then
+          List(Stretch(
+            r,
+            i,
+            upright = true,
+            a._1,
+            math.min(a._2, b._2),
+            math.max(a._2, b._2),
+            after._1,
+          ))
+        else if math.abs(a._2 - b._2) < 1e-6 then
+          List(Stretch(
+            r,
+            i,
+            upright = false,
+            a._2,
+            math.min(a._1, b._1),
+            math.max(a._1, b._1),
+            after._2,
+          ))
+        else Nil
+        end if
+    def together(a: Stretch, b: Stretch) =
+      a.upright == b.upright && a.route != b.route && math.abs(a.line - b.line) < SAME &&
+      a.lo < b.hi - SAME && b.lo < a.hi - SAME
+    // the stretches that share a line, gathered transitively
+    val groups = stretches.foldLeft(List.empty[List[Stretch]]): (found, st) =>
+      val (joined, apart) = found.partition(_.exists(together(_, st)))
+      (st :: joined.flatten) :: apart
+    val shifts = groups.filter(_.map(_.route).distinct.size > 1).flatMap: group =>
+      val ordered = group.sortBy(st => (st.next, st.route))
+      val centre  = group.map(_.line).sum / group.size
+      ordered.zipWithIndex.map((st, k) =>
+        (st.route, st.at, st.upright, centre + (k - (group.size - 1) / 2.0) * APART)
+      )
+    routes.zipWithIndex.map: (ps, r) =>
+      shifts.filter(_._1 == r).foldLeft(ps.toVector): (pts, shift) =>
+        val (_, i, upright, line) = shift
+        def moved(p: Pt)          = if upright then (line, p._2) else (p._1, line)
+        pts.updated(i, moved(pts(i))).updated(i + 1, moved(pts(i + 1)))
+      .toList
+
+  end nudge
 
   // Where two connectors cross, the upright one is broken: a patch of the field under
   // the crossing cuts it, and a short piece of the level one is drawn again over it,
@@ -266,7 +339,8 @@ object Diagram:
     case NodeKind.AndJunction | NodeKind.OrJunction =>
       Box(style.junction, style.junction, Nil, 0)
     case kind                                       =>
-      val clear            = 2 * (style.padding + style.iconSize)
+      // the name and caption keep clear of the icon, and of a little air beside it
+      val clear            = 2 * (style.padding + style.iconSize + ICON_AIR)
       val full             = 2 * style.padding
       def lines(w: Double) =
         measure

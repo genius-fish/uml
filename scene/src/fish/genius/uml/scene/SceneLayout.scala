@@ -32,7 +32,8 @@ object SceneLayout:
   // the middle and running on top of one another. labelSize says how large a
   // connector's label is (width, depth), and the layout keeps room for it. compact
   // places the nodes with network simplex and compacts the result, which a page
-  // wants and a scene to walk through does not. A diagram
+  // wants and a scene to walk through does not. rowWidth folds a row wider than it
+  // (a page's width; 0, no limit). A diagram
   // has no passports, and spreadPorts does not keep a pane's floor: use one or the other.
   final case class Options(
     nodeSpacing: Double = 0.9,
@@ -45,7 +46,8 @@ object SceneLayout:
     headerAtBack: Boolean = false,
     spreadPorts: Boolean = false,
     labelSize: String => Option[(Double, Double)] = _ => None,
-    compact: Boolean = false)
+    compact: Boolean = false,
+    rowWidth: Double = 0)
 
   def layout(graph: SceneGraph, options: Options = Options()): Either[SceneError, Scene] =
     graph.problems match
@@ -128,11 +130,15 @@ object SceneLayout:
         source <- byKey.get(edge.source)
         target <- byKey.get(edge.target)
       yield
+        // an edge ELK was handed the other way round comes back reversed
+        val back   = built.reversed.contains(edge.id)
         val placed = Option.when(options.spreadPorts)(built.endsOf(laid)).flatten
+          .map((a, b) => if back then (b, a) else (a, b))
+        val bends  = if back then built.bendsOf(laid).reverse else built.bendsOf(laid)
         val route  = routes.finish(
           source,
           ends.from,
-          built.bendsOf(laid),
+          bends,
           target,
           ends.to,
           placed.map(_._1),

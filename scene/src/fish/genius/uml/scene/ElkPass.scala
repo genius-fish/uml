@@ -43,7 +43,8 @@ private[scene] object ElkPass:
     root: ElkNode,
     nodes: Map[SceneId, ElkNode],
     edges: Map[SceneId, ElkEdge],
-    reserves: Map[SceneId, PaneLayout.Reserve] = Map.empty):
+    reserves: Map[SceneId, PaneLayout.Reserve] = Map.empty,
+    reversed: Set[SceneId] = Set.empty):
     def width: Double                     = root.getWidth / SCALE
     def depth: Double                     = root.getHeight / SCALE
     def rectOf(id: SceneId): Option[Rect] = nodes.get(id).map(rect)
@@ -137,8 +138,9 @@ private[scene] object ElkPass:
         1
       )(_ + _)
     def isLeaf(id: SceneId): Boolean = !structure.isContainer(id) && degree.getOrElse(id, 0) <= 1
-    structure.nodes
-      .flatMap(node => built.rectOf(node.id).map(rect => (node.id, rect)))
+    val placed                       =
+      structure.nodes.flatMap(node => built.rectOf(node.id).map(rect => (node.id, rect)))
+    val byCount                      = placed
       .groupBy((id, rect) => (structure.parentOf.get(id), math.rint(rect.y)))
       .values
       .filter(_.size > columns)
@@ -146,6 +148,36 @@ private[scene] object ElkPass:
       .flatMap: row =>
         val leaves = row.filter((id, _) => isLeaf(id)).sortBy((_, rect) => rect.x).map(_._1)
         if leaves.size > columns then leaves.zip(leaves.drop(columns)) else Nil
+    // A row wider than the options' rowWidth (a page) folds too: the nodes of one parent
+    // that stand side by side (their heights overlap), as many of its leaves on the row
+    // as leave it within the width, the rest each under the one that many before it.
+    val byWidth                      =
+      if options.rowWidth <= 0 then Nil
+      else
+        val budget = options.rowWidth * SCALE
+        val gap    = options.nodeSpacing * SCALE
+        placed
+          .groupBy((id, _) => structure.parentOf.get(id))
+          .values
+          .toList
+          .flatMap: siblings =>
+            siblings
+              .sortBy(_._2.y)
+              .foldLeft(List.empty[List[(SceneId, Rect)]]):
+                case (row :: rows, node) if row.exists(_._2.bottom > node._2.y) =>
+                  (node :: row) :: rows
+                case (rows, node) => List(node) :: rows
+          .flatMap: row =>
+            val wide            = row.map(_._2.w).sum + gap * (row.size - 1)
+            val (leaves, fixed) = row.partition((id, _) => isLeaf(id))
+            if wide <= budget || leaves.isEmpty then Nil
+            else
+              val room   = budget - fixed.map(_._2.w + gap).sum
+              val each   = leaves.map(_._2.w).sum / leaves.size + gap
+              val fit    = math.max(1, (room / each).toInt)
+              val sorted = leaves.sortBy(_._2.x).map(_._1)
+              if sorted.size > fit then sorted.zip(sorted.drop(fit)) else Nil
+    (byCount ++ byWidth).distinct
 
   end foldsOf
 
@@ -254,7 +286,11 @@ private[scene] object ElkPass:
       nodes.get(id).map(elkNode => port(elkNode, side, isContainer = true, None))
     val edges                                             = structure.edges.flatMap: edge =>
       val ends: Option[(ElkConnectableShape, ElkConnectableShape)] = sides.get(edge.id) match
-        case Some(laid) if options.spreadPorts =>
+        // an edge that runs up, against the layers, is handed to ELK the other way
+        // round, so ELK routes it straight instead of looping round its inverted ports
+        case Some(laid) if options.spreadPorts && upward(laid) =>
+          own(edge.target, laid.to).zip(own(edge.source, laid.from))
+        case Some(laid) if options.spreadPorts                 =>
           own(edge.source, laid.from).zip(own(edge.target, laid.to))
         case Some(laid) => ports.get((edge.source, laid.from)).zip(ports.get((edge.target, laid.to)))
         case None => nodes.get(edge.source).zip(nodes.get(edge.target))
@@ -270,7 +306,12 @@ private[scene] object ElkPass:
           label.setProperty(CoreOptions.EDGE_LABELS_PLACEMENT, EdgeLabelPlacement.CENTER)
           label.setProperty(CoreOptions.EDGE_LABELS_INLINE, java.lang.Boolean.TRUE)
         edge.id -> elkEdge
-    Built(root, nodes, edges.toMap, kept)
+    val reversed                                          = Option
+      .when(options.spreadPorts)(
+        structure.edges.filter(e => sides.get(e.id).exists(upward)).map(_.id).toSet
+      )
+      .getOrElse(Set.empty)
+    Built(root, nodes, edges.toMap, kept, reversed)
   end build
 
   private def add(
@@ -334,7 +375,12 @@ private[scene] object ElkPass:
         SceneLayout.PLINTH_DEPTH * SCALE + back + front,
       ),
     )
-    elkNode.setProperty(CoreOptions.PORT_CONSTRAINTS, PortConstraints.FIXED_SIDE)
+    // spread, a container's own ports (the ones ELK makes where an edge crosses its
+    // edge) go on whichever side faces where the edge goes; else on fixed sides
+    elkNode.setProperty(
+      CoreOptions.PORT_CONSTRAINTS,
+      if options.spreadPorts then PortConstraints.FREE else PortConstraints.FIXED_SIDE,
+    )
     elkNode.setProperty(CoreOptions.PORT_ALIGNMENT_DEFAULT, PortAlignment.CENTER)
 
   end container
@@ -364,6 +410,10 @@ private[scene] object ElkPass:
     elkPort
 
   end port
+
+  // an edge leaving its source's north side for its target's south: up the page
+  private def upward(laid: Sides): Boolean = laid.from == PortName.North &&
+    laid.to == PortName.South
 
   private def portSide(side: PortName): PortSide = side match
     case PortName.North => PortSide.NORTH

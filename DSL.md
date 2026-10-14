@@ -920,6 +920,30 @@ same shapes in three.js for a browser preview. Both answer `Either[BuilderError,
   every problem; an ELK failure comes back as `SceneError.LayoutFailed` with its cause.
   Nothing is thrown.
 
+### The look: drawn for print
+
+Each shape says what it is part of (`Role`: a box, a container, a grouping, a mark such
+as an icon, a patch of a field) and each line of text its `Weight` and `Emphasis`, and
+the writers style by that, in the numbers `Look` holds so the PDF, SVG and PNG agree:
+
+- a box in its layer's colour falling off a little from top to bottom, its edge a shade
+  darker than its fill (the fill mixed half with the text colour), on a soft, short
+  shadow to the lower right (`shadows.blur` in TikZ, a drop shadow in SVG, a blurred
+  layer in PNG);
+- a container a lighter field behind what it holds, its heading on a patch of that
+  field so a line under it never runs through the letters; a grouping a dashed frame
+  with its name on a tab;
+- connectors 0.6 pt with rounded bends, `arrows.meta` heads sized per relationship
+  (Stealth, open triangle, diamonds, barb, dot) and round dots for access; where one
+  passes under another it is broken by a patch of the field the crossing lies on, and
+  labels stand on such a patch too;
+- drawn back to front: fields, boxes, lines, words, labels.
+
+`Typeface` sets the face: what a standalone picture loads, how each weight is selected
+in LaTeX, and the font files a box is measured with, found with `kpsewhich`, so a box is
+measured in the very file LaTeX sets it from. `Typeface.heros` (TeX Gyre Heros) is the
+default, `Typeface.montserrat` matches the Innovenso documents.
+
 ### The notation
 
 Every element is a plinth with a sculpture on it. The plinth's form is the aspect (square
@@ -1207,7 +1231,19 @@ off the scene is exactly what 1.9.1 made (`SceneGoldenSpec` holds a nested scene
 - `spreadPorts`: each connector gets its own port, which ELK places along the side, so
   connectors meeting a box on one side do not run on top of one another.
   `SceneRelationship.start` and `end` carry where it leaves and arrives. It keeps no
-  floor for a passport's pane, so a graph with passports leaves it off.
+  floor for a passport's pane, so a graph with passports leaves it off. With it, an
+  edge running up against the layers is handed to ELK the other way round (and its
+  route turned back after), and a container's ports are free, so an edge crossing a
+  container's edge enters on the side that faces it instead of looping round.
+
+After the layout `Diagram` tidies the routes: a tiny step ELK leaves where two
+stretches nearly line up is straightened (an end slides that little along its box's
+side), and stretches of different routes that lie on top of one another are spread
+apart, in the order they part.
+- `compact`: nodes placed with network simplex and the result compacted; where ELK
+  cannot (it fails on some nested graphs) the layout falls back to the plain one.
+- `rowWidth`: a row of one parent wider than this (a page, `Diagram.Options.pageWidth`,
+  13 cm) folds, so the diagram prints at its own size rather than scaled down.
 - `labelSize`: how large a connector's label is, so ELK keeps room for it.
   `SceneRelationship.label` carries where it went. ELK places the label of a connector
   that crosses a container's edge in another frame; when the room it kept is off the
