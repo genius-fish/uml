@@ -169,6 +169,7 @@ object Activity:
   private val DATA_SEP     = 0.1         // between two data beside a task
   private val FOOT         = 0.17        // a marker at a task's foot
   private val FRAME_PAD    = 0.2         // inside an expanded container, left and right
+  private val MESSAGE_IN   = 0.4         // above the first row, for a message into it
   private val MESSAGE_OUT  = 0.2         // a message out of a node's side before it turns
   private val BLACK_BOX_W  = 1.2         // a lane without nodes: a pool drawn as a black box
 
@@ -722,9 +723,14 @@ object Activity:
       else
         lanes.map(l => leading(headerLines(l))).maxOption.getOrElse(0.0) + 1.4 * style.padding
 
+    // above the first row, room for a message from a pool to come in over it
+    private val first: Double =
+      val ends = graph.messages.filter(m => lanes.exists(_.exists(_.id == m.from))).map(_.to)
+      if ends.exists(id => index.contains(id) && rank(id) == 0) then FIRST + MESSAGE_IN else FIRST
+
     // each row's top, the line its shapes are centred on, and its bottom
     private val (rowCentre, rowTop, rowBottom): (Vector[Double], Vector[Double], Vector[Double]) =
-      var y       = -header - FIRST
+      var y       = -header - first
       val centres = mutable.ArrayBuffer.empty[Double]
       val tops    = mutable.ArrayBuffer.empty[Double]
       val bottoms = mutable.ArrayBuffer.empty[Double]
@@ -1047,7 +1053,8 @@ object Activity:
           if !(right && beside(m.to)) && clearAcross(yv, edge, end._1, ends) then
             Some(List((edge, yv), end))
           else
-            val y = rowTop(rank(m.to)) + ROW_GAP / 2
+            val r = rank(m.to)
+            val y = rowTop(r) + (if r == 0 then first else ROW_GAP) / 2
             Some(List((edge, y), (xv, y), port(m.to, 'n')))
         case _                                  => None
       end match

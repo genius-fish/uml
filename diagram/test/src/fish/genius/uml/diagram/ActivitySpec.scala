@@ -407,6 +407,23 @@ object ActivitySpec extends ZIOSpecDefault:
           rings.size == 6,
         )
       ,
+      test("a message from a pool into the first row comes in under the lane headers"):
+        val d      = Activity.draw(Graph(
+          "In",
+          List(Lane("us", "Us"), Lane("them", "Them")),
+          List(
+            Node("s", "Order received", Kind.Start(Trigger.Message), Some("us")),
+            Node("t", "Confirm", Kind.Work(Task.User), Some("us")),
+          ),
+          List(Flow("s", "t")),
+          List(Message("them", "s", Some("order"))),
+        ))
+        val header =
+          d.prims.collect { case Prim.Poly(List(a, b), false, _, _, Role.Group) if a._2 == b._2 => a._2 }.head
+        val line   = d.prims.collect { case Prim.Connector(ps, Dash.Dashed, _, _) => ps }.head
+        val label  = texts(d).find(_.text == "order").get
+        assertTrue(line.forall(_._2 < header - 0.1), label.baseline._2 + 0.25 < header)
+      ,
       test("an empty process with lanes draws its lanes, and nothing else"):
         val d = Activity.draw(Graph("Empty", List(Lane("a", "A")), Nil, Nil))
         assertTrue(arrows(d).isEmpty, shapes(d).isEmpty)
