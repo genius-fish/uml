@@ -174,38 +174,43 @@ object Diagram:
   // A route without the tiny steps ELK leaves where two stretches nearly line up,
   // which a rounded bend turns into a kink. The part of the route on one side of such
   // a step moves across by its width, its end sliding that little along the side of
-  // its box (never off it: only a step square to the route's first, or last, stretch
-  // moves that end), and the step is gone.
-  private def straighten(points: List[Pt]): List[Pt] =
+  // its box (only a step square to the route's first, or last, stretch moves that
+  // end, so the end moves along its side, never off it), and the step is gone. Each
+  // round removes a point, so it ends.
+  private[diagram] def straighten(points: List[Pt]): List[Pt] =
     def square(a: (Pt, Pt), b: (Pt, Pt)): Boolean =
       val (u, v) = ((a._2._1 - a._1._1, a._2._2 - a._1._2), (b._2._1 - b._1._1, b._2._2 - b._1._2))
       math.abs(u._1 * v._1 + u._2 * v._2) < 1e-9
     val n                                         = points.size
-    val steps                                     = points.indices.dropRight(1).filter: i =>
-      val (a, b) = (points(i), points(i + 1))
-      i >= 1 && i <= n - 3 && math.hypot(b._1 - a._1, b._2 - a._2) < STEP
-    steps.headOption match
-      case None    => points
-      case Some(i) =>
+    val fixed                                     = (1 to n - 3).iterator
+      .filter(i =>
+        math.hypot(points(i + 1)._1 - points(i)._1, points(i + 1)._2 - points(i)._2) < STEP
+      )
+      .flatMap: i =>
         val step     = (points(i), points(i + 1))
         val (dx, dy) = (step._2._1 - step._1._1, step._2._2 - step._1._2)
         if square(step, (points(0), points(1))) then
-          straighten(points.take(i + 1).map(p => (p._1 + dx, p._2 + dy)) ::: points.drop(i + 2))
+          Some(points.take(i + 1).map(p => (p._1 + dx, p._2 + dy)) ::: points.drop(i + 2))
         else if square(step, (points(n - 2), points(n - 1))) then
-          straighten(points.take(i + 1) ::: points.drop(i + 2).map(p => (p._1 - dx, p._2 - dy)))
-        else points
+          Some(points.take(i + 1) ::: points.drop(i + 2).map(p => (p._1 - dx, p._2 - dy)))
+        else None
+      .nextOption()
+    fixed.fold(points)(straighten)
 
   end straighten
 
   private val APART = 0.12
   private val SAME  = 0.04
+  private val SHORT = 0.08
 
   // Lines that run on top of one another moved apart. Inner stretches of different
   // routes that lie on the same line (within SAME) and overlap are spread across it,
-  // APART from each other, centred where they were, in the order the stretches after
-  // them go, so they part without crossing. A route's first and last stretch stay, so
-  // its ends stay on their boxes.
-  private def nudge(routes: List[List[Pt]]): List[List[Pt]] =
+  // APART from each other, centred where they were, ordered by where their routes come
+  // from and go to, so they part with as few crossings as can be. A route's first and
+  // last stretch only lengthen or shorten, so its ends stay where they are; a group
+  // whose spreading would shorten a neighbouring stretch below SHORT, or turn it
+  // round, or that holds two stretches of one route, is left as it is.
+  private[diagram] def nudge(routes: List[List[Pt]]): List[List[Pt]] =
     final case class Stretch(
       route: Int,
       at: Int,
@@ -213,12 +218,11 @@ object Diagram:
       line: Double,
       lo: Double,
       hi: Double,
-      next: Double)
+      side: Double)
     val stretches                        = routes.zipWithIndex.flatMap: (ps, r) =>
       (1 until ps.size - 2).toList.flatMap: i =>
-        val (a, b) = (ps(i), ps(i + 1))
-        val after  = ps.lift(i + 2).getOrElse(b)
-        if math.abs(a._1 - b._1) < 1e-6 then
+        val (before, a, b, after) = (ps(i - 1), ps(i), ps(i + 1), ps(i + 2))
+        if math.abs(a._1 - b._1) < 1e-6 && math.abs(a._2 - b._2) > 1e-6 then
           List(Stretch(
             r,
             i,
@@ -226,9 +230,9 @@ object Diagram:
             a._1,
             math.min(a._2, b._2),
             math.max(a._2, b._2),
-            after._1,
+            before._1 + after._1,
           ))
-        else if math.abs(a._2 - b._2) < 1e-6 then
+        else if math.abs(a._2 - b._2) < 1e-6 && math.abs(a._1 - b._1) > 1e-6 then
           List(Stretch(
             r,
             i,
@@ -236,7 +240,7 @@ object Diagram:
             a._2,
             math.min(a._1, b._1),
             math.max(a._1, b._1),
-            after._2,
+            before._2 + after._2,
           ))
         else Nil
         end if
@@ -247,12 +251,32 @@ object Diagram:
     val groups = stretches.foldLeft(List.empty[List[Stretch]]): (found, st) =>
       val (joined, apart) = found.partition(_.exists(together(_, st)))
       (st :: joined.flatten) :: apart
-    val shifts = groups.filter(_.map(_.route).distinct.size > 1).flatMap: group =>
-      val ordered = group.sortBy(st => (st.next, st.route))
-      val centre  = group.map(_.line).sum / group.size
-      ordered.zipWithIndex.map((st, k) =>
-        (st.route, st.at, st.upright, centre + (k - (group.size - 1) / 2.0) * APART)
-      )
+    // a shift keeps the stretches either side of the moved one at least SHORT long and
+    // pointing the way they did
+    def keeps(
+      ps: List[Pt],
+      i: Int,
+      upright: Boolean,
+      line: Double,
+    ): Boolean =
+      def along(p: Pt)                   = if upright then p._1 else p._2
+      val before                         = along(ps(i)) - along(ps(i - 1))
+      val after                          = along(ps(i + 2)) - along(ps(i + 1))
+      val nb                             = line - along(ps(i - 1))
+      val na                             = along(ps(i + 2)) - line
+      def kept(was: Double, now: Double) =
+        math.abs(was) < 1e-6 && math.abs(now) < 1e-6 || was * now > 0 && math.abs(now) >= SHORT
+      kept(before, nb) && kept(after, na)
+    val shifts = groups
+      .filter(g => g.size > 1 && g.map(_.route).distinct.size == g.size)
+      .flatMap: group =>
+        val ordered = group.sortBy(st => (st.side, st.route))
+        val centre  = group.map(_.line).sum / group.size
+        val placed  =
+          ordered.zipWithIndex.map((st, k) => (st, centre + (k - (group.size - 1) / 2.0) * APART))
+        if placed.forall((st, line) => keeps(routes(st.route), st.at, st.upright, line)) then
+          placed.map((st, line) => (st.route, st.at, st.upright, line))
+        else Nil
     routes.zipWithIndex.map: (ps, r) =>
       shifts.filter(_._1 == r).foldLeft(ps.toVector): (pts, shift) =>
         val (_, i, upright, line) = shift

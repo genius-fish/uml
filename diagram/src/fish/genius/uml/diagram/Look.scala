@@ -3,7 +3,7 @@ package fish.genius.uml.diagram
 // The look of a drawing in numbers, shared by the writers so the PDF, the SVG and the
 // PNG agree: how much of a layer's colour goes into each part, mixed the way xcolor
 // mixes `a!p!b` (p per cent of a, the rest b), and the weights and shadow of the lines.
-object Look:
+private[diagram] object Look:
 
   // per cent of the layer's colour in each part, the rest text (an edge) or paper (a fill)
   val EDGE           = 50 // a box's edge, against text

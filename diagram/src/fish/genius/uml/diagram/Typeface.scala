@@ -5,7 +5,6 @@ import java.awt.font.FontRenderContext
 import java.io.File
 
 import scala.collection.concurrent.TrieMap
-import scala.sys.process.*
 import scala.util.Try
 
 // The face a diagram is set in: what a standalone picture loads in LaTeX, how each
@@ -61,12 +60,21 @@ object Typeface:
 
   private val found = TrieMap.empty[String, Option[Font]]
 
+  // where kpsewhich finds a file, given five seconds; nothing without TeX
+  private def where(file: String): Option[String] =
+    Try {
+      val process = ProcessBuilder("kpsewhich", file).redirectErrorStream(true).start()
+      if !process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS) then
+        process.destroyForcibly()
+        ""
+      else String(process.getInputStream.readAllBytes).trim
+    }.toOption.filter(_.nonEmpty)
+
   // a font file from the TeX tree, loaded once
   private[diagram] def load(file: String): Option[Font] =
     found.getOrElseUpdate(
       file,
-      Try(Seq("kpsewhich", file).!!(ProcessLogger(_ => ())).trim).toOption
-        .filter(_.nonEmpty)
+      where(file)
         .map(File(_))
         .filter(_.isFile)
         .flatMap(f => Try(Font.createFont(Font.TRUETYPE_FONT, f).deriveFont(100f)).toOption),
@@ -77,7 +85,7 @@ end Typeface
 // Text measured in a typeface, in centimetres at a size in points, and wrapped greedily
 // by words. `family` is the face the text is measured in: the typeface's own files, or
 // the first of its families that is installed, or the JVM's own sans.
-final class Measure(typeface: Typeface):
+final private[diagram] class Measure(typeface: Typeface):
 
   private val installed =
     GraphicsEnvironment.getLocalGraphicsEnvironment.getAvailableFontFamilyNames.toSet
@@ -127,5 +135,5 @@ final class Measure(typeface: Typeface):
 
 end Measure
 
-object Measure:
+private[diagram] object Measure:
   def round(value: Double): Double = math.ceil(value * 100) / 100
