@@ -11,10 +11,11 @@ object Tikz:
   val libraries: String = "\\usetikzlibrary{arrows.meta}"
 
   def picture(drawing: Diagram.Drawing, palette: Map[String, String] = Map.empty): String =
-    val colours = Notation.palette.map: (name, hex) =>
-      palette.get(name).fold(s"\\providecolor{$name}{HTML}{$hex}")(own =>
-        s"\\definecolor{$name}{HTML}{$own}"
-      )
+    // ArchiMate's colours provided, so a document's own win; a palette's defined
+    val own     = Notation.colours(palette).filterNot(Notation.palette.contains)
+    val colours = Notation.colours(palette).map: (name, hex) =>
+      if own.exists(_._1 == name) then s"\\definecolor{$name}{HTML}{$hex}"
+      else s"\\providecolor{$name}{HTML}{$hex}"
     val body    = drawing.prims.map(prim)
     (colours ++
     List(
@@ -85,7 +86,7 @@ object Tikz:
       val arrows = s"arrows={${start.map(head).getOrElse("")}-${end.map(head).getOrElse("")}}"
       s"\\draw${options(dash(d), Some(arrows))} ${points.map(pt).mkString(" -- ")};"
 
-  def escape(text: String): String = text.flatMap:
+  def escape(text: String): String = Notation.clean(text).flatMap:
     case '\\' => "\\textbackslash{}"
     case '&'  => "\\&"
     case '%'  => "\\%"

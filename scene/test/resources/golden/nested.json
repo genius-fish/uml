@@ -1,0 +1,291 @@
+{
+  "name" : "Nested",
+  "width" : 8.99,
+  "depth" : 34.18,
+  "elements" : [
+    {
+      "key" : "customer",
+      "type" : "business-actor",
+      "name" : "customer",
+      "x" : 1.325,
+      "y" : 16.32,
+      "w" : 2.0,
+      "d" : 1.3,
+      "z" : 0.0,
+      "container" : false
+    },
+    {
+      "key" : "crm",
+      "type" : "application-component",
+      "name" : "CRM",
+      "x" : 2.85,
+      "y" : 11.12,
+      "w" : 2.8,
+      "d" : 5.9,
+      "z" : 0.0,
+      "container" : true
+    },
+    {
+      "key" : "api",
+      "type" : "application-interface",
+      "name" : "api",
+      "x" : 2.85,
+      "y" : 11.42,
+      "w" : 2.0,
+      "d" : 1.3,
+      "z" : 0.2,
+      "parent" : "crm",
+      "container" : false
+    },
+    {
+      "key" : "hub",
+      "type" : "application-component",
+      "name" : "Hub",
+      "x" : -2.9,
+      "y" : 3.65,
+      "w" : 2.7,
+      "d" : 5.84,
+      "z" : 0.0,
+      "container" : true
+    },
+    {
+      "key" : "join",
+      "type" : "and-junction",
+      "name" : "join",
+      "x" : -3.23,
+      "y" : 3.95,
+      "w" : 1.24,
+      "d" : 1.24,
+      "z" : 0.2,
+      "parent" : "hub",
+      "container" : false
+    },
+    {
+      "key" : "erp",
+      "type" : "application-component",
+      "name" : "ERP",
+      "x" : 0.1,
+      "y" : -5.92,
+      "w" : 2.8,
+      "d" : 10.1,
+      "z" : 0.0,
+      "container" : true
+    },
+    {
+      "key" : "ledger",
+      "type" : "application-function",
+      "name" : "ledger",
+      "x" : 0.1,
+      "y" : -3.52,
+      "w" : 2.0,
+      "d" : 1.3,
+      "z" : 0.2,
+      "parent" : "erp",
+      "container" : false
+    },
+    {
+      "key" : "billing",
+      "type" : "application-process",
+      "name" : "billing",
+      "x" : 0.1,
+      "y" : -6.42,
+      "w" : 2.0,
+      "d" : 1.3,
+      "z" : 0.2,
+      "parent" : "erp",
+      "container" : false
+    },
+    {
+      "key" : "orders",
+      "type" : "data-object",
+      "name" : "orders",
+      "x" : 0.1,
+      "y" : -9.32,
+      "w" : 2.0,
+      "d" : 1.3,
+      "z" : 0.2,
+      "parent" : "erp",
+      "container" : false
+    },
+    {
+      "key" : "platform",
+      "type" : "grouping",
+      "name" : "Platform",
+      "x" : -1.125,
+      "y" : -14.77,
+      "w" : 5.7,
+      "d" : 4.4,
+      "z" : 0.0,
+      "container" : true
+    },
+    {
+      "key" : "k8s",
+      "type" : "node",
+      "name" : "k8s",
+      "x" : -2.575,
+      "y" : -15.92,
+      "w" : 2.0,
+      "d" : 1.3,
+      "z" : 0.2,
+      "parent" : "platform",
+      "container" : false
+    },
+    {
+      "key" : "pg",
+      "type" : "system-software",
+      "name" : "pg",
+      "x" : 0.325,
+      "y" : -15.92,
+      "w" : 2.0,
+      "d" : 1.3,
+      "z" : 0.2,
+      "parent" : "platform",
+      "container" : false
+    }
+  ],
+  "relationships" : [
+    {
+      "key" : "e1",
+      "source" : "customer",
+      "target" : "api",
+      "type" : "serving",
+      "sourcePort" : "south",
+      "targetPort" : "north",
+      "bends" : [
+        {
+          "x" : 1.325,
+          "y" : 13.67
+        },
+        {
+          "x" : 2.85,
+          "y" : 13.67
+        }
+      ],
+      "clear" : true
+    },
+    {
+      "key" : "e2",
+      "source" : "api",
+      "target" : "join",
+      "type" : "flow",
+      "sourcePort" : "south",
+      "targetPort" : "north",
+      "bends" : [
+        {
+          "x" : 2.85,
+          "y" : 10.42
+        },
+        {
+          "x" : -3.23,
+          "y" : 10.42
+        },
+        {
+          "x" : -3.23,
+          "y" : 4.92
+        }
+      ],
+      "clear" : true
+    },
+    {
+      "key" : "e3",
+      "source" : "join",
+      "target" : "ledger",
+      "type" : "flow",
+      "sourcePort" : "south",
+      "targetPort" : "north",
+      "bends" : [
+        {
+          "x" : -3.23,
+          "y" : 1.73
+        },
+        {
+          "x" : -1.425,
+          "y" : 1.73
+        },
+        {
+          "x" : -1.425,
+          "y" : -1.27
+        },
+        {
+          "x" : 0.1,
+          "y" : -1.27
+        }
+      ],
+      "clear" : true
+    },
+    {
+      "key" : "e4",
+      "source" : "billing",
+      "target" : "orders",
+      "type" : "write-access",
+      "sourcePort" : "south",
+      "targetPort" : "north",
+      "bends" : [],
+      "clear" : true
+    },
+    {
+      "key" : "e5",
+      "source" : "k8s",
+      "target" : "crm",
+      "type" : "serving",
+      "sourcePort" : "north",
+      "targetPort" : "south",
+      "bends" : [
+        {
+          "x" : -2.575,
+          "y" : -13.17
+        },
+        {
+          "x" : 2.85,
+          "y" : -13.17
+        }
+      ],
+      "clear" : true
+    },
+    {
+      "key" : "e6",
+      "source" : "pg",
+      "target" : "erp",
+      "type" : "serving",
+      "sourcePort" : "north",
+      "targetPort" : "south",
+      "bends" : [
+        {
+          "x" : 0.325,
+          "y" : -13.42
+        },
+        {
+          "x" : 1.85,
+          "y" : -13.42
+        },
+        {
+          "x" : 1.85,
+          "y" : -11.37
+        },
+        {
+          "x" : 0.1,
+          "y" : -11.37
+        }
+      ],
+      "clear" : true
+    },
+    {
+      "key" : "e7",
+      "source" : "ledger",
+      "target" : "billing",
+      "type" : "triggering",
+      "sourcePort" : "south",
+      "targetPort" : "north",
+      "bends" : [],
+      "clear" : true
+    }
+  ],
+  "flows" : [],
+  "panes" : {
+    "orientation" : "auto",
+    "side" : "right",
+    "faceCamera" : false,
+    "anchored" : true,
+    "tint" : "clear"
+  }
+}

@@ -30,7 +30,8 @@ object SceneLayout:
   // header strip at its back, where a diagram reads it first. spreadPorts gives each
   // connector its own port, which ELK places along the side, instead of all meeting in
   // the middle and running on top of one another. labelSize says how large a
-  // connector's label is (width, depth), and the layout keeps room for it.
+  // connector's label is (width, depth), and the layout keeps room for it. A diagram
+  // has no passports, and spreadPorts does not keep a pane's floor: use one or the other.
   final case class Options(
     nodeSpacing: Double = 0.9,
     layerSpacing: Double = 1.6,

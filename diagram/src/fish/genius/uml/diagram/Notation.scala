@@ -81,6 +81,23 @@ object Notation:
     "am-line" -> "3C3C3C",
   )
 
+  // The colours a writer uses: ArchiMate's, with a palette's own laid over them. A
+  // palette entry counts only with a name of lower-case letters, digits and dashes and
+  // six hex digits (a leading # is fine); anything else is left out, so a stray value
+  // cannot break the SVG, the LaTeX or the PNG.
+  def colours(palette: Map[String, String]): List[(String, String)] =
+    val valid = palette.toList.sorted.collect:
+      case (name, hex)
+        if name.matches("[a-z][a-z0-9-]*") && hex.stripPrefix("#").matches("[0-9A-Fa-f]{6}") =>
+        name -> hex.stripPrefix("#").toUpperCase
+    val own   = valid.toMap
+    Notation.palette.map((name, hex) => name -> own.getOrElse(name, hex)) ++
+    valid.filterNot((name, _) => Notation.palette.exists(_._1 == name))
+
+  // text as it may be written: control characters, which neither XML nor LaTeX
+  // takes, become spaces
+  def clean(text: String): String = text.map(c => if c < ' ' || c == '\u007f' then ' ' else c)
+
   def colour(group: ShapeGroup): Ink = Ink.Layer(group match
     case ShapeGroup.Business       => "am-business"
     case ShapeGroup.Application    => "am-application"

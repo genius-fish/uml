@@ -10,7 +10,7 @@ import org.eclipse.elk.alg.layered.options.{
 }
 import org.eclipse.elk.core.RecursiveGraphLayoutEngine
 import org.eclipse.elk.core.data.LayoutMetaDataService
-import org.eclipse.elk.core.math.ElkPadding
+import org.eclipse.elk.core.math.{ElkPadding, KVector}
 import org.eclipse.elk.core.options.*
 import org.eclipse.elk.core.util.BasicProgressMonitor
 import org.eclipse.elk.graph.*
@@ -30,8 +30,8 @@ private[scene] object ElkPass:
   private val EDGE_NODE                = 0.35
   private val EDGE_EDGE                = 0.25
   private val TAB_DEPTH                = 0.2
-
-  private val LOWEST_COLUMN = 4
+  private val CONTAINER_MARGIN         = 0.8
+  private val LOWEST_COLUMN            = 4
 
   final case class Rect(
     x: Double,
@@ -320,6 +320,13 @@ private[scene] object ElkPass:
     configure(elkNode, options, modelOrder)
     elkNode.setProperty(CoreOptions.PADDING, ElkPadding(back, padding, front, padding))
     elkNode.setProperty(CoreOptions.NODE_SIZE_CONSTRAINTS, EnumSet.of(SizeConstraint.MINIMUM_SIZE))
+    elkNode.setProperty(
+      CoreOptions.NODE_SIZE_MINIMUM,
+      KVector(
+        (SceneLayout.PLINTH_WIDTH + CONTAINER_MARGIN) * SCALE,
+        SceneLayout.PLINTH_DEPTH * SCALE + back + front,
+      ),
+    )
     elkNode.setProperty(CoreOptions.PORT_CONSTRAINTS, PortConstraints.FIXED_SIDE)
     elkNode.setProperty(CoreOptions.PORT_ALIGNMENT_DEFAULT, PortAlignment.CENTER)
 

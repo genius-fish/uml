@@ -11,7 +11,7 @@ object Svg:
   private val MARGIN = 0.15
 
   def document(drawing: Diagram.Drawing, palette: Map[String, String] = Map.empty): String =
-    val colours                  = Notation.palette.toMap ++ palette
+    val colours                  = Notation.colours(palette).toMap
     val (minX, minY, maxX, maxY) = Extent.of(drawing, MARGIN)
     def x(v: Double)             = f((v - minX) * PX)
     def y(v: Double)             = f((maxY - v) * PX)
@@ -56,7 +56,9 @@ object Svg:
       s"""<svg xmlns="http://www.w3.org/2000/svg" width="${len(maxX - minX)}" height="${len(maxY -
           minY)}" viewBox="0 0 ${len(maxX - minX)} ${len(maxY - minY)}">""",
       s"<title>${escape(drawing.name)}</title>",
-      s"""<g stroke="$line" stroke-width="0.67" stroke-linejoin="round" font-family="'${drawing.family}', Helvetica, Arial, sans-serif">""",
+      s"""<g stroke="$line" stroke-width="0.67" stroke-linejoin="round" font-family="'${escape(
+          drawing.family
+        ).replace("'", "")}', Helvetica, Arial, sans-serif">""",
       drawing.prims.map(prim).mkString("\n"),
       "</g>",
       "</svg>",
@@ -68,7 +70,10 @@ object Svg:
     String.format(Locale.ROOT, "%.2f", Double.box(value)).replaceAll("\\.?0+$", "")
 
   def escape(text: String): String =
-    text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
+    Notation.clean(text).replace(
+      "&",
+      "&amp;",
+    ).replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
 
 end Svg
 

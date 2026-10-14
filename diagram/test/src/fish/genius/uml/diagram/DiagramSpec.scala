@@ -150,7 +150,105 @@ object DiagramSpec extends ZIOSpecDefault:
           svg.startsWith("<svg") && svg.endsWith("</svg>"),
           "&(?!amp;|lt;|gt;|quot;)".r.findFirstIn(svg).isEmpty,
           png.take(4).toList == List(0x89, 'P', 'N', 'G').map(_.toByte),
-        ),
+        )
+      ,
+      test("the same graph gives the same drawing"):
+        assertTrue(Diagram.draw(landscape).toOption.map(_.prims) == Option(drawing.prims))
+      ,
+      test("text is escaped for LaTeX and XML, and control characters do not get through"):
+        val odd  = SceneGraph(
+          "Odd <names> & \"quotes\"",
+          List(
+            leaf("a", "100% of $5 #1 a_b {c} ~d ^e \\f", ShapeType.ApplicationComponent),
+            leaf("b", "x < y > z \u0007bell", ShapeType.ApplicationComponent),
+          ),
+          Nil,
+        )
+        val d    = Diagram.draw(odd).toOption.get
+        val tikz = Tikz.picture(d)
+        val svg  = Svg.document(d)
+        assertTrue(
+          // the name breaks over lines, so each special on its own
+          List(
+            "100\\%",
+            "\\$5",
+            "\\#1",
+            "a\\_b",
+            "\\{c\\}",
+            "\\textasciitilde{}d",
+            "\\textasciicircum{}e",
+            "\\textbackslash{}f",
+          ).forall(tikz.contains),
+          !tikz.contains("\u0007"),
+          svg.contains("x &lt; y &gt; z  bell"),
+          svg.contains("Odd &lt;names&gt; &amp; &quot;quotes&quot;"),
+          !svg.contains("\u0007"),
+        )
+      ,
+      test("a palette value that is not a colour is left out, a valid one with # is taken"):
+        val palette = Map("am-application" -> "#c2f0ff", "am-business" -> "yellow", "x\"y" -> "000000")
+        val tikz    = Tikz.picture(drawing, palette)
+        val svg     = Svg.document(drawing, palette)
+        assertTrue(
+          tikz.contains("\\definecolor{am-application}{HTML}{C2F0FF}"),
+          tikz.contains("\\providecolor{am-business}{HTML}{FFFFB5}"),
+          !tikz.contains("yellow") && !tikz.contains("x\"y"),
+          svg.contains("#C2F0FF") && !svg.contains("yellow"),
+          Png.image(drawing, 30, palette).nonEmpty,
+        )
+      ,
+      test("a junction is a dot, and every head is drawn for SVG and PNG"):
+        val joined = SceneGraph(
+          "Joined",
+          List(
+            leaf("a", "A", ShapeType.ApplicationComponent),
+            SceneNode(SceneId("j"), NodeKind.OrJunction, "j"),
+            leaf("b", "B", ShapeType.ApplicationComponent),
+          ),
+          List(edge("e1", "a", "j", RelationshipType.Flow), edge("e2", "j", "b", RelationshipType.Flow)),
+        )
+        val d      = Diagram.draw(joined).toOption.get
+        val dot    = d.prims.collect { case c: Prim.Circle => c }.find(_.fill == Ink.Paper)
+        val heads  = Head.values.toList.map(h => h -> Heads.at(h, (1.0, 0.0), (0.0, 0.0)))
+        assertTrue(
+          dot.exists(c => math.abs(c.r - Diagram.Style().junction / 2) < 1e-6),
+          heads.forall((_, prims) => prims.nonEmpty),
+          // every head ends on the tip, along the line it closes
+          heads.forall((_, prims) =>
+            prims.forall:
+              case Prim.Poly(ps, _, _, _) => ps.forall(_._1 <= 1.0 + 1e-9)
+              case Prim.Circle(c, r, _)   => c._1 + r <= 1.0 + 1e-9
+              case _                      => true
+          ),
+        )
+      ,
+      test("a container name too long for its header breaks over two lines, and the header grows"):
+        val long = SceneGraph(
+          "Long",
+          List(
+            SceneNode(
+              SceneId("c"),
+              NodeKind.Element(ShapeType.ApplicationComponent),
+              "An application platform with a remarkably long name indeed",
+              List(leaf("x", "X", ShapeType.ApplicationFunction)),
+            )
+          ),
+          Nil,
+        )
+        val d    = Diagram.draw(long).toOption.get
+        val bold = d.prims.collect { case t: Prim.Text if t.bold => t }
+        val c    = d.scene.elements.find(_.key == SceneId("c")).get
+        val x    = d.scene.elements.find(_.key == SceneId("x")).get
+        assertTrue(
+          bold.size >= 2,
+          bold.map(_.text).mkString(" ") == "An application platform with a remarkably long name indeed",
+          x.y + x.d / 2 <=
+          c.y + c.d / 2 - Diagram.Style().header - Diagram.Style().lead(Diagram.Style().nameSize) + 2e-3,
+        )
+      ,
+      test("an empty drawing still has an extent"):
+        val empty = Diagram.Drawing("Empty", Nil, Scene("Empty", 0, 0, Nil, Nil), Diagram.Style(), "Nimbus Sans", 0)
+        assertTrue(Extent.of(empty, 0.1) == (0.0, 0.0, 1.0, 1.0), Svg.document(empty).startsWith("<svg")),
     )
 
 end DiagramSpec

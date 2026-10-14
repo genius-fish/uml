@@ -1167,7 +1167,9 @@ Boxes are sized to what they say, measured in the diagram's font (the first of
 all with Helvetica's metrics). A box is 3 cm wide, 3.8 cm when it has a note or its name
 would take more than two lines, wider still for a word that does not fit; as tall as
 its lines need. The name and caption keep clear of the icon on both sides, so they stay
-centred. `Drawing.overflow` counts the lines wider than their room.
+centred. `Drawing.overflow` counts the lines wider than their room. The same graph gives
+the same drawing on one machine; on a machine with other fonts installed the boxes can
+differ by the width of a letter, since they are measured in the first family it has.
 
 A container's name and caption stand in a header strip at its top. ELK sizes a
 container from its children, so a long name may not fit beside the icon; it then breaks
@@ -1190,17 +1192,22 @@ The layer colours are named `am-business`, `am-application`, `am-technology`,
 `am-physical`, `am-strategy`, `am-motivation`, `am-implementation`, with `am-line` for
 the lines and text. `Notation.palette` holds ArchiMate's suggested fills. The TikZ
 picture *provides* them, so a document that defines `am-application` before it keeps its
-own; a `palette` passed to a writer replaces them outright.
+own; a `palette` passed to a writer replaces them outright. A palette entry counts only
+with a name of lower-case letters, digits and dashes and six hex digits (`#` allowed);
+any other entry is left out. Text is escaped for LaTeX and XML, and control characters
+become spaces.
 
 ### The layout
 
-`Diagram` calls `SceneLayout.layout` with four options the 3D scene leaves off:
+`Diagram` calls `SceneLayout.layout` with four options the 3D scene leaves off. With them
+off the scene is exactly what 1.9.1 made (`SceneGoldenSpec` holds a nested scene to it):
 
 - `footprint`: each leaf's size, from what its box says.
 - `headerAtBack`: a container's header at its top, where a diagram is read first.
 - `spreadPorts`: each connector gets its own port, which ELK places along the side, so
   connectors meeting a box on one side do not run on top of one another.
-  `SceneRelationship.start` and `end` carry where it leaves and arrives.
+  `SceneRelationship.start` and `end` carry where it leaves and arrives. It keeps no
+  floor for a passport's pane, so a graph with passports leaves it off.
 - `labelSize`: how large a connector's label is, so ELK keeps room for it.
   `SceneRelationship.label` carries where it went. ELK places the label of a connector
   that crosses a container's edge in another frame; when the room it kept is off the

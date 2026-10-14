@@ -61,6 +61,7 @@ object Diagram:
     val style   = options.style
     val measure = Measure(style.fontFamilies)
     val nodes   = graph.nodes.flatMap(_.flatten)
+    val byNode  = nodes.map(n => n.id -> n).toMap
     val sized   = nodes.filterNot(_.isContainer).map(n => n.id -> boxOf(n, style, measure)).toMap
     val labels  = graph.edges.flatMap(_.label).map(t => t -> labelOf(t, style, measure)).toMap
     val caption = if nodes.exists(n => n.isContainer && n.caption.nonEmpty) then
@@ -89,7 +90,7 @@ object Diagram:
       scene.elements
         .filter(_.container)
         .flatMap: e =>
-          nodes.find(_.id == e.key).map: n =>
+          byNode.get(e.key).map: n =>
             e.key -> measure.wrap(
               n.label,
               e.w - 3 * style.padding - style.iconSize,
@@ -104,7 +105,8 @@ object Diagram:
     yield
       val headed   = names(scene)
       val tall     = header(math.max(1, lines))
-      val byId     = nodes.map(n => n.id -> n).toMap
+      val byId     = byNode
+      val placed   = scene.elements.map(e => e.key -> e).toMap
       val kinds    = graph.edges.map(e => e.id -> e.relationship).toMap
       val boxes    = scene.elements.flatMap: e =>
         byId.get(e.key).toList.flatMap(n =>
@@ -113,8 +115,8 @@ object Diagram:
       val routes   = scene.relationships.flatMap: r =>
         for
           kind   <- kinds.get(r.key)
-          source <- scene.elements.find(_.key == r.source)
-          target <- scene.elements.find(_.key == r.target)
+          source <- placed.get(r.source)
+          target <- placed.get(r.target)
         yield
           val (dash, start, end) = Notation.ends(kind)
           val from               = r.start.fold(port(source, r.sourcePort))(p => (p.x, p.y))
