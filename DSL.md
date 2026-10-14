@@ -1307,7 +1307,10 @@ stands on it, so a label reads clean without a patch behind it.
 
 `Activity.draw(graph, options)` draws a process as an activity diagram with swimlanes,
 in the same look, so a document sets its processes in one style with its views. It
-returns a `Diagram.Drawing` for the same three writers.
+returns a `Diagram.Drawing` for the same three writers. It draws BPMN's Analytic
+conformance level: every event trigger caught and thrown, boundary events, expanded
+sub-processes, transactions and event sub-processes, task markers, data, messages
+between pools and compensation associations. Groups are not drawn.
 
 ```scala
 import fish.genius.uml.diagram.*
@@ -1341,13 +1344,47 @@ val drawing = Activity.draw(
 - **A task** (`Kind.Work`) is a rounded box in the business colour with its name, the
   `detail` (the systems that support it) under it in a quieter voice, and an icon for
   its kind (`User` an actor, `Service` a component, `Script` an artifact, `Rule` a
-  principle, `Call` a process; `Manual` and `Plain` have none); a `Sub` process has a small
-  plus at the bottom.
-- **An event** is a circle with its trigger inside (message, timer, error, signal,
-  terminate) and its name beside it: thin at the `Start`, double for an
-  `Intermediate` one, thick at the `End`.
+  principle, `Call` a process, `Send` a filled envelope, `Receive` an open one; `Manual`
+  and `Plain` have none); a collapsed `Sub` process has a small plus at the bottom.
+  `markers` stand at its foot beside the plus: `Loop`, `Parallel` and `Sequential`
+  multi-instance, `Compensation`, `AdHoc`.
+- **An event** is a circle with its trigger inside and its name beside it: thin at the
+  `Start`, double for an `Intermediate` one, thick at the `End`. Every BPMN trigger is
+  drawn (`Message`, `Timer`, `Error`, `Escalation`, `Cancel`, `Compensation`,
+  `Conditional`, `Link`, `Signal`, `Terminate`, `Multiple`, `ParallelMultiple`), open
+  where the event catches it and filled where it throws it (an intermediate event
+  with `throwing = true`, and every end). A start with `interrupting = false` (an
+  event sub-process's) is dashed.
+- **A boundary event** (`Kind.Boundary`, with the node it sits on as `host`) is a
+  double circle on its host's bottom edge, dashed when it does not interrupt, its name
+  beside it below the host; its flows leave from below. It takes its host's row, so
+  what it leads to is placed under the host, and a task with many events on its edge
+  grows to fit them side by side. One whose host is missing is drawn as a node.
 - **A gateway** is a diamond with its kind inside (X exclusive, + parallel, O
-  inclusive, event-based), its question above its right side.
+  inclusive, event-based, an asterisk complex, a + in a circle parallel event-based),
+  its question above its right side.
+- **A container** (`Kind.Container`) holds the nodes whose `parent` it is: a `Sub`
+  process with a solid frame, a `Transaction` with a double one, an `Event`
+  sub-process with a dotted one. What it holds is laid out on its own (no lanes, in
+  the container's lane) and the container takes its place in the flow as one block,
+  its name at the top left; containers nest. An event sub-process no flow reaches
+  stands under everything else. A container that holds nothing is drawn collapsed,
+  as a task with the plus. A `parent` that is not a container here, or a chain of
+  parents that comes back round, counts as none. A flow between a node inside a
+  container and one outside it is not drawn (BPMN does not allow one); a message to or
+  from a node inside meets the outermost frame drawn. A container is as wide as what it
+  holds needs, and is not narrowed to the page.
+- **Data** (`Node.data`, a `Datum`) stand in a column beside their task: a page with a
+  folded corner, or a cylinder for a `store`, with its name beside it, tied to the
+  task by a dotted line with its head at the task when the task reads it and at the
+  data when it writes it (`output`). A container's data are not drawn.
+- **A message** (`Graph.messages`) runs between pools: a dashed line from an open
+  circle to an open head, across from the side of its source that faces its target,
+  its name over the middle. Either end may be a lane without nodes, which is a pool
+  drawn as a black box: a narrow column the message meets at its near edge.
+- **An association** (`Graph.associations`), from a compensation boundary event to the
+  task that compensates it, is a dotted line with a head; the task is placed under
+  the event's host.
 - **A flow** is a fine line with an arrowhead. A branch leaves a gateway from the
   corner that faces its target, with its `label` (the condition) there; a flow into a
   gateway that others join comes in at the corner that faces it; a `default` flow has

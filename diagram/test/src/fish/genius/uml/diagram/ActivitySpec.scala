@@ -26,6 +26,18 @@ object ActivitySpec extends ZIOSpecDefault:
 
   private val claim = Activity.draw(DiagramGallery.claim)
 
+  private val shipment = Activity.draw(DiagramGallery.shipment)
+
+  private def boxes(d: Diagram.Drawing, role: Role => Boolean) =
+    d.prims.collect { case b @ Prim.Box(_, _, _, _, _, _, _, _, r) if role(r) => b }
+
+  // the task box whose name starts with `word`
+  private def task(d: Diagram.Drawing, word: String): Prim.Box =
+    val t = texts(d).find(_.text.startsWith(word)).get
+    boxes(d, _.isInstanceOf[Role.Element]).minBy(b =>
+      math.hypot(b.x + b.w / 2 - t.baseline._1, b.y + b.h / 2 - t.baseline._2)
+    )
+
   // the middles of the stretches of flows that lie inside a node's shape
   private def through(d: Diagram.Drawing): List[Pt] =
     for
@@ -227,6 +239,196 @@ object ActivitySpec extends ZIOSpecDefault:
           tex.contains("Sales desk"),
           svg.contains("Sales desk"),
           Png.image(drawn, 100).length > 1000,
+        )
+      ,
+      test("the shipment draws every flow, message and association, clear of its nodes, the same twice"):
+        val g        = DiagramGallery.shipment
+        val messages = shipment.prims.collect {
+          case c @ Prim.Connector(_, Dash.Dashed, Some(Head.OpenDot), Some(Head.OpenTriangle)) => c
+        }
+        val ties     = shipment.prims.collect { case c @ Prim.Connector(_, Dash.Dotted, None, Some(Head.Barb)) => c }
+        assertTrue(
+          arrows(shipment).size == g.flows.size,
+          messages.size == g.messages.size,
+          // the compensation association, and the line to the data the shipping writes
+          ties.size == g.associations.size + g.nodes.flatMap(_.data).count(_.output),
+          Tikz.standalone(shipment).contains("Circle[open"),
+          through(shipment).isEmpty,
+          shipment.overflow == 0,
+          Activity.draw(g).prims == shipment.prims,
+        )
+      ,
+      test("a boundary event sits on its host's bottom edge, its flow leaving from below"):
+        val confirm = task(shipment, "Confirm")
+        val rings   = shipment.prims.collect { case Prim.Poly(ps, true, _, Dash.Dashed, Role.Element(_)) => ps }
+        val centres = rings.map(ps => (ps.map(_._1).sum / ps.size, ps.map(_._2).sum / ps.size))
+        val timer   = centres.find(c => math.abs(c._2 - confirm.y) < 1e-6)
+        val out     = arrows(shipment).map(_.points.head)
+        assertTrue(
+          timer.isDefined,
+          confirm.x < timer.get._1 && timer.get._1 < confirm.x + confirm.w,
+          out.exists(p => math.abs(p._1 - timer.get._1) < 1e-6 && p._2 < timer.get._2),
+        )
+      ,
+      test("what does not interrupt is dashed: a boundary timer, an event sub-process's start"):
+        val dashed = shipment.prims.count:
+          case Prim.Poly(_, true, _, Dash.Dashed, Role.Element(_)) => true
+          case _                                                   => false
+        assertTrue(dashed == 2)
+      ,
+      test("an expanded sub-process holds its nodes, and an event sub-process stands dotted under the rest"):
+        val frames = boxes(shipment, _.isInstanceOf[Role.Container])
+        val pack   = frames.find(_.dash == Dash.Solid).get
+        val ask    = frames.find(_.dash == Dash.Dotted).get
+        val pick   = task(shipment, "Pick")
+        val others = boxes(shipment, _.isInstanceOf[Role.Element]).filterNot(b =>
+          b.x >= ask.x && b.x + b.w <= ask.x + ask.w && b.y >= ask.y
+        )
+        assertTrue(
+          frames.size == 2,
+          pack.x < pick.x && pick.x + pick.w < pack.x + pack.w && pack.y < pick.y && pick.y + pick.h < pack.y + pack.h,
+          others.forall(b => b.y > ask.y + ask.h),
+          texts(shipment).exists(_.text == "Pick and pack"),
+        )
+      ,
+      test("a throwing event shows its trigger filled, a catching one open"):
+        def one(kind: Kind) = Activity.draw(Graph("One", Nil, List(Node("e", "", kind)), Nil))
+          .prims.collect { case Prim.Poly(_, true, fill, _, Role.Mark(_)) => fill }
+        assertTrue(
+          one(Kind.Intermediate(Trigger.Signal, throwing = true)) == List(Ink.Line),
+          one(Kind.Intermediate(Trigger.Signal)) == List(Ink.Paper),
+          one(Kind.End(Trigger.Escalation)) == List(Ink.Line),
+          one(Kind.Start(Trigger.Escalation)) == List(Ink.Paper),
+        )
+      ,
+      test("a multi-instance task has three bars at its foot, a compensation task its two heads"):
+        val pick = task(shipment, "Pick")
+        val bars = shipment.prims.collect {
+          case Prim.Poly(List(a, b), false, _, _, Role.Mark(_))
+            if a._1 == b._1 && a._1 > pick.x && a._1 < pick.x + pick.w && a._2 < pick.y + 0.3 && a._2 > pick.y => a
+        }
+        assertTrue(bars.size == 3)
+      ,
+      test("data stand beside their task, tied by a dotted line with its head where the data goes"):
+        val confirm = task(shipment, "Confirm")
+        val ties    = shipment.prims.collect {
+          case c @ Prim.Connector(_, Dash.Dotted, _, _) if c.start.isDefined || c.end.isDefined => c
+        }
+        val read    = ties.find(c => math.abs(c.points.head._1 - (confirm.x + confirm.w)) < 1e-6)
+        assertTrue(
+          read.exists(c => c.start.contains(Head.Barb) && c.end.isEmpty),
+          ties.exists(c => c.end.contains(Head.Barb) && c.start.isEmpty && c.points.size == 2),
+          texts(shipment).exists(_.text == "Order"),
+          texts(shipment).exists(_.text == "Stock"),
+        )
+      ,
+      test("a message to a pool drawn as a black box ends at that pool's edge"):
+        val lanes    = boxes(shipment, _ == Role.Group).filter(_.fill == Ink.Empty).sortBy(_.x)
+        val customer = lanes.head
+        val ends     = shipment.prims.collect { case Prim.Connector(ps, Dash.Dashed, _, Some(Head.OpenTriangle)) =>
+          ps.last
+        }
+        assertTrue(ends.count(p => math.abs(p._1 - (customer.x + customer.w)) < 1e-6) == 2)
+      ,
+      test("a container with nothing in it is drawn collapsed: a transaction with a double border"):
+        val g    = Graph(
+          "Pay",
+          Nil,
+          List(Node("t", "Take the payment", Kind.Container(Frame.Transaction), markers = List(Marker.Loop))),
+          Nil,
+        )
+        val d    = Activity.draw(g)
+        val outs = d.prims.collect { case b @ Prim.Box(_, _, _, _, _, _, _, _, Role.Element(_)) => b }
+        val ins  = d.prims.collect { case b @ Prim.Box(_, _, _, _, _, Ink.Empty, _, _, Role.Mark(_)) => b }
+        assertTrue(outs.size == 1, ins.size == 1, d.overflow == 0)
+      ,
+      test("containers nest, and a message to a node inside one meets the outer frame"):
+        val g      = Graph(
+          "Nested",
+          List(Lane("us", "Us"), Lane("them", "Them")),
+          List(
+            Node("outer", "Outer", Kind.Container(Frame.Sub), Some("us")),
+            Node("inner", "Inner", Kind.Container(Frame.Transaction), parent = Some("outer")),
+            Node("t", "Deep task", Kind.Work(Task.Receive), parent = Some("inner")),
+          ),
+          Nil,
+          List(Message("them", "t", Some("hello"))),
+        )
+        val d      = Activity.draw(g)
+        val frames = boxes(d, _.isInstanceOf[Role.Container]).sortBy(_.w)
+        val deep   = task(d, "Deep")
+        val end    = d.prims.collect { case Prim.Connector(ps, Dash.Dashed, _, _) => ps.last }
+        val outer  = frames.last
+        assertTrue(
+          frames.size == 2,
+          frames.head.x > outer.x && frames.head.x + frames.head.w < outer.x + outer.w,
+          deep.x > frames.head.x && deep.x + deep.w < frames.head.x + frames.head.w,
+          end.size == 1,
+          math.abs(end.head._1 - (outer.x + outer.w)) < 1e-6,
+        )
+      ,
+      test("a parent that is no container, or a cycle of parents, counts as none"):
+        val g = Graph(
+          "Odd",
+          Nil,
+          List(
+            Node("a", "Alpha", Kind.Work(Task.Plain)),
+            Node("b", "Beta", Kind.Work(Task.Plain), parent = Some("a")),
+            Node("c", "Gamma", Kind.Container(Frame.Sub), parent = Some("d")),
+            Node("d", "Delta", Kind.Container(Frame.Sub), parent = Some("c")),
+          ),
+          List(Flow("a", "b")),
+        )
+        val d = Activity.draw(g)
+        assertTrue(arrows(d).size == 1, shapes(d).size == 4)
+      ,
+      test("a host with many boundary events grows, so none overlap; one with no host is a node"):
+        val events = (1 to 5).toList.map(i =>
+          Node(s"b$i", s"E$i", Kind.Boundary(Trigger.Timer), host = Some("t"))
+        )
+        val d      = Activity.draw(
+          Graph(
+            "Busy",
+            Nil,
+            Node("t", "Try", Kind.Work(Task.Plain)) ::
+            Node("x", "Lost", Kind.Boundary(Trigger.Error), host = Some("nope")) :: events,
+            Nil,
+          ),
+          Activity.Options(taskWidth = 2.0),
+        )
+        val host   = task(d, "Try")
+        val rings  = d.prims.collect { case Prim.Circle(c, r, _, Role.Element(_)) if r > 0.1 => c }
+        val on     = rings.filter(c => math.abs(c._2 - host.y) < 1e-6)
+        val apart  = on.combinations(2).forall { case List(a, b) => math.abs(a._1 - b._1) >= 0.4; case _ => true }
+        assertTrue(
+          on.size == 5,
+          apart,
+          on.forall(c => host.x < c._1 && c._1 < host.x + host.w),
+          rings.size == 6,
+        )
+      ,
+      test("an empty process with lanes draws its lanes, and nothing else"):
+        val d = Activity.draw(Graph("Empty", List(Lane("a", "A")), Nil, Nil))
+        assertTrue(arrows(d).isEmpty, shapes(d).isEmpty)
+      ,
+      test("every trigger, gateway, task and marker draws, and the writers write them"):
+        val nodes = Trigger.values.toList.zipWithIndex.flatMap: (t, i) =>
+          List(
+            Node(s"s$i", s"start $i", Kind.Start(t)),
+            Node(s"i$i", s"catch $i", Kind.Intermediate(t)),
+            Node(s"o$i", s"throw $i", Kind.Intermediate(t, throwing = true)),
+            Node(s"e$i", s"end $i", Kind.End(t)),
+          )
+        ++ Gate.values.toList.zipWithIndex.map((g, i) => Node(s"g$i", s"gate $i", Kind.Gateway(g)))
+          ++ Task.values.toList.zipWithIndex.map((t, i) =>
+            Node(s"t$i", s"task $i", Kind.Work(t), markers = Marker.values.toList.take(1 + i % 3))
+          )
+        val d     = Activity.draw(Graph("All", Nil, nodes, nodes.zip(nodes.drop(1)).map((a, b) => Flow(a.id, b.id))))
+        assertTrue(
+          arrows(d).size == nodes.size - 1,
+          Tikz.standalone(d).contains("throw 3"),
+          Svg.document(d).contains("<svg"),
+          Png.image(d, 60).length > 1000,
         )
       ,
       test("a lane's performer shows by its icon, in its own layer's colour"):

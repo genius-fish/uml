@@ -66,6 +66,7 @@ object Tikz:
     case Head.FilledTriangle => "Stealth[length=5.2pt,width=3.9pt,inset=1.3pt,round]"
     case Head.OpenTriangle   => "Triangle[open,length=6pt,width=5.4pt,round,fill={am-paper}]"
     case Head.Barb           => "Straight Barb[length=2.6pt,width=5pt,round]"
+    case Head.OpenDot        => "Circle[open,length=3.6pt,fill={am-paper}]"
 
   private def plain(ink: Ink): Option[String] = ink match
     case Ink.Empty       => None

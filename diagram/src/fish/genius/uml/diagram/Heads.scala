@@ -33,6 +33,7 @@ object Heads:
       case Head.OpenDiamond    =>
         List(Prim.Poly(List(tip, p(3.3, 2.1), p(6.6, 0), p(3.3, -2.1)), closed = true, Ink.Paper))
       case Head.Dot            => List(Prim.Circle(p(1.5, 0), cm(1.5), Ink.Line))
+      case Head.OpenDot        => List(Prim.Circle(p(1.8, 0), cm(1.8), Ink.Paper))
       // Stealth: a filled point with its back cut in
       case Head.FilledTriangle =>
         List(Prim.Poly(List(tip, p(5.2, 1.95), p(3.9, 0), p(5.2, -1.95)), closed = true, Ink.Line))

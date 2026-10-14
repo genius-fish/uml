@@ -244,6 +244,140 @@ object DiagramGallery extends ZIOSpecDefault:
 
   end claim
 
+  // a shipment at BPMN's Analytic level: a pool drawn as a black box that messages go
+  // to and come from, a non-interrupting timer and an error on the edge of a task and
+  // of an expanded sub-process, a multi-instance task inside it, a transaction, a
+  // compensation with its association, a throwing signal, data beside a task, and an
+  // event sub-process under the rest
+  val shipment: Activity.Graph =
+    import Activity.*
+    Graph(
+      "Ship an order",
+      List(
+        Lane("customer", "Customer", Some(ShapeType.BusinessActor)),
+        Lane("sales", "Sales", Some(ShapeType.BusinessRole)),
+        Lane("warehouse", "Warehouse", Some(ShapeType.BusinessRole)),
+      ),
+      List(
+        Node("received", "Order received", Kind.Start(Trigger.Message), Some("sales")),
+        Node(
+          "confirm",
+          "Confirm the order",
+          Kind.Work(Task.User),
+          Some("sales"),
+          Some("[CRM]"),
+          data = List(Datum("Order")),
+        ),
+        Node(
+          "late",
+          "48 hours",
+          Kind.Boundary(Trigger.Timer, interrupting = false),
+          Some("sales"),
+          host = Some("confirm"),
+        ),
+        Node("remind", "Remind sales", Kind.Work(Task.Send), Some("sales")),
+        Node("reminded", "", Kind.End(Trigger.Plain), Some("sales")),
+        Node("pack", "Pick and pack", Kind.Container(Frame.Sub), Some("warehouse")),
+        Node("p0", "", Kind.Start(Trigger.Plain), parent = Some("pack")),
+        Node("pick", "Pick an item", Kind.Work(Task.Manual), markers = List(Marker.Parallel), parent = Some("pack")),
+        Node("box", "Pack the parcel", Kind.Work(Task.User), parent = Some("pack")),
+        Node("p1", "", Kind.End(Trigger.Plain), parent = Some("pack")),
+        Node("stock", "Out of stock", Kind.Boundary(Trigger.Error), Some("warehouse"), host = Some("pack")),
+        Node("sorry", "Tell the customer", Kind.Work(Task.Send), Some("sales")),
+        Node("cancelled", "Order cancelled", Kind.End(Trigger.Terminate), Some("sales")),
+        Node(
+          "ship",
+          "Ship the parcel",
+          Kind.Work(Task.Service),
+          Some("warehouse"),
+          Some("[WMS]"),
+          data = List(Datum("Stock", store = true, output = true)),
+        ),
+        Node("undo", "Lost in transit", Kind.Boundary(Trigger.Compensation), Some("warehouse"), host = Some("ship")),
+        Node(
+          "recall",
+          "Recall the parcel",
+          Kind.Work(Task.Manual),
+          Some("warehouse"),
+          markers = List(Marker.Compensation),
+        ),
+        Node("shipped", "Parcel shipped", Kind.Intermediate(Trigger.Signal, throwing = true), Some("warehouse")),
+        Node("invoice", "Send the invoice", Kind.Work(Task.Send), Some("sales")),
+        Node("done", "Order complete", Kind.End(Trigger.Message), Some("sales")),
+        Node("ask", "Status asked", Kind.Container(Frame.Event), Some("sales")),
+        Node("q0", "Customer asks", Kind.Start(Trigger.Message, interrupting = false), parent = Some("ask")),
+        Node("answer", "Answer the customer", Kind.Work(Task.User), parent = Some("ask")),
+        Node("q1", "", Kind.End(Trigger.Plain), parent = Some("ask")),
+      ),
+      List(
+        Flow("received", "confirm"),
+        Flow("late", "remind"),
+        Flow("remind", "reminded"),
+        Flow("confirm", "pack"),
+        Flow("p0", "pick"),
+        Flow("pick", "box"),
+        Flow("box", "p1"),
+        Flow("stock", "sorry"),
+        Flow("sorry", "cancelled"),
+        Flow("pack", "ship"),
+        Flow("ship", "shipped"),
+        Flow("shipped", "invoice"),
+        Flow("invoice", "done"),
+        Flow("q0", "answer"),
+        Flow("answer", "q1"),
+      ),
+      List(
+        Message("customer", "received", Some("order")),
+        Message("sorry", "customer", Some("apology")),
+        Message("invoice", "customer", Some("invoice")),
+      ),
+      List(Association("undo", "recall")),
+    )
+
+  end shipment
+
+  // every trigger caught, thrown, at the start and at the end, every gateway and every
+  // task with its markers: one lane each, the symbols one under the other
+  val symbols: Activity.Graph =
+    import Activity.*
+    def chain(lane: String, nodes: List[Node]) =
+      (nodes.map(_.copy(lane = Some(lane))), nodes.zip(nodes.drop(1)).map((a, b) => Flow(a.id, b.id)))
+    val ts                                     = Trigger.values.toList
+    val parts                                  = List(
+      chain(
+        "start",
+        ts.filterNot(t => List(Trigger.Terminate, Trigger.Link, Trigger.Cancel).contains(t)).map(t =>
+          Node(s"s$t", t.toString, Kind.Start(t))
+        ),
+      ),
+      chain(
+        "catch",
+        ts.filterNot(_ == Trigger.Terminate).map(t =>
+          Node(s"c$t", t.toString, Kind.Boundary(t, interrupting = t != Trigger.Timer))
+        ),
+      ),
+      chain("throw", ts.map(t => Node(s"t$t", t.toString, Kind.Intermediate(t, throwing = true)))),
+      chain("end", ts.map(t => Node(s"e$t", t.toString, Kind.End(t)))),
+      chain("gate", Gate.values.toList.map(g => Node(s"g$g", g.toString, Kind.Gateway(g)))),
+      chain(
+        "task",
+        Task.values.toList.map(t => Node(s"k$t", t.toString, Kind.Work(t))) ++
+        Marker.values.toList.map(m => Node(s"m$m", m.toString, Kind.Work(Task.Plain), markers = List(m))),
+      ),
+    )
+    Graph(
+      "Symbols",
+      List("start", "catch", "throw", "end", "gate", "task").map(l => Lane(l, l)),
+      parts.flatMap(_._1).map(n =>
+        n.kind match
+          case Kind.Boundary(t, _) => n.copy(kind = Kind.Intermediate(t))
+          case _                   => n
+      ),
+      parts.flatMap(_._2),
+    )
+
+  end symbols
+
   val graphs: List[(String, SceneGraph)] =
     List("landscape" -> DiagramSpec.landscape, "layers" -> layers, "relationships" -> relationships)
 
@@ -268,6 +402,9 @@ object DiagramGallery extends ZIOSpecDefault:
           Right(Sequence.draw(checkout, Sequence.Options(Diagram.Style(typeface = Typeface.montserrat)))),
         ),
         ("order", Right(Activity.draw(order))),
+        ("shipment", Right(Activity.draw(shipment))),
+        ("symbols", Right(Activity.draw(symbols, Activity.Options(pageWidth = 30)))),
+        ("claim", Right(Activity.draw(claim))),
         (
           "order-innovenso",
           Right(Activity.draw(order, Activity.Options(Diagram.Style(typeface = Typeface.montserrat)))),

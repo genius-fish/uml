@@ -19,7 +19,7 @@ enum Dash derives CanEqual:
 
 // The end of a connector, at its source or its target.
 enum Head derives CanEqual:
-  case FilledDiamond, OpenDiamond, Dot, FilledTriangle, OpenTriangle, Barb
+  case FilledDiamond, OpenDiamond, Dot, FilledTriangle, OpenTriangle, Barb, OpenDot
 
 // What a shape is part of, which says how a writer styles it: a box in its layer's
 // colour with an edge a shade darker and a soft shadow, a container lighter behind
