@@ -37,6 +37,8 @@ final case class SceneElement(
 // A connector leaves its source through the middle of one plinth side and arrives at
 // the middle of one side of its target; between them it follows `bends`. `clear` is
 // false only when the plinths left no way around them, and the route may cross one.
+// `start` and `end` are set when the layout spread the ends along their sides
+// (SceneLayout.Options.spreadPorts): the points the connector leaves and arrives at.
 final case class SceneRelationship(
   key: SceneId,
   source: SceneId,
@@ -45,7 +47,9 @@ final case class SceneRelationship(
   sourcePort: PortName,
   targetPort: PortName,
   bends: List[ScenePoint],
-  clear: Boolean)
+  clear: Boolean,
+  start: Option[ScenePoint] = None,
+  end: Option[ScenePoint] = None)
 
 final case class ScenePoint(x: Double, y: Double)
 

@@ -235,13 +235,16 @@ private[scene] object ElkPass:
     elkNode.setIdentifier(node.id.value)
     elkNode.setProperty(CoreOptions.PARTITIONING_PARTITION, Integer.valueOf(partition))
     if node.isContainer then
-      container(elkNode, node.kind, options, modelOrder)
+      container(elkNode, node, options, modelOrder)
       node.children.foldLeft(Map(node.id -> elkNode))((acc, child) =>
         acc ++ add(structure, child, elkNode, options, modelOrder, kept)
       )
     else
       // a pane's floor makes the node larger than its plinth
-      val size = kept.get(node.id).fold(footprint(node.kind))(r => (width = r.w, depth = r.d))
+      val size = kept.get(node.id) match
+        case Some(r) => (width = r.w, depth = r.d)
+        case None    =>
+          options.footprint(node).fold(footprint(node.kind))((w, d) => (width = w, depth = d))
       elkNode.setDimensions(size.width * SCALE, size.depth * SCALE)
       elkNode.setProperty(CoreOptions.PORT_CONSTRAINTS, PortConstraints.FIXED_POS)
       Map(node.id -> elkNode)
@@ -249,24 +252,31 @@ private[scene] object ElkPass:
   end add
 
   // A grouping carries its name on a tab at the back; any other container in a strip at
-  // its front, with its sculpture. ELK's top is the back of the plinth, its bottom the front.
+  // its front, with its sculpture, or at its back when the options say so (a flat
+  // diagram). ELK's top is the back of the plinth, its bottom the front.
   private def container(
     elkNode: ElkNode,
-    kind: NodeKind,
+    node: SceneNode,
     options: SceneLayout.Options,
     modelOrder: Boolean,
   ): Unit =
     val padding    = options.containerPadding * SCALE
-    val isGrouping = kind == NodeKind.Grouping
-    val back       = if isGrouping then padding + TAB_DEPTH * SCALE else padding
-    val front      = if isGrouping then padding else options.containerHeader * SCALE
+    val isGrouping = node.kind == NodeKind.Grouping
+    // a footprint for a container is the least it may be: as wide as its name, say
+    val (least, _) = options.footprint(node).getOrElse((0.0, 0.0))
+    val header     = options.containerHeader * SCALE
+    val back       =
+      if isGrouping then padding + TAB_DEPTH * SCALE
+      else if options.headerAtBack then header
+      else padding
+    val front      = if isGrouping || options.headerAtBack then padding else header
     configure(elkNode, options, modelOrder)
     elkNode.setProperty(CoreOptions.PADDING, ElkPadding(back, padding, front, padding))
     elkNode.setProperty(CoreOptions.NODE_SIZE_CONSTRAINTS, EnumSet.of(SizeConstraint.MINIMUM_SIZE))
     elkNode.setProperty(
       CoreOptions.NODE_SIZE_MINIMUM,
       KVector(
-        (SceneLayout.PLINTH_WIDTH + CONTAINER_MARGIN) * SCALE,
+        math.max(SceneLayout.PLINTH_WIDTH + CONTAINER_MARGIN, least) * SCALE,
         SceneLayout.PLINTH_DEPTH * SCALE + back + front,
       ),
     )

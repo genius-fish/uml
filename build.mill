@@ -160,6 +160,16 @@ object scene extends GeniusFishModule:
     def forkEnv = super.forkEnv() ++ Map("SCENE_DSL_MD" -> dslMd().path.toString)
 
 // ---------------------------------------------------------------------------
+// Module: diagram (an ArchiMate graph as a flat diagram: the scene's ELK layout, boxes
+// sized to their names, drawn as TikZ for LaTeX and as SVG)
+// ---------------------------------------------------------------------------
+object diagram extends GeniusFishModule:
+  def artifactName = "genius-uml-diagram"
+  def moduleDeps   = Seq(scene)
+
+  object test extends GeniusFishTests
+
+// ---------------------------------------------------------------------------
 // Module: testkit (golden-file + structural assertions for ZIO Test)
 // ---------------------------------------------------------------------------
 object testkit extends GeniusFishModule:
