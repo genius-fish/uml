@@ -289,7 +289,7 @@ object Diagram:
   // Where two connectors cross, the upright one is broken: a patch of the field under
   // the crossing cuts it, and a short piece of the level one is drawn again over it,
   // as a printed diagram breaks the line that passes under.
-  private def crossings(routes: List[(List[Pt], Prim)], field: Pt => Role): List[Prim] =
+  private[diagram] def crossings(routes: List[(List[Pt], Prim)], field: Pt => Role): List[Prim] =
     def segments(points: List[Pt]) = points.zip(points.drop(1))
     def level(a: Pt, b: Pt)        = math.abs(a._2 - b._2) < 1e-6 && math.abs(a._1 - b._1) > 1e-6
     def upright(a: Pt, b: Pt)      = math.abs(a._1 - b._1) < 1e-6 && math.abs(a._2 - b._2) > 1e-6

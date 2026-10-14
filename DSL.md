@@ -1302,3 +1302,66 @@ longest stretch between the edges, which is widened until it fits. A label wraps
 `Options.labelWidth` or as wide as its stretch already is, whichever is wider, narrowed
 until the diagram keeps within `Options.pageWidth`. A lifeline is broken where a word
 stands on it, so a label reads clean without a patch behind it.
+
+### Activities: a process with swimlanes
+
+`Activity.draw(graph, options)` draws a process as an activity diagram with swimlanes,
+in the same look, so a document sets its processes in one style with its views. It
+returns a `Diagram.Drawing` for the same three writers.
+
+```scala
+import fish.genius.uml.diagram.*
+import fish.genius.uml.diagram.Activity.*
+import fish.genius.uml.dsl.archimate.ShapeType
+
+val drawing = Activity.draw(
+  Graph(
+    "Handle an order",
+    List(Lane("sales", "Sales desk", Some(ShapeType.BusinessRole))),
+    List(
+      Node("start", "Order placed", Kind.Start(Trigger.Message), Some("sales")),
+      Node("check", "Check the order", Kind.Work(Task.User), Some("sales"), Some("[CRM]")),
+      Node("ok", "Complete?", Kind.Gateway(Gate.Exclusive), Some("sales")),
+      Node("done", "Order accepted", Kind.End(Trigger.Plain), Some("sales")),
+    ),
+    List(
+      Flow("start", "check"),
+      Flow("check", "ok"),
+      Flow("ok", "done", Some("yes")),
+      Flow("ok", "check", Some("no"), default = true),
+    ),
+  )
+)
+```
+
+- **Lanes** are columns, the flow runs from top to bottom. Each lane is a light field
+  with its name in a header, and the icon of its performer's `shape` beside it. A node
+  in no lane (or in a lane not listed) stands in a column of its own after them; a
+  graph without lanes has one column and no header.
+- **A task** (`Kind.Work`) is a rounded box in the business colour with its name, the
+  `detail` (the systems that support it) under it in a quieter voice, and an icon for
+  its kind (`User` an actor, `Service` a component, `Script` an artifact, `Rule` a
+  principle, `Call` a process; `Manual` and `Plain` have none); a `Sub` process has a small
+  plus at the bottom.
+- **An event** is a circle with its trigger inside (message, timer, error, signal,
+  terminate) and its name beside it: thin at the `Start`, double for an
+  `Intermediate` one, thick at the `End`.
+- **A gateway** is a diamond with its kind inside (X exclusive, + parallel, O
+  inclusive, event-based), its question above its right side.
+- **A flow** is a fine line with an arrowhead. A branch leaves a gateway from the
+  corner that faces its target, with its `label` (the condition) there; a flow into a
+  gateway that others join comes in at the corner that faces it; a `default` flow has
+  a short stroke across its start. `notes` stand beside their node in a bracket.
+
+The layout is layered. The flows that close a loop (found by a walk from the starts,
+following flows in their order) are set aside; every node is placed on the row its
+longest path from a start gives it, and in its lane on a track of its own when its row
+holds more than one node there, ordered under the nodes it comes from. A flow goes
+straight down when it can, else down, across in the gap above its target (or below its
+source) and down again, else round the right of what is in the way; a loop goes back
+up round the right of everything it passes and into the right of its target. Where
+two flows cross, the one across is broken, as in `Diagram`. The walk and the ranking
+recurse once per node of a chain, which suits a process of dossier size (hundreds of
+steps), not one of tens of thousands. Tasks wrap narrower
+(`Options.taskWidth`, then 2.4 and 2.0 cm) until the diagram keeps within
+`Options.pageWidth`.

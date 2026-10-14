@@ -136,6 +136,114 @@ object DiagramGallery extends ZIOSpecDefault:
 
   end checkout
 
+  // an order handled across three lanes: a choice with a default, a parallel split
+  // and join, a loop back, events with triggers, a note
+  val order: Activity.Graph =
+    import Activity.*
+    Graph(
+      "Handle an order",
+      List(
+        Lane("customer", "Customer", Some(ShapeType.BusinessActor)),
+        Lane("sales", "Sales desk", Some(ShapeType.BusinessRole)),
+        Lane("warehouse", "Warehouse", Some(ShapeType.BusinessRole)),
+      ),
+      List(
+        Node("start", "Order placed", Kind.Start(Trigger.Message), Some("customer")),
+        Node("check", "Check the order", Kind.Work(Task.User), Some("sales"), Some("[CRM]")),
+        Node("ok", "Complete?", Kind.Gateway(Gate.Exclusive), Some("sales")),
+        Node("ask", "Ask for the missing details", Kind.Work(Task.Manual), Some("sales")),
+        Node("reply", "Customer replies", Kind.Intermediate(Trigger.Message), Some("customer")),
+        Node("split", "", Kind.Gateway(Gate.Parallel), Some("sales")),
+        Node(
+          "invoice",
+          "Send the invoice",
+          Kind.Work(Task.Service),
+          Some("sales"),
+          Some("[ERP]"),
+          List("Due in 30 days"),
+        ),
+        Node("pick", "Pick and pack", Kind.Work(Task.Plain), Some("warehouse"), Some("[WMS]")),
+        Node("ship", "Ship the parcel", Kind.Work(Task.Sub), Some("warehouse")),
+        Node("join", "", Kind.Gateway(Gate.Parallel), Some("sales")),
+        Node("done", "Order fulfilled", Kind.End(Trigger.Plain), Some("customer")),
+      ),
+      List(
+        Flow("start", "check"),
+        Flow("check", "ok"),
+        Flow("ok", "split", Some("yes")),
+        Flow("ok", "ask", Some("no"), default = true),
+        Flow("ask", "reply"),
+        Flow("reply", "check"),
+        Flow("split", "invoice"),
+        Flow("split", "pick"),
+        Flow("pick", "ship"),
+        Flow("invoice", "join"),
+        Flow("ship", "join"),
+        Flow("join", "done"),
+      ),
+    )
+
+  end order
+
+  // a claim across four lanes: two branches of a parallel split joining a gateway
+  // whose branch leaves from the side they would come in at, a loop back from a timer
+  // event (its name beside it) into that gateway, a note, two tracks in one lane
+  val claim: Activity.Graph =
+    import Activity.*
+    Graph(
+      "Handle a claim",
+      List(
+        Lane("holder", "Policy holder", Some(ShapeType.BusinessActor)),
+        Lane("handler", "Claims handler", Some(ShapeType.BusinessRole)),
+        Lane("adjuster", "Loss adjuster", Some(ShapeType.BusinessRole)),
+        Lane("finance", "Finance", Some(ShapeType.BusinessRole)),
+      ),
+      List(
+        Node("start", "Damage noticed", Kind.Start(Trigger.Plain), Some("holder")),
+        Node("file", "File the claim online", Kind.Work(Task.User), Some("holder"), Some("[Claims Portal]")),
+        Node("register", "Register the claim", Kind.Work(Task.Service), Some("handler"), Some("[Policy Admin]")),
+        Node("covered", "Covered by the policy?", Kind.Gateway(Gate.Exclusive), Some("handler")),
+        Node("refuse", "Write the refusal", Kind.Work(Task.User), Some("handler")),
+        Node("refused", "Claim refused", Kind.End(Trigger.Plain), Some("handler")),
+        Node("split", "", Kind.Gateway(Gate.Parallel), Some("handler")),
+        Node("inspect", "Inspect the damage", Kind.Work(Task.Manual), Some("adjuster")),
+        Node(
+          "report",
+          "Write the report",
+          Kind.Work(Task.User),
+          Some("adjuster"),
+          None,
+          List("Within ten working days"),
+        ),
+        Node("fraud", "Check for fraud", Kind.Work(Task.Rule), Some("handler"), Some("[Policy Admin]")),
+        Node("agree", "Amount agreed?", Kind.Gateway(Gate.Exclusive), Some("handler")),
+        Node("negotiate", "Negotiate with the holder", Kind.Work(Task.User), Some("handler")),
+        Node("wait", "Two weeks pass", Kind.Intermediate(Trigger.Timer), Some("handler")),
+        Node("pay", "Pay the claim", Kind.Work(Task.Service), Some("finance"), Some("[Payments]")),
+        Node("settled", "Claim settled", Kind.End(Trigger.Plain), Some("finance")),
+      ),
+      List(
+        Flow("start", "file"),
+        Flow("file", "register"),
+        Flow("register", "covered"),
+        Flow("covered", "refuse", Some("no")),
+        Flow("refuse", "refused"),
+        Flow("covered", "split", Some("yes"), default = true),
+        Flow("split", "inspect"),
+        Flow("inspect", "report"),
+        Flow("split", "fraud"),
+        Flow("report", "agree"),
+        Flow("fraud", "agree"),
+        Flow("agree", "negotiate", Some("no")),
+        Flow("negotiate", "wait"),
+        Flow("wait", "agree"),
+        Flow("agree", "pay", Some("yes"), default = true),
+        Flow("pay", "settled"),
+      ),
+    )
+
+  end claim
+
   val graphs: List[(String, SceneGraph)] =
     List("landscape" -> DiagramSpec.landscape, "layers" -> layers, "relationships" -> relationships)
 
@@ -158,6 +266,11 @@ object DiagramGallery extends ZIOSpecDefault:
         (
           "checkout-innovenso",
           Right(Sequence.draw(checkout, Sequence.Options(Diagram.Style(typeface = Typeface.montserrat)))),
+        ),
+        ("order", Right(Activity.draw(order))),
+        (
+          "order-innovenso",
+          Right(Activity.draw(order, Activity.Options(Diagram.Style(typeface = Typeface.montserrat)))),
         ),
       )
       sys.env.get("DIAGRAM_GALLERY").map(Path.of(_)).foreach: dir =>
