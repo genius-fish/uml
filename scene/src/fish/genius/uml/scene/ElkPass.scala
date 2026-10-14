@@ -5,9 +5,7 @@ import java.util.EnumSet
 import scala.jdk.CollectionConverters.*
 import scala.util.Try
 
-import org.eclipse.elk.alg.layered.options.{
-  LayeredMetaDataProvider, LayeredOptions, OrderingStrategy,
-}
+import org.eclipse.elk.alg.layered.options.*
 import org.eclipse.elk.core.RecursiveGraphLayoutEngine
 import org.eclipse.elk.core.data.LayoutMetaDataService
 import org.eclipse.elk.core.math.{ElkPadding, KVector}
@@ -198,6 +196,15 @@ private[scene] object ElkPass:
     )
     elkNode.setProperty(CoreOptions.SPACING_EDGE_NODE, Double.box(EDGE_NODE * SCALE))
     elkNode.setProperty(CoreOptions.SPACING_EDGE_EDGE, Double.box(EDGE_EDGE * SCALE))
+    if options.compact then
+      elkNode.setProperty(
+        LayeredOptions.NODE_PLACEMENT_STRATEGY,
+        NodePlacementStrategy.NETWORK_SIMPLEX,
+      )
+      elkNode.setProperty(
+        LayeredOptions.COMPACTION_POST_COMPACTION_STRATEGY,
+        GraphCompactionStrategy.EDGE_LENGTH,
+      )
 
   end configure
 

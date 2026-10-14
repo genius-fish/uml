@@ -2,114 +2,193 @@ package fish.genius.uml.diagram
 
 import java.awt.{BasicStroke, RenderingHints}
 import java.awt.geom.{Ellipse2D, Path2D, RoundRectangle2D}
-import java.awt.image.BufferedImage
+import java.awt.image.{BufferedImage, ConvolveOp, Kernel}
 import java.io.ByteArrayOutputStream
 import javax.imageio.ImageIO
 
-// A Drawing as a PNG, drawn with Java2D: the same geometry and the same font as the
-// TikZ picture, for an export that has no LaTeX to compile it with.
+// A Drawing as a PNG with the look of the TikZ picture (Look), drawn with Java2D in the
+// drawing's own typeface: boxes falling off from top to bottom on a blurred shadow,
+// lines with rounded bends, gaps and labels on the field they lie on. For an export
+// that has no LaTeX to compile with.
 object Png:
 
-  private val MARGIN = 0.15
+  private val MARGIN = 0.2
 
   def image(
     drawing: Diagram.Drawing,
     dpi: Int = 150,
     palette: Map[String, String] = Map.empty,
   ): Array[Byte] =
-    val colours                  = Notation.colours(palette).toMap
+    val c                        = Look.colours(palette)
     val scale                    = dpi / 2.54
     val (minX, minY, maxX, maxY) = Extent.of(drawing, MARGIN)
     val (w, h) = (((maxX - minX) * scale).ceil.toInt, ((maxY - minY) * scale).ceil.toInt)
-    val canvas = BufferedImage(w, h, BufferedImage.TYPE_INT_RGB)
-    val g      = canvas.createGraphics()
-    g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-    g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
-    g.setRenderingHint(
-      RenderingHints.KEY_FRACTIONALMETRICS,
-      RenderingHints.VALUE_FRACTIONALMETRICS_ON,
-    )
-    g.setColor(java.awt.Color.WHITE)
-    g.fillRect(0, 0, w, h)
-    def x(v: Double): Double                   = (v - minX) * scale
-    def y(v: Double): Double                   = (maxY - v) * scale
-    def pt(points: Double)                     = (points * dpi / 72).toFloat
-    def colour(hex: String)                    = java.awt.Color(Integer.parseInt(hex, 16))
-    val line                                   = colour(colours("am-line"))
-    def ink(fill: Ink): Option[java.awt.Color] = fill match
-      case Ink.Empty       => None
-      case Ink.Paper       => Some(java.awt.Color.WHITE)
-      case Ink.Line        => Some(line)
-      case Ink.Layer(name) => Some(colour(colours.getOrElse(name, "FFFFFF")))
-    def stroke(width: Double, d: Dash)         =
-      val dashes = d match
-        case Dash.Solid  => null
-        case Dash.Dashed => Array(pt(3), pt(2))
-        case Dash.Dotted => Array(pt(0.8), pt(1.6))
-      BasicStroke(pt(width), BasicStroke.CAP_BUTT, BasicStroke.JOIN_ROUND, 10f, dashes, 0f)
-    def path(ps: List[Pt], closed: Boolean)    =
+    val faces  = Measure(drawing.style.typeface)
+    def x(v: Double): Double                     = (v - minX) * scale
+    def y(v: Double): Double                     = (maxY - v) * scale
+    def pt(points: Double): Float                = (points * dpi / 72).toFloat
+    def colour(hex: String)                      = java.awt.Color(Integer.parseInt(hex, 16))
+    def setup(g: java.awt.Graphics2D)            =
+      g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+      g.setRenderingHint(
+        RenderingHints.KEY_TEXT_ANTIALIASING,
+        RenderingHints.VALUE_TEXT_ANTIALIAS_ON,
+      )
+      g.setRenderingHint(
+        RenderingHints.KEY_FRACTIONALMETRICS,
+        RenderingHints.VALUE_FRACTIONALMETRICS_ON,
+      )
+      g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE)
+    def stroke(width: Double, d: Dash)           = d match
+      case Dash.Solid  => BasicStroke(pt(width), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND)
+      case Dash.Dashed => BasicStroke(
+          pt(width),
+          BasicStroke.CAP_ROUND,
+          BasicStroke.JOIN_ROUND,
+          10f,
+          Array(pt(2.8), pt(1.8)),
+          0f,
+        )
+      case Dash.Dotted => BasicStroke(
+          pt(Look.DOT_LINE),
+          BasicStroke.CAP_ROUND,
+          BasicStroke.JOIN_ROUND,
+          10f,
+          Array(0.01f, pt(1.9)),
+          0f,
+        )
+    def path(
+      ps: List[Pt],
+      closed: Boolean,
+      bend: Double = 0.0,
+    )                                            =
       val shape = Path2D.Double()
       ps.headOption.foreach(p => shape.moveTo(x(p._1), y(p._2)))
-      ps.drop(1).foreach(p => shape.lineTo(x(p._1), y(p._2)))
+      ps.indices.drop(1).foreach: i =>
+        val v = ps(i)
+        if bend > 0 && i < ps.size - 1 then
+          val (a, b)                       = (ps(i - 1), ps(i + 1))
+          def toward(from: Pt, to: Pt): Pt =
+            val l = math.max(math.hypot(to._1 - from._1, to._2 - from._2), 1e-9)
+            val k = math.min(bend, l / 2) / l
+            (from._1 + (to._1 - from._1) * k, from._2 + (to._2 - from._2) * k)
+          val (p1, p2)                     = (toward(v, a), toward(v, b))
+          shape.lineTo(x(p1._1), y(p1._2))
+          shape.quadTo(x(v._1), y(v._2), x(p2._1), y(p2._2))
+        else shape.lineTo(x(v._1), y(v._2))
       if closed then shape.closePath()
       shape
-    def paint(
-      shape: java.awt.Shape,
-      fill: Ink,
-      width: Double,
-      d: Dash,
-      outline: Boolean = true,
-    ): Unit                                    =
-      ink(fill).foreach: c =>
-        g.setColor(c)
-        g.fill(shape)
-      if outline then
-        g.setColor(line)
-        g.setStroke(stroke(width, d))
-        g.draw(shape)
-    def draw(p: Prim): Unit                    = p match
-      case Prim.Poly(ps, closed, fill, d)             => paint(path(ps, closed), fill, 0.4, d)
-      case Prim.Circle(c, r, fill)                    =>
-        paint(
-          Ellipse2D.Double(x(c._1 - r), y(c._2 + r), 2 * r * scale, 2 * r * scale),
-          fill,
-          0.4,
-          Dash.Solid,
-        )
-      case Prim.Ellipse(c, rx, ry, fill)              =>
-        paint(
-          Ellipse2D.Double(x(c._1 - rx), y(c._2 + ry), 2 * rx * scale, 2 * ry * scale),
-          fill,
-          0.4,
-          Dash.Solid,
-        )
-      case Prim.Box(bx, by, bw, bh, r, fill, d, edge) =>
-        val shape = RoundRectangle2D.Double(
+    end path
+    def shapeOf(p: Prim): Option[java.awt.Shape] = p match
+      case Prim.Poly(ps, closed, _, _, _)          => Some(path(ps, closed))
+      case Prim.Circle(cc, r, _, _)                =>
+        Some(Ellipse2D.Double(x(cc._1 - r), y(cc._2 + r), 2 * r * scale, 2 * r * scale))
+      case Prim.Ellipse(cc, rx, ry, _, _)          =>
+        Some(Ellipse2D.Double(x(cc._1 - rx), y(cc._2 + ry), 2 * rx * scale, 2 * ry * scale))
+      case Prim.Box(bx, by, bw, bh, r, _, _, _, _) =>
+        Some(RoundRectangle2D.Double(
           x(bx),
           y(by + bh),
           bw * scale,
           bh * scale,
           2 * r * scale,
           2 * r * scale,
-        )
-        paint(shape, fill, 0.5, d, edge)
-      case Prim.Text(at, text, size, bold, centred)   =>
-        val font  =
-          java.awt.Font(
-            drawing.family,
-            if bold then java.awt.Font.BOLD else java.awt.Font.PLAIN,
-            100,
-          ).deriveFont(pt(size))
+        ))
+      case _                                       => None
+
+    // the shadows first, on a layer of their own, blurred and laid under the drawing
+    val shade   = BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB)
+    val sg      = shade.createGraphics()
+    setup(sg)
+    drawing.prims.foreach:
+      case p @ (Prim.Box(_, _, _, _, _, _, _, _, Role.Element(_)) | Prim.Poly(
+          _,
+          true,
+          _,
+          _,
+          Role.Element(_),
+        )) =>
+        sg.setColor(java.awt.Color(0f, 0f, 0f, Look.SHADOW_ALPHA.toFloat))
+        val t = sg.getTransform
+        sg.translate(pt(Look.SHADOW_X).toDouble, pt(Look.SHADOW_Y).toDouble)
+        shapeOf(p).foreach(sg.fill)
+        sg.setTransform(t)
+      case _ => ()
+    sg.dispose()
+    val radius  = math.max(1, math.round(pt(Look.SHADOW_BLUR) / 1.5f))
+    val size    = radius * 2 + 1
+    val kernel  = Kernel(size, size, Array.fill(size * size)(1f / (size * size)))
+    val blurred = ConvolveOp(kernel, ConvolveOp.EDGE_NO_OP, null).filter(shade, null)
+
+    val canvas              = BufferedImage(w, h, BufferedImage.TYPE_INT_RGB)
+    val g                   = canvas.createGraphics()
+    setup(g)
+    g.setColor(colour(c.paper))
+    g.fillRect(0, 0, w, h)
+    g.drawImage(blurred, 0, 0, null)
+    def paint(
+      shape: java.awt.Shape,
+      role: Role,
+      fill: Ink,
+      d: Dash,
+      outline: Boolean,
+    ): Unit                 =
+      val (edge, inked) = c.look(role, fill)
+      role match
+        case Role.Element(layer) if fill != Ink.Empty =>
+          val b = shape.getBounds2D
+          g.setPaint(java.awt.GradientPaint(
+            0f,
+            b.getMinY.toFloat,
+            colour(c.top(layer)),
+            0f,
+            b.getMaxY.toFloat,
+            colour(c.of(layer)),
+          ))
+          g.fill(shape)
+        case _                                        => inked.foreach: hex =>
+            g.setColor(colour(hex))
+            g.fill(shape)
+      end match
+      if outline then
+        edge.foreach: hex =>
+          g.setColor(colour(hex))
+          g.setStroke(stroke(c.weight(role), d))
+          g.draw(shape)
+    end paint
+    def draw(p: Prim): Unit = p match
+      case Prim.Poly(ps, closed, fill, d, role)                       =>
+        paint(path(ps, closed), role, if closed then fill else Ink.Empty, d, outline = true)
+      case Prim.Circle(_, _, fill, role)                              =>
+        shapeOf(p).foreach(paint(_, role, fill, Dash.Solid, outline = true))
+      case Prim.Ellipse(_, _, _, fill, role)                          =>
+        shapeOf(p).foreach(paint(_, role, fill, Dash.Solid, outline = true))
+      case Prim.Box(_, _, _, _, _, fill, d, edge, role)               =>
+        shapeOf(p).foreach(paint(_, role, fill, d, edge))
+      case Prim.Text(at, text, size, weight, tone, centred, backdrop) =>
+        val font  = faces.font(weight).deriveFont(pt(size))
         g.setFont(font)
-        g.setColor(line)
         val width = font.getStringBounds(text, g.getFontRenderContext).getWidth
-        g.drawString(text, (x(at._1) - (if centred then width / 2 else 0)).toFloat, y(at._2).toFloat)
-      case c @ Prim.Connector(ps, d, _, _)            =>
-        paint(path(ps, closed = false), Ink.Empty, 0.5, d)
-        Heads.of(c).foreach(draw)
+        val left  = x(at._1) - (if centred then width / 2 else 0)
+        backdrop.foreach: on =>
+          val m = font.getLineMetrics(text, g.getFontRenderContext)
+          g.setColor(colour(c.ground(on)))
+          g.fill(java.awt.geom.Rectangle2D.Double(
+            left - pt(1.2),
+            y(at._2) - m.getAscent,
+            width + 2 * pt(1.2),
+            m.getAscent + m.getDescent,
+          ))
+        g.setColor(colour(if tone == Emphasis.Muted then c.muted else c.text))
+        g.drawString(text, left.toFloat, y(at._2).toFloat)
+      case con @ Prim.Connector(ps, d, _, _)                          =>
+        g.setColor(colour(c.line))
+        g.setStroke(stroke(Look.LINK_LINE, d))
+        g.draw(path(ps, closed = false, Look.BEND * 2.54 / 72))
+        Heads.of(con).foreach(draw)
     drawing.prims.foreach(draw)
     g.dispose()
-    val out                                    = ByteArrayOutputStream()
+    val out                 = ByteArrayOutputStream()
     ImageIO.write(canvas, "png", out)
     out.toByteArray
 

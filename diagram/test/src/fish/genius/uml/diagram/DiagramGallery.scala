@@ -1,0 +1,132 @@
+package fish.genius.uml.diagram
+
+import java.nio.charset.StandardCharsets
+import java.nio.file.{Files, Path}
+
+import zio.test.*
+
+import fish.genius.uml.dsl.archimate.{RelationshipType, ShapeType}
+import fish.genius.uml.scene.*
+
+// The diagrams the look is judged on: an application landscape, every layer's main
+// elements, and every relationship side by side. DIAGRAM_GALLERY=dir writes each as a
+// standalone .tex (Heros) and as -innovenso.tex (Montserrat), with SVG and PNG, to
+// compile and look at; DIAGRAM_PALETTE=name=hex,… lays a palette over both.
+object DiagramGallery extends ZIOSpecDefault:
+
+  private def leaf(
+    id: String,
+    label: String,
+    shape: ShapeType,
+    caption: Option[String] = None,
+    note: Option[String] = None,
+  ) =
+    SceneNode(SceneId(id), NodeKind.Element(shape), label, caption = caption, note = note)
+
+  private def edge(
+    id: String,
+    from: String,
+    to: String,
+    kind: RelationshipType,
+    label: Option[String] = None,
+  ) =
+    SceneEdge(SceneId(id), SceneId(from), SceneId(to), kind, label)
+
+  val layers: SceneGraph = SceneGraph(
+    "Every layer",
+    List(
+      leaf("stakeholder", "Chief Executive", ShapeType.MotivationStakeholder),
+      leaf("driver", "Margin pressure", ShapeType.MotivationDriver),
+      leaf("goal", "Grow online revenue", ShapeType.MotivationGoal),
+      leaf("principle", "API first", ShapeType.MotivationPrinciple),
+      leaf("requirement", "Checkout under two seconds", ShapeType.MotivationRequirement),
+      leaf("capability", "Order Management", ShapeType.StrategyCapability),
+      leaf("stream", "Order to cash", ShapeType.StrategyValueStream),
+      leaf("actor", "Customer", ShapeType.BusinessActor),
+      leaf("role", "Buyer", ShapeType.BusinessRole),
+      leaf("process", "Place an order", ShapeType.BusinessProcess),
+      leaf("bservice", "Ordering", ShapeType.BusinessService),
+      leaf("object", "Order", ShapeType.BusinessObject),
+      leaf("event", "Order received", ShapeType.BusinessEvent),
+      leaf("component", "Web Shop", ShapeType.ApplicationComponent, Some("[IT System: Next.js]")),
+      leaf("interface", "Checkout API", ShapeType.ApplicationInterface),
+      leaf("aservice", "Order Intake", ShapeType.ApplicationService),
+      leaf("data", "Order Record", ShapeType.ApplicationDataObject),
+      leaf("node", "Kubernetes", ShapeType.TechnologyNode),
+      leaf("software", "PostgreSQL", ShapeType.TechnologySystemSoftware),
+      leaf("artifact", "shop.jar", ShapeType.TechnologyArtifact),
+      leaf("device", "Card terminal", ShapeType.TechnologyDevice),
+      leaf("facility", "Warehouse Ghent", ShapeType.PhysicalFacility),
+      leaf("work", "Replatform checkout", ShapeType.ImplementationWorkPackage),
+      leaf("deliverable", "New checkout", ShapeType.ImplementationDeliverable),
+    ),
+    List(
+      edge("r1", "stakeholder", "driver", RelationshipType.Association),
+      edge("r2", "driver", "goal", RelationshipType.Influence),
+      edge("r3", "requirement", "goal", RelationshipType.Realization),
+      edge("r4", "principle", "requirement", RelationshipType.Influence),
+      edge("r5", "capability", "goal", RelationshipType.Realization),
+      edge("r6", "stream", "capability", RelationshipType.Serving),
+      edge("r7", "actor", "role", RelationshipType.Assignment),
+      edge("r8", "role", "process", RelationshipType.Assignment),
+      edge("r9", "event", "process", RelationshipType.Triggering),
+      edge("r10", "process", "bservice", RelationshipType.Realization),
+      edge("r11", "process", "object", RelationshipType.WriteAccess),
+      edge("r12", "process", "capability", RelationshipType.Realization),
+      edge("r13", "aservice", "process", RelationshipType.Serving),
+      edge("r14", "component", "aservice", RelationshipType.Realization),
+      edge("r15", "component", "interface", RelationshipType.Composition),
+      edge("r16", "component", "data", RelationshipType.ReadWriteAccess),
+      edge("r17", "node", "component", RelationshipType.Serving),
+      edge("r18", "node", "software", RelationshipType.Aggregation),
+      edge("r19", "artifact", "component", RelationshipType.Realization),
+      edge("r20", "device", "node", RelationshipType.Flow, Some("card data")),
+      edge("r21", "facility", "device", RelationshipType.Association),
+      edge("r22", "work", "deliverable", RelationshipType.Realization),
+      edge("r23", "deliverable", "component", RelationshipType.Realization),
+      edge("r24", "data", "object", RelationshipType.Realization),
+    ),
+  )
+
+  // every relationship once, from a box on the left to one on the right, named on it
+  val relationships: SceneGraph =
+    val kinds = RelationshipType.values.toList
+    SceneGraph(
+      "Every relationship",
+      kinds.zipWithIndex.flatMap((k, i) =>
+        List(
+          leaf(s"s$i", s"Source ${i + 1}", ShapeType.ApplicationComponent),
+          leaf(s"t$i", s"Target ${i + 1}", ShapeType.ApplicationService),
+        )
+      ),
+      kinds.zipWithIndex.map((k, i) => edge(s"e$i", s"s$i", s"t$i", k, Some(k.toString))),
+    )
+
+  val graphs: List[(String, SceneGraph)] =
+    List("landscape" -> DiagramSpec.landscape, "layers" -> layers, "relationships" -> relationships)
+
+  private def palette: Map[String, String] =
+    sys.env.get("DIAGRAM_PALETTE").toList.flatMap(_.split(",").toList).flatMap: pair =>
+      pair.split("=").toList match
+        case List(name, hex) => List(name.trim -> hex.trim)
+        case _               => Nil
+    .toMap
+
+  override def spec =
+    test("the gallery draws, and is written where DIAGRAM_GALLERY says"):
+      val drawn = graphs.flatMap: (name, graph) =>
+        List(
+          (name, Diagram.draw(graph)),
+          (s"$name-innovenso", Diagram.draw(graph, Diagram.Options(Diagram.Style(typeface = Typeface.montserrat)))),
+        )
+      sys.env.get("DIAGRAM_GALLERY").map(Path.of(_)).foreach: dir =>
+        Files.createDirectories(dir)
+        drawn.foreach:
+          case (name, Right(d)) =>
+            Files.writeString(dir.resolve(s"$name.tex"), Tikz.standalone(d, palette), StandardCharsets.UTF_8)
+            Files.writeString(dir.resolve(s"$name.svg"), Svg.document(d, palette), StandardCharsets.UTF_8)
+            Files.write(dir.resolve(s"$name.png"), Png.image(d, 200, palette))
+          case _                => ()
+      assertTrue(drawn.forall(_._2.exists(_.overflow == 0)))
+
+end DiagramGallery

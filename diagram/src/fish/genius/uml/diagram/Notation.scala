@@ -9,7 +9,7 @@ import fish.genius.uml.dsl.archimate.{RelationshipType, ShapeGroup, ShapeType}
 type Pt = (Double, Double)
 
 // A colour by name. The layer colours are provided with ArchiMate's defaults and can be
-// redefined by a theme before the picture (TikZ) or in the palette (SVG).
+// redefined by a theme before the picture (TikZ) or in the palette (SVG, PNG).
 enum Ink derives CanEqual:
   case Empty, Paper, Line
   case Layer(name: String)
@@ -21,24 +21,49 @@ enum Dash derives CanEqual:
 enum Head derives CanEqual:
   case FilledDiamond, OpenDiamond, Dot, FilledTriangle, OpenTriangle, Barb
 
+// What a shape is part of, which says how a writer styles it: a box in its layer's
+// colour with an edge a shade darker and a soft shadow, a container lighter behind
+// what it holds, a grouping's dashed frame, a mark (an icon, a band) in its box's edge
+// colour, a patch of the field under it, or a plain line.
+enum Role derives CanEqual:
+  case Plain
+  case Element(layer: String)
+  case Container(layer: String)
+  case Group
+  case Mark(layer: String)
+  case Halo
+  // a flat patch of the field it lies on (a container, a grouping, the page): the
+  // gap where one line crosses another, the ground under a connector's label
+  case Patch(on: Role)
+
+// how a line of text is set: its weight, and whether it is the main text or quieter
+enum Weight derives CanEqual:
+  case Regular, Medium, SemiBold, Italic
+
+enum Emphasis derives CanEqual:
+  case Main, Muted
+
 enum Prim derives CanEqual:
 
   case Poly(
     points: List[Pt],
     closed: Boolean,
     fill: Ink = Ink.Empty,
-    dash: Dash = Dash.Solid)
+    dash: Dash = Dash.Solid,
+    role: Role = Role.Plain)
 
   case Circle(
     centre: Pt,
     r: Double,
-    fill: Ink = Ink.Empty)
+    fill: Ink = Ink.Empty,
+    role: Role = Role.Plain)
 
   case Ellipse(
     centre: Pt,
     rx: Double,
     ry: Double,
-    fill: Ink = Ink.Empty)
+    fill: Ink = Ink.Empty,
+    role: Role = Role.Plain)
 
   // a rectangle from its lower left corner; without `stroke` only its fill shows
   case Box(
@@ -49,15 +74,20 @@ enum Prim derives CanEqual:
     radius: Double,
     fill: Ink,
     dash: Dash = Dash.Solid,
-    stroke: Boolean = true)
+    stroke: Boolean = true,
+    role: Role = Role.Plain)
 
-  // one line of text on its baseline, centred on x or starting from it, at size points
+  // one line of text on its baseline, centred on x or starting from it, at size points;
+  // with a backdrop it stands on its own patch of that role's fill, so a line under it
+  // does not run through the letters
   case Text(
     baseline: Pt,
     text: String,
     size: Double,
-    bold: Boolean = false,
-    centred: Boolean = true)
+    weight: Weight = Weight.Regular,
+    tone: Emphasis = Emphasis.Main,
+    centred: Boolean = true,
+    backdrop: Option[Role] = None)
 
   case Connector(
     points: List[Pt],
@@ -79,6 +109,9 @@ object Notation:
     "am-motivation" -> "CCCCFF",
     "am-implementation" -> "FFE0E0",
     "am-line" -> "3C3C3C",
+    "am-text" -> "1F1F1F",
+    "am-muted" -> "6B6B6B",
+    "am-paper" -> "FFFFFF",
   )
 
   // The colours a writer uses: ArchiMate's, with a palette's own laid over them. A
@@ -98,14 +131,16 @@ object Notation:
   // takes, become spaces
   def clean(text: String): String = text.map(c => if c < ' ' || c == '\u007f' then ' ' else c)
 
-  def colour(group: ShapeGroup): Ink = Ink.Layer(group match
+  def colour(group: ShapeGroup): Ink = Ink.Layer(layer(group))
+
+  def layer(group: ShapeGroup): String = group match
     case ShapeGroup.Business       => "am-business"
     case ShapeGroup.Application    => "am-application"
     case ShapeGroup.Technology     => "am-technology"
     case ShapeGroup.Physical       => "am-physical"
     case ShapeGroup.Strategy       => "am-strategy"
     case ShapeGroup.Motivation     => "am-motivation"
-    case ShapeGroup.Implementation => "am-implementation")
+    case ShapeGroup.Implementation => "am-implementation"
 
   // The outline of a box: square for structure, rounded for behaviour and strategy,
   // cut corners for motivation, and a band across the top for a passive object.

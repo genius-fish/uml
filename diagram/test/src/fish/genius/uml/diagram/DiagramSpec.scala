@@ -105,7 +105,9 @@ object DiagramSpec extends ZIOSpecDefault:
         assertTrue(
           drawing.overflow == 0,
           leaves.combinations(2).forall { case List(a, b) => !overlaps(a, b); case _ => true },
-          drawing.prims.count(_.isInstanceOf[Prim.Connector]) == landscape.edges.size,
+          drawing.scene.relationships.size == landscape.edges.size,
+          // every relationship, and the short pieces that bridge where lines cross
+          drawing.prims.count(_.isInstanceOf[Prim.Connector]) >= landscape.edges.size,
           erp.w >= Diagram.Style().wideWidth,
           erp.d > Diagram.Style().boxHeight,
         )
@@ -216,9 +218,9 @@ object DiagramSpec extends ZIOSpecDefault:
           // every head ends on the tip, along the line it closes
           heads.forall((_, prims) =>
             prims.forall:
-              case Prim.Poly(ps, _, _, _) => ps.forall(_._1 <= 1.0 + 1e-9)
-              case Prim.Circle(c, r, _)   => c._1 + r <= 1.0 + 1e-9
-              case _                      => true
+              case Prim.Poly(ps, _, _, _, _) => ps.forall(_._1 <= 1.0 + 1e-9)
+              case Prim.Circle(c, r, _, _)   => c._1 + r <= 1.0 + 1e-9
+              case _                         => true
           ),
         )
       ,
@@ -236,7 +238,7 @@ object DiagramSpec extends ZIOSpecDefault:
           Nil,
         )
         val d    = Diagram.draw(long).toOption.get
-        val bold = d.prims.collect { case t: Prim.Text if t.bold => t }
+        val bold = d.prims.collect { case t: Prim.Text if t.weight == Weight.SemiBold => t }
         val c    = d.scene.elements.find(_.key == SceneId("c")).get
         val x    = d.scene.elements.find(_.key == SceneId("x")).get
         assertTrue(

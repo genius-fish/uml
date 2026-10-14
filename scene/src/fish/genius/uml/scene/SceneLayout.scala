@@ -30,7 +30,9 @@ object SceneLayout:
   // header strip at its back, where a diagram reads it first. spreadPorts gives each
   // connector its own port, which ELK places along the side, instead of all meeting in
   // the middle and running on top of one another. labelSize says how large a
-  // connector's label is (width, depth), and the layout keeps room for it. A diagram
+  // connector's label is (width, depth), and the layout keeps room for it. compact
+  // places the nodes with network simplex and compacts the result, which a page
+  // wants and a scene to walk through does not. A diagram
   // has no passports, and spreadPorts does not keep a pane's floor: use one or the other.
   final case class Options(
     nodeSpacing: Double = 0.9,
@@ -42,7 +44,8 @@ object SceneLayout:
     footprint: SceneNode => Option[(Double, Double)] = _ => None,
     headerAtBack: Boolean = false,
     spreadPorts: Boolean = false,
-    labelSize: String => Option[(Double, Double)] = _ => None)
+    labelSize: String => Option[(Double, Double)] = _ => None,
+    compact: Boolean = false)
 
   def layout(graph: SceneGraph, options: Options = Options()): Either[SceneError, Scene] =
     graph.problems match
@@ -50,8 +53,15 @@ object SceneLayout:
       case Nil if graph.nodes.isEmpty => Right(Scene(graph.name, 0, 0, Nil, Nil, Nil, options.panes))
       case Nil =>
         val structure = SceneStructure.of(graph)
-        attempt(structure, options, modelOrder = true)
-          .orElse(attempt(structure, options, modelOrder = false))
+        // model order where ELK manages it; and, since ELK's network simplex fails on
+        // some nested graphs, a compact layout that cannot be had falls back to the plain one
+        val plain     = options.copy(compact = false)
+        val tries     =
+          List(options -> true, options -> false) ++
+          (if options.compact then List(plain -> true, plain -> false) else Nil)
+        tries.tail
+          .foldLeft(attempt(structure, tries.head._1, tries.head._2)): (laid, next) =>
+            laid.orElse(attempt(structure, next._1, next._2))
           .map((sides, built) => scene(graph, structure, sides, built, options))
 
   private val ROUNDING      = 1000.0

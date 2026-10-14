@@ -29,15 +29,16 @@ object Heads:
       (tip._1 - ux * cm(back) - uy * cm(side), tip._2 - uy * cm(back) + ux * cm(side))
     head match
       case Head.FilledDiamond  =>
-        List(Prim.Poly(List(tip, p(4, 2.5), p(8, 0), p(4, -2.5)), closed = true, Ink.Line))
+        List(Prim.Poly(List(tip, p(3.3, 2.1), p(6.6, 0), p(3.3, -2.1)), closed = true, Ink.Line))
       case Head.OpenDiamond    =>
-        List(Prim.Poly(List(tip, p(4, 2.5), p(8, 0), p(4, -2.5)), closed = true, Ink.Paper))
-      case Head.Dot            => List(Prim.Circle(p(1.75, 0), cm(1.75), Ink.Line))
+        List(Prim.Poly(List(tip, p(3.3, 2.1), p(6.6, 0), p(3.3, -2.1)), closed = true, Ink.Paper))
+      case Head.Dot            => List(Prim.Circle(p(1.5, 0), cm(1.5), Ink.Line))
+      // Stealth: a filled point with its back cut in
       case Head.FilledTriangle =>
-        List(Prim.Poly(List(tip, p(5, 2), p(5, -2)), closed = true, Ink.Line))
+        List(Prim.Poly(List(tip, p(5.2, 1.95), p(3.9, 0), p(5.2, -1.95)), closed = true, Ink.Line))
       case Head.OpenTriangle   =>
-        List(Prim.Poly(List(tip, p(7, 3), p(7, -3)), closed = true, Ink.Paper))
-      case Head.Barb           => List(Prim.Poly(List(p(4, 2.5), tip, p(4, -2.5)), closed = false))
+        List(Prim.Poly(List(tip, p(6, 2.7), p(6, -2.7)), closed = true, Ink.Paper))
+      case Head.Barb => List(Prim.Poly(List(p(2.6, 2.5), tip, p(2.6, -2.5)), closed = false))
 
   end at
 
