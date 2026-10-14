@@ -247,7 +247,8 @@ object SceneBlenderSpec extends ZIOSpecDefault:
 
   end withPassports
 
-  // one passport with nothing but its name: a wide, low pane, framed by its width
+  // one passport with nothing but its name: a wide, low pane, framed by its width. The
+  // first node is the customer, one of the three the buying flow reads.
   private val withShortPassport =
     withPassports.copy(nodes =
       withPassports.nodes match
@@ -324,7 +325,9 @@ object SceneBlenderSpec extends ZIOSpecDefault:
       ,
       test("a flyover lights and reads every passport once, the right way up, and flies as before without any"):
         def readable(run: Run) =
-          run.reading.exists(r => r.moments == 3 && r.paneMargin > 0.05 && r.readShare.exists(_ > 0.7) && r.flipped == 0)
+          run.reading.exists(r =>
+            r.moments == 3 && r.paneMargin > 0.05 && r.readShare.exists(s => s > 0.7 && s < 0.9) && r.flipped == 0
+          )
         for
           read    <- built(withPassports, "--flyover", "buying", "--fps", "6")
           flat    <- built(withPassports, "--flyover", "buying", "--fps", "6", "--panes", "flat")

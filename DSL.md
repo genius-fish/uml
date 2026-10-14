@@ -1098,9 +1098,9 @@ the elements it names), and its shot frames those panes with the plinths. After 
 each of its elements whose pane was not read yet gets a passport moment: the camera
 glides square on to the pane and frames it, holds 3.2 seconds, and flies on. The pane
 fills the frame bar a margin of a tenth on each side, along whichever side binds: a tall
-pane fills the height, a wide and low one (a passport with little to say) the width. A pane that turns to the camera
-(`faceCamera`) is read from the side the camera comes from, a little above; a lectern or
-flat pane along its face. Each pane is read once a flight, and a flow without passports
+pane fills the height, a wide and low one (a passport with little to say) the width. A
+pane that turns to the camera (`faceCamera`) is read from the side the camera comes
+from, a little above; a lectern or flat pane along its face. Each pane is read once a flight, and a flow without passports
 flies as it did. The builder prints how many moments it made, how far inside the frame
 the panes of each step stay, the smallest share of the frame a pane fills while it is
 read, along the side that binds (about 0.8; much less means a read did not frame its
@@ -1119,10 +1119,11 @@ raytracing on, so a pane's glass refracts as it does in Cycles) and Blender's
 own encoder (no ffmpeg needed), at 1920 by 1080 unless `--size` says otherwise and 30
 frames a second unless `--fps` does. `--frame N --render still.png` renders one frame of
 the flight as a still, with Cycles; useful for a thumbnail or to check the camera.
-A video takes time: about 0.6 seconds a frame at 1920 by 1080 on an RTX 3090, so a
-flight of a minute (1800 frames) renders in about twenty minutes, and much longer on a
-CPU. Highlight, flyover and animation are tested headless on Blender 5.0.1 and 5.2.2;
-the animation needs a Blender that can run EEVEE without a display, as 5.x does.
+A video takes time: about 0.6 seconds a frame at 1920 by 1080, measured on an RTX
+3090, so a flight of a minute (1800 frames) renders in about twenty minutes, and much
+longer on a CPU. Highlight, flyover and animation are tested headless on Blender 5.0.1
+and 5.2.2; the animation needs a Blender that can run EEVEE without a display, as 5.x
+does.
 
 ```bash
 blender -b -P archimate3d_blender.py -- --view scene.json \
