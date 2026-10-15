@@ -459,4 +459,78 @@ object Notation:
     case ShapeType.ApplicationDataObject | ShapeType.BusinessObject | ShapeType.BusinessContract |
       ShapeType.BusinessRepresentation | ShapeType.PhysicalMaterial => Nil
 
+  // A badge's sign, in a unit square with y up, solid in its box's mark colour so it
+  // reads at a small size. The twelve geometric glyphs tell things apart; the globe
+  // and the padlock mark a public and a closed API, the warning and the failure a
+  // health that is degraded or failing.
+  def glyph(g: fish.genius.uml.scene.Glyph): List[Prim] =
+    import fish.genius.uml.scene.Glyph
+    def solid(points: Pt*): Prim = Prim.Poly(points.toList, closed = true, Ink.Line)
+    def around(
+      n: Int,
+      r: Double,
+      turn: Double = 90.0,
+    ): List[Pt]                  = (0 until n).toList.map: i =>
+      val a = math.toRadians(turn + i * 360.0 / n)
+      (0.5 + r * math.cos(a), 0.5 + r * math.sin(a))
+    g match
+      case Glyph.Circle       => List(disc((0.5, 0.5), 0.4))
+      case Glyph.Square       => List(solid((0.12, 0.12), (0.88, 0.12), (0.88, 0.88), (0.12, 0.88)))
+      case Glyph.TriangleUp   => List(solid((0.06, 0.1), (0.94, 0.1), (0.5, 0.92)))
+      case Glyph.Diamond      => List(solid((0.5, 0.02), (0.98, 0.5), (0.5, 0.98), (0.02, 0.5)))
+      case Glyph.Star         =>
+        val outer = around(5, 0.5)
+        val inner = around(5, 0.2, 90.0 + 36.0)
+        List(solid(outer.zip(inner).flatMap((a, b) => List(a, b))*))
+      case Glyph.Hexagon      => List(solid(around(6, 0.46)*))
+      case Glyph.TriangleDown => List(solid((0.06, 0.9), (0.94, 0.9), (0.5, 0.08)))
+      case Glyph.Cross        =>
+        List(
+          solid(
+            (0.36, 0.06),
+            (0.64, 0.06),
+            (0.64, 0.36),
+            (0.94, 0.36),
+            (0.94, 0.64),
+            (0.64, 0.64),
+            (0.64, 0.94),
+            (0.36, 0.94),
+            (0.36, 0.64),
+            (0.06, 0.64),
+            (0.06, 0.36),
+            (0.36, 0.36),
+          )
+        )
+      case Glyph.Pentagon     => List(solid(around(5, 0.48)*))
+      case Glyph.Ring         => List(disc((0.5, 0.5), 0.42), ring((0.5, 0.5), 0.22))
+      case Glyph.Ellipse      => List(Prim.Ellipse((0.5, 0.5), 0.46, 0.26, Ink.Line))
+      case Glyph.Chevron      =>
+        List(solid((0.06, 0.78), (0.5, 0.44), (0.94, 0.78), (0.94, 0.5), (0.5, 0.16), (0.06, 0.5)))
+      case Glyph.Globe        =>
+        List(
+          Prim.Circle((0.5, 0.5), 0.44, Ink.Paper),
+          Prim.Ellipse((0.5, 0.5), 0.2, 0.44),
+          line((0.06, 0.5), (0.94, 0.5)),
+        )
+      case Glyph.Padlock      =>
+        List(
+          line(arc((0.5, 0.6), 0.2, 0.26, 0, 180)*),
+          Prim.Box(0.14, 0.06, 0.72, 0.5, 0.06, Ink.Line),
+        )
+      case Glyph.Warning      =>
+        List(
+          shape((0.04, 0.08), (0.96, 0.08), (0.5, 0.94)),
+          line((0.5, 0.66), (0.5, 0.36)),
+          disc((0.5, 0.22), 0.05),
+        )
+      case Glyph.Failure      =>
+        List(
+          ring((0.5, 0.5), 0.44),
+          line((0.28, 0.28), (0.72, 0.72)),
+          line((0.28, 0.72), (0.72, 0.28)),
+        )
+    end match
+
+  end glyph
+
 end Notation

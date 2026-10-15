@@ -966,9 +966,12 @@ Where ELK leaves a connector between two containers unfinished, a small orthogon
 takes it around the plinths; where the plinths leave no way through at all, the connector
 gets a plain orthogonal route and `clear = false`.
 
-The layout asks ELK for model order, which makes the same graph give the same scene. ELK
-0.9.1 fails on model order in some nested graphs, mostly larger ones; the layout then runs
-without it, and two runs of such a graph may differ, each keeping every rule above.
+The layout asks ELK (0.12.0) for model order, which makes the same graph give the same
+scene. ELK fails on model order in some nested graphs, mostly larger ones; the layout then
+runs without it. A nested graph whose connectors cross a container's edge can then come
+out in one of a few ways from one run to the next, each keeping every rule above
+(APP-2232). Layouts run one at a time: ELK's compaction shares state between layouts that
+run at the same time, which would otherwise make the same graph differ.
 
 ### The scene
 
@@ -1181,8 +1184,9 @@ Diagram.draw(graph).map: drawing =>
 ### What a box says
 
 A box says its node's `label`, then its `caption` (the type and technology, smaller),
-then its `note` (a line or two about it, smaller still). A connector says its edge's
-`label`. The three are optional fields of `SceneNode` and `SceneEdge`; the 3D scene
+then its `note` (a line or two about it, smaller still), then its badges (below). A
+connector says its edge's `label`. These are optional fields of `SceneNode` and
+`SceneEdge`; the 3D scene
 leaves them out. Every line is placed by `Diagram` on its baseline, so the PDF, SVG and
 PNG set the same text in the same place.
 
@@ -1199,6 +1203,27 @@ A container's name and caption stand in a header strip at its top. ELK sizes a
 container from its children, so a long name may not fit beside the icon; it then breaks
 over as many lines as it needs, and the layout runs again with every header that much
 taller.
+
+### Badges, a fill of its own, and the legend
+
+A leaf may carry `badges`: small signs at its foot, in a row centred under what it says,
+drawn solid in its box's mark colour (`Badge(glyph, label)`). `Glyph` has twelve
+geometric glyphs to tell things apart (circle, square, triangles up and down, diamond,
+star, hexagon, cross, pentagon, ring, ellipse, chevron), and four with a meaning: a globe
+and a padlock for a public and a closed API, a warning and a failure for a degraded and
+a failing health. The box grows by a row when its lines leave no room, and wide enough
+for the row.
+
+A node's `fill` (six hex digits, `#` allowed) sets it apart from its layer: the box is
+drawn in that colour as in a layer of its own (edge, fall-off and icon mixed from it).
+The colour travels in `Drawing.colours`, as `am-fill-<hex>`, and every writer defines it.
+A fill that is not a colour is ignored.
+
+`SceneGraph.legend` (`Legend(title, entries)`) says what the badges stand for. It is
+drawn under the diagram, left-aligned with it, in a framed box: the title, then each
+glyph with its label, in as many columns as fit the drawing's width. A graph without a
+legend, or with an empty one, draws none. The 3D scene leaves badges, fill and legend
+out.
 
 ### The notation
 

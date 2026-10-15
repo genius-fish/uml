@@ -30,7 +30,8 @@ object Diagram:
     band: Double = 0.24,
     junction: Double = 0.16,
     header: Double = 0.6,
-    gap: Double = 0.08):
+    gap: Double = 0.08,
+    badgeSize: Double = 0.24):
     def lead(size: Double): Double = size * lineHeight * PT
 
   end Style
@@ -53,7 +54,8 @@ object Diagram:
     scene: Scene,
     style: Style,
     family: String,
-    overflow: Int)
+    overflow: Int,
+    colours: Map[String, String] = Map.empty)
 
   val PT: Double = 2.54 / 72.0
 
@@ -162,7 +164,10 @@ object Diagram:
         case _                                                   => false
       val (backs, rest)      = boxes.filterNot(isText).partition(isField)
       val ordered = backs ++ rest ++ routes.map(_._3) ++ gaps ++ boxes.filter(isText) ++ said
-      Drawing(graph.name, ordered, scene, style, measure.family, overflow)
+      val keyed   =
+        graph.legend.filter(_.entries.nonEmpty).toList.flatMap(legend(_, ordered, style, measure))
+      val colours = nodes.flatMap(n => n.fill.flatMap(h => fillName(h).map(_ -> hexOf(h)))).toMap
+      Drawing(graph.name, ordered ++ keyed, scene, style, measure.family, overflow, colours)
     end for
 
   end draw
@@ -384,7 +389,11 @@ object Diagram:
       val narrow = measure.wrap(node.label, style.boxWidth - clear, style.nameSize, Weight.Medium)
       val w0     = if node.note.nonEmpty || narrow.size > 2 then style.wideWidth else style.boxWidth
       val set    = lines(w0)
-      val w      = (w0 :: set.map(l => measure.width(l.text, l.size, l.weight) + room(l))).max
+      val badged = badgeRow(node, style)
+      val w      =
+        (w0 :: badged._1 :: set.map(l =>
+          measure.width(l.text, l.size, l.weight) + room(l)
+        )).max
       val band   = kind match
         case NodeKind.Element(s) if Notation.outline(s) == Notation.Outline.Banded => style.band
         case _                                                                     => 0.0
@@ -392,7 +401,7 @@ object Diagram:
       val h      =
         math.max(
           style.boxHeight,
-          set.map(l => style.lead(l.size)).sum + noteGap + 2 * style.padding + band,
+          set.map(l => style.lead(l.size)).sum + noteGap + 2 * style.padding + band + badged._2,
         )
       val overflow = set.count(l => measure.width(l.text, l.size, l.weight) > w - room(l) + 1e-6)
       Box(Measure.round(w), Measure.round(h), set, overflow)
@@ -548,7 +557,7 @@ object Diagram:
           Role.Group,
         ) :: heading(x0 + style.padding, tabH, Role.Group)
       case NodeKind.Element(shape) =>
-        val layer   = Notation.layer(shape.group)
+        val layer   = node.fill.flatMap(fillName).getOrElse(Notation.layer(shape.group))
         val fill    = Ink.Layer(layer)
         val role    = if e.container then Role.Container(layer) else Role.Element(layer)
         val outline = Notation.outline(shape) match
@@ -603,11 +612,109 @@ object Diagram:
               if node.note.nonEmpty then lines.indexWhere(_.size == style.noteSize) else -1
             val height = lines.map(l => style.lead(l.size)).sum +
               (if noteAt >= 0 then style.gap else 0.0)
-            stack(e.x, e.y - band / 2 + height / 2, lines, style, centred = true, gapBefore = noteAt)
-        outline ++ icon ++ text
+            val row    = badgeRow(node, style)._2
+            stack(
+              e.x,
+              e.y - band / 2 + row / 2 + height / 2,
+              lines,
+              style,
+              centred = true,
+              gapBefore = noteAt,
+            )
+        val badges  =
+          if e.container then Nil else stamp(node.badges, e.x, y0 + style.padding, style, layer)
+        outline ++ icon ++ text ++ badges
     end match
 
   end element
+
+  private val BADGE_GAP  = 0.06
+  private val LEGEND_GAP = 0.5
+
+  // The room a box's badges take: the width of their row (with the padding either
+  // side), and the height it adds to the box; nothing when it has none.
+  private def badgeRow(node: SceneNode, style: Style): (Double, Double) =
+    val n = node.badges.size
+    if n == 0 then (0.0, 0.0)
+    else (n * style.badgeSize + (n - 1) * BADGE_GAP + 2 * style.padding, style.badgeSize + style.gap)
+
+  // badges in a row centred on x, standing on y, each in its box's mark colour
+  private def stamp(
+    badges: List[Badge],
+    x: Double,
+    y: Double,
+    style: Style,
+    layer: String,
+  ): List[Prim] =
+    val s     = style.badgeSize
+    val width = badges.size * s + (badges.size - 1) * BADGE_GAP
+    badges.zipWithIndex.flatMap: (b, i) =>
+      place(Notation.glyph(b.glyph), x - width / 2 + i * (s + BADGE_GAP), y, s, Role.Mark(layer))
+
+  // A fill colour as the name of a layer of its own, so a box in it is drawn as any
+  // other (its edge, its fall-off and its icon mixed from it); None for what is not a
+  // colour.
+  private[diagram] def fillName(hex: String): Option[String] =
+    Option.when(hex.stripPrefix("#").matches("[0-9A-Fa-f]{6}"))(s"am-fill-${hexOf(hex).toLowerCase}")
+
+  private def hexOf(hex: String): String = hex.stripPrefix("#").toUpperCase
+
+  // The legend under the drawing, left-aligned with it: its title, then each badge
+  // with what it stands for, in as many columns as fit the drawing's width.
+  private def legend(
+    l: Legend,
+    drawn: List[Prim],
+    style: Style,
+    measure: Measure,
+  ): List[Prim] =
+    val points        = drawn.flatMap:
+      case Prim.Poly(ps, _, _, _, _)     => ps
+      case Prim.Circle(c, r, _, _)       => List((c._1 - r, c._2 - r), (c._1 + r, c._2 + r))
+      case Prim.Ellipse(c, rx, ry, _, _) => List((c._1 - rx, c._2 - ry), (c._1 + rx, c._2 + ry))
+      case Prim.Box(x, y, w, h, _, _, _, _, _) => List((x, y), (x + w, y + h))
+      case Prim.Text(at, _, _, _, _, _, _)     => List(at)
+      case Prim.Connector(ps, _, _, _)         => ps
+    val (left, right) =
+      if points.isEmpty then (0.0, 0.0) else (points.map(_._1).min, points.map(_._1).max)
+    val bottom        = points.map(_._2).minOption.getOrElse(0.0)
+    val pad           = style.padding
+    val s             = style.badgeSize
+    val rowH          = math.max(s, style.lead(style.captionSize)) + BADGE_GAP
+    val entryW        = l.entries
+      .map(b => s + 0.12 + measure.width(b.label, style.captionSize, Weight.Regular))
+      .max + 0.3
+    val titleW        = measure.width(l.title, style.nameSize, Weight.SemiBold)
+    val columns       =
+      math.max(1, math.min(l.entries.size, ((right - left - 2 * pad) / entryW).toInt))
+    val rows          = (l.entries.size + columns - 1) / columns
+    val w             = math.max(titleW, columns * entryW) + 2 * pad
+    val titleH        = style.lead(style.nameSize)
+    val h             = titleH + rows * rowH + 2 * pad
+    val top           = bottom - LEGEND_GAP
+    val frame         =
+      Prim.Box(left, top - h, w, h, SQUARE, Ink.Paper, role = Role.Plain)
+    val title         = stack(
+      left + pad,
+      top - pad,
+      List(Line(l.title, style.nameSize, Weight.SemiBold)),
+      style,
+      centred = false,
+    )
+    val entries       = l.entries.zipWithIndex.flatMap: (b, i) =>
+      val (row, column) = (i / columns, i % columns)
+      val x             = left + pad + column * entryW
+      val yTop          = top - pad - titleH - row * rowH
+      place(Notation.glyph(b.glyph), x, yTop - s, s, Role.Mark("am-line")) ++
+      stack(
+        x + s + 0.12,
+        yTop - (s - style.lead(style.captionSize)) / 2,
+        List(Line(b.label, style.captionSize)),
+        style,
+        centred = false,
+      )
+    frame :: title ++ entries
+
+  end legend
 
   // an icon drawn in a unit square, placed at (x, y), scaled to s, as a mark of its box
   private[diagram] def place(

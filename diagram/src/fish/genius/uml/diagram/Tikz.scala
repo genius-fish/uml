@@ -19,8 +19,9 @@ object Tikz:
   val libraries: String = "\\usetikzlibrary{arrows.meta,shadows.blur}"
 
   def picture(drawing: Diagram.Drawing, palette: Map[String, String] = Map.empty): String =
-    val own     = Notation.colours(palette).filterNot(Notation.palette.contains)
-    val colours = Notation.colours(palette).map: (name, hex) =>
+    val all     = Notation.colours(palette ++ drawing.colours)
+    val own     = all.filterNot(Notation.palette.contains)
+    val colours = all.map: (name, hex) =>
       if own.exists(_._1 == name) then s"\\definecolor{$name}{HTML}{$hex}"
       else s"\\providecolor{$name}{HTML}{$hex}"
     val face    = drawing.style.typeface

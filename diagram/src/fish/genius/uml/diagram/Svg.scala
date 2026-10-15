@@ -15,7 +15,7 @@ object Svg:
   private val MARGIN = 0.15
 
   def document(drawing: Diagram.Drawing, palette: Map[String, String] = Map.empty): String =
-    val c                             = Look.colours(palette)
+    val c                             = Look.colours(palette ++ drawing.colours)
     val measure                       = Measure(drawing.style.typeface)
     val (minX, minY, maxX, maxY)      = Extent.of(drawing, MARGIN)
     def x(v: Double)                  = f((v - minX) * PX)

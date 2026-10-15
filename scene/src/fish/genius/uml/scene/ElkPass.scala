@@ -103,9 +103,9 @@ private[scene] object ElkPass:
 
   end Built
 
-  private lazy val engine: RecursiveGraphLayoutEngine =
+  // the layered algorithm, registered once
+  private lazy val registered: Unit =
     LayoutMetaDataService.getInstance().registerLayoutMetaDataProviders(LayeredMetaDataProvider())
-    RecursiveGraphLayoutEngine()
 
   def run(
     structure: SceneStructure,
@@ -115,10 +115,17 @@ private[scene] object ElkPass:
     modelOrder: Boolean,
   ): Either[SceneError, Built] =
     val built = build(structure, sides, folds, options, modelOrder)
-    Try(engine.layout(built.root, BasicProgressMonitor())).toEither
+    // one layout at a time: ELK's compaction (network simplex placement, edge-length
+    // post-compaction) shares state between layouts that run at the same time, which then
+    // come out differently, so the same graph would not always give the same scene
+    registered
+    Try(ElkPass.synchronized(RecursiveGraphLayoutEngine().layout(built.root, BasicProgressMonitor())))
+      .toEither
       .map(_ => built)
       .left
       .map(SceneError.LayoutFailed(_))
+
+  end run
 
   // A row wider than `columns` plinths, folded. ELK puts every element of a layer in one
   // row: thirteen unconnected goals, or ten work packages with five deliverables each,

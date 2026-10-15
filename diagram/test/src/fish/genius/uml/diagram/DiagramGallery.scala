@@ -379,7 +379,12 @@ object DiagramGallery extends ZIOSpecDefault:
   end symbols
 
   val graphs: List[(String, SceneGraph)] =
-    List("landscape" -> DiagramSpec.landscape, "layers" -> layers, "relationships" -> relationships)
+    List(
+      "landscape" -> DiagramSpec.landscape,
+      "layers" -> layers,
+      "relationships" -> relationships,
+      "badged" -> DiagramSpec.badged,
+    )
 
   private def palette: Map[String, String] =
     sys.env.get("DIAGRAM_PALETTE").toList.flatMap(_.split(",").toList).flatMap: pair =>

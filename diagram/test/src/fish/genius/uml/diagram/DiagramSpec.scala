@@ -85,6 +85,37 @@ object DiagramSpec extends ZIOSpecDefault:
     ),
   )
 
+  // building blocks stamped with what realizes them, an API and a health on a system,
+  // one box set apart in its own colour, and the legend for the stamps
+  val badged: SceneGraph =
+    val glyphs = Glyph.values.toList
+    val sbbs   = glyphs.take(12).zipWithIndex.map((g, i) => Badge(g, s"Solution ${i + 1}"))
+    SceneGraph(
+      "Badged",
+      List(
+        leaf("abb1", "Identity", ShapeType.ApplicationService).copy(badges = sbbs.take(3)),
+        leaf("abb2", "Payments", ShapeType.ApplicationService).copy(badges = sbbs.slice(3, 9)),
+        leaf("abb3", "Notifications", ShapeType.ApplicationService).copy(badges = sbbs.drop(9)),
+        leaf("api", "Order API", ShapeType.ApplicationComponent, Some("[Container: Java]"))
+          .copy(badges =
+            List(Badge(Glyph.Globe, "Public API"), Badge(Glyph.Padlock, "Internal API"))
+          ),
+        leaf("sick", "Legacy Billing", ShapeType.ApplicationComponent)
+          .copy(badges = List(Badge(Glyph.Warning, "Degraded"), Badge(Glyph.Failure, "Failing"))),
+        leaf("new", "Fare product", ShapeType.BusinessObject, Some("[Business Object, new]"))
+          .copy(fill = Some("#F4C542")),
+      ),
+      List(
+        edge("b1", "abb1", "abb2", RelationshipType.Serving),
+        edge("b2", "abb2", "abb3", RelationshipType.Serving),
+        edge("b3", "api", "abb2", RelationshipType.Realization),
+        edge("b4", "sick", "new", RelationshipType.WriteAccess),
+      ),
+      legend = Some(Legend("Realized by (SBB)", sbbs)),
+    )
+
+  end badged
+
   private def overlaps(a: SceneElement, b: SceneElement): Boolean =
     math.abs(a.x - b.x) * 2 < a.w + b.w - 1e-6 && math.abs(a.y - b.y) * 2 < a.d + b.d - 1e-6
 
@@ -155,6 +186,17 @@ object DiagramSpec extends ZIOSpecDefault:
           // the SVG stands on its paper, so patches cut in it never show as blocks
           Svg.document(drawing, Map("am-paper" -> "FBF6EC")).contains("""fill="#FBF6EC"/>"""),
         )
+      ,
+      test("drawings made at the same time are the same drawing"):
+        import scala.concurrent.{Await, ExecutionContext, Future}
+        import scala.concurrent.duration.*
+        given ExecutionContext = ExecutionContext.global
+        val one  = Diagram.draw(badged).toOption.get.prims
+        val many = Await.result(
+          Future.sequence((1 to 16).map(_ => Future(Diagram.draw(badged).toOption.get.prims))),
+          2.minutes,
+        )
+        assertTrue(many.forall(_ == one))
       ,
       test("the same graph gives the same drawing"):
         assertTrue(Diagram.draw(landscape).toOption.map(_.prims) == Option(drawing.prims))
@@ -249,6 +291,84 @@ object DiagramSpec extends ZIOSpecDefault:
           x.y + x.d / 2 <=
           c.y + c.d / 2 - Diagram.Style().header - Diagram.Style().lead(Diagram.Style().nameSize) + 2e-3,
         )
+      ,
+      test("a box grows to hold its badges, which stand at its foot in its own colour"):
+        val d     = Diagram.draw(badged).toOption.get
+        val plain = Diagram.draw(badged.copy(nodes = badged.nodes.map(_.copy(badges = Nil))))
+          .toOption.get
+        def box(drawing: Diagram.Drawing, id: String) = drawing.scene.elements.find(_.key == SceneId(id)).get
+        val payments                                  = box(d, "abb2")
+        val marks                                     = d.prims.collect:
+          case p @ Prim.Poly(ps, true, Ink.Line, _, Role.Mark("am-application"))
+            if ps.forall(q => q._2 < payments.y - payments.d / 2 + 0.5) &&
+            ps.forall(q => math.abs(q._1 - payments.x) < payments.w / 2) => p
+        val words                                     = d.prims.collect:
+          case Prim.Text(at, _, _, _, _, _, _)
+            if math.abs(at._1 - payments.x) < payments.w / 2 &&
+            math.abs(at._2 - payments.y) < payments.d / 2 => at._2
+        val tall                                      = Diagram.draw(SceneGraph(
+          "Tall",
+          List(leaf("t", "Payments", ShapeType.ApplicationService, note = Some("A note " * 12))
+            .copy(badges = List(Badge(Glyph.Star, "S")))),
+          Nil,
+        )).toOption.get
+        val short                                     = Diagram.draw(SceneGraph(
+          "Tall",
+          List(leaf("t", "Payments", ShapeType.ApplicationService, note = Some("A note " * 12))),
+          Nil,
+        )).toOption.get
+        assertTrue(
+          box(d, "abb2").d >= box(plain, "abb2").d,
+          box(tall, "t").d > box(short, "t").d,
+          marks.flatMap(_.points.map(_._2)).max < words.min - 0.05,
+          box(d, "abb2").w >= 6 * Diagram.Style().badgeSize,
+          marks.nonEmpty,
+          d.overflow == 0,
+        )
+      ,
+      test("a box with a fill is drawn in it, as a layer of its own every writer defines"):
+        val d    = Diagram.draw(badged).toOption.get
+        val name = "am-fill-f4c542"
+        assertTrue(
+          d.colours == Map(name -> "F4C542"),
+          d.prims.exists:
+            case Prim.Box(_, _, _, _, _, _, _, _, Role.Element(`name`)) => true
+            case _                                                      =>
+              false
+          ,
+          Tikz.picture(d).contains(s"\\definecolor{$name}{HTML}{F4C542}"),
+          Svg.document(d).contains("#F4C542"),
+          Png.image(d).nonEmpty,
+          Diagram.fillName("not a colour").isEmpty,
+        )
+      ,
+      test("the legend stands under the drawing, every badge with what it stands for"):
+        val d      = Diagram.draw(badged).toOption.get
+        val lowest = d.scene.elements.map(e => e.y - e.d / 2).min
+        val said   = d.prims.collect { case Prim.Text(at, text, _, _, _, _, _) => (at, text) }
+        val legend = said.filter((_, t) => t.startsWith("Solution ") || t == "Realized by (SBB)")
+        val none   = Diagram.draw(badged.copy(legend = None)).toOption.get
+        assertTrue(
+          legend.size == 13,
+          legend.forall((at, _) => at._2 < lowest),
+          !none.prims.exists:
+            case Prim.Text(_, "Realized by (SBB)", _, _, _, _, _) => true
+            case _                                                =>
+              false
+          ,
+          Extent.of(d, 0)._2 < lowest - 1.0,
+        )
+      ,
+      test("every glyph is drawn inside its unit square"):
+        val inside = Glyph.values.toList.forall: g =>
+          val ps = Notation.glyph(g).flatMap:
+            case Prim.Poly(points, _, _, _, _)       => points
+            case Prim.Circle(c, r, _, _)             => List((c._1 - r, c._2 - r), (c._1 + r, c._2 + r))
+            case Prim.Ellipse(c, rx, ry, _, _)       => List((c._1 - rx, c._2 - ry), (c._1 + rx, c._2 + ry))
+            case Prim.Box(x, y, w, h, _, _, _, _, _) => List((x, y), (x + w, y + h))
+            case _                                   => Nil
+          ps.nonEmpty && ps.forall(p => p._1 >= -1e-9 && p._1 <= 1 + 1e-9 && p._2 >= -1e-9 && p._2 <= 1 + 1e-9)
+        assertTrue(inside)
       ,
       test("an empty drawing still has an extent"):
         val empty = Diagram.Drawing("Empty", Nil, Scene("Empty", 0, 0, Nil, Nil), Diagram.Style(), "Nimbus Sans", 0)

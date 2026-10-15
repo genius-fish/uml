@@ -30,8 +30,23 @@ enum NodeKind derives CanEqual:
   case AndJunction
   case OrJunction
 
+// A small sign stamped on a box, such as a padlock for an API that is not public, or
+// one of the geometric glyphs a diagram hands out to tell several things apart. The
+// label says what it stands for, in the legend.
+enum Glyph derives CanEqual:
+
+  case Circle, Square, TriangleUp, Diamond, Star, Hexagon, TriangleDown, Cross, Pentagon,
+    Ring, Ellipse, Chevron, Globe, Padlock, Warning, Failure
+
+final case class Badge(glyph: Glyph, label: String)
+
+// What the badges of a diagram stand for, drawn under it.
+final case class Legend(title: String, entries: List[Badge])
+
 // caption and note are for a flat diagram, which writes them in the box under the
-// label: the element's type (and technology), and a line or two about it.
+// label: the element's type (and technology), and a line or two about it. So are fill,
+// a colour (hex) that sets the box apart from its layer, and badges, the signs at its
+// foot; the 3D scene leaves all four out.
 final case class SceneNode(
   id: SceneId,
   kind: NodeKind,
@@ -39,7 +54,9 @@ final case class SceneNode(
   children: List[SceneNode] = Nil,
   passport: Option[Passport] = None,
   caption: Option[String] = None,
-  note: Option[String] = None):
+  note: Option[String] = None,
+  fill: Option[String] = None,
+  badges: List[Badge] = Nil):
   def isContainer: Boolean = children.nonEmpty
 
   // this node and everything standing on it, parents before children
@@ -71,7 +88,8 @@ final case class SceneGraph(
   name: String,
   nodes: List[SceneNode],
   edges: List[SceneEdge],
-  flows: List[SceneFlow] = Nil):
+  flows: List[SceneFlow] = Nil,
+  legend: Option[Legend] = None):
   def allNodes: List[SceneNode] = nodes.flatMap(_.flatten)
 
   // Every problem at once, so a caller fixes its graph in one round.

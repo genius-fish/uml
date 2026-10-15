@@ -27,7 +27,8 @@ object V:
   val osLib      = "0.11.8"
   val sourcecode = "0.4.4"
   val plantuml   = "1.2026.2"
-  val elk        = "0.9.1"
+  val elk        = "0.12.0"
+  val xbaseLib   = "2.36.0"
   val zioJson    = "0.7.3"
 
 // ---------------------------------------------------------------------------
@@ -149,6 +150,9 @@ object scene extends GeniusFishModule:
     mvn"org.eclipse.elk:org.eclipse.elk.graph:${V.elk}",
     mvn"org.eclipse.elk:org.eclipse.elk.alg.common:${V.elk}",
     mvn"org.eclipse.elk:org.eclipse.elk.alg.layered:${V.elk}",
+    // ELK's option classes are written in Xtend and call its runtime, which ELK's
+    // poms do not declare
+    mvn"org.eclipse.xtext:org.eclipse.xtext.xbase.lib:${V.xbaseLib}",
     mvn"dev.zio::zio-json:${V.zioJson}",
     // zio-json alone would bring an older zio than the rest of the build
     mvn"dev.zio::zio:${V.zio}",

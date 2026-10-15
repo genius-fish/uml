@@ -19,7 +19,7 @@ object Png:
     dpi: Int = 150,
     palette: Map[String, String] = Map.empty,
   ): Array[Byte] =
-    val c                        = Look.colours(palette)
+    val c                        = Look.colours(palette ++ drawing.colours)
     val scale                    = dpi / 2.54
     val (minX, minY, maxX, maxY) = Extent.of(drawing, MARGIN)
     val (w, h) = (((maxX - minX) * scale).ceil.toInt, ((maxY - minY) * scale).ceil.toInt)
