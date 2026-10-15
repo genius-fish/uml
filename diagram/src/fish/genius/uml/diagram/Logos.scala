@@ -42,11 +42,14 @@ object Logos:
                 case Seg.Close          =>
                   Seg.Close
               ,
-              shape.fill.stripPrefix("#").toUpperCase,
+              colour(shape.fill),
               shape.evenOdd,
             )
+      // only base64 data and a picture's own kinds: a Picture can be built directly
       case Logo.Picture(data, mime, _, _)         =>
-        List(Prim.Image(x0, y0, fw, fh, data, mime))
+        Option.when(Base64Data.matches(data) && (mime == "image/png" || mime == "image/jpeg"))(
+          Prim.Image(x0, y0, fw, fh, data, mime)
+        ).toList
     end match
 
   end place
@@ -59,17 +62,50 @@ object Logos:
   def fromSvg(svg: String): Either[String, Logo] = SvgLogo.read(svg)
 
   // A logo from a PNG or JPEG picture, measured in pixels.
+  // A PNG or a JPEG, by what it is rather than what it is called: its size is read
+  // from its header, and a picture of more than MAX_PIXELS is refused before it is
+  // decoded.
   def fromPicture(bytes: Array[Byte], mime: String): Either[String, Logo] =
-    Try(javax.imageio.ImageIO.read(java.io.ByteArrayInputStream(bytes))).toOption
-      .flatMap(Option(_))
-      .toRight("not a picture this can read (PNG or JPEG)")
-      .map: image =>
-        Logo.Picture(
-          java.util.Base64.getEncoder.encodeToString(bytes),
-          mime,
-          image.getWidth,
-          image.getHeight,
-        )
+    val _ = mime
+    Try {
+      val in = javax.imageio.ImageIO.createImageInputStream(java.io.ByteArrayInputStream(bytes))
+      val readers = javax.imageio.ImageIO.getImageReaders(in)
+      try
+        if !readers.hasNext then None
+        else
+          val reader = readers.next()
+          try
+            reader.setInput(in)
+            val format = reader.getFormatName.toLowerCase
+            Some((format, reader.getWidth(0), reader.getHeight(0)))
+          finally reader.dispose()
+      finally in.close()
+    }.toOption.flatten.toRight("not a picture this can read (PNG or JPEG)").flatMap:
+      case (format, w, h) =>
+        val kind = format match
+          case "png"          => Some("image/png")
+          case "jpeg" | "jpg" => Some("image/jpeg")
+          case _              => None
+        for
+          mime <- kind.toRight(s"a $format picture is not a logo this can draw (PNG or JPEG)")
+          _    <- Either.cond(
+            w > 0 && h > 0 && w.toLong * h <= MAX_PIXELS,
+            (),
+            "the picture is larger than a logo should be",
+          )
+        yield Logo.Picture(java.util.Base64.getEncoder.encodeToString(bytes), mime, w, h)
+
+  end fromPicture
+
+  private val MAX_PIXELS = 16_000_000L
+
+  private val Base64Data = "^[A-Za-z0-9+/]*={0,2}$".r
+  private val Hex        = "^[0-9A-Fa-f]{6}$".r
+
+  // a colour as six hex digits, black for anything else (a Logo can be built directly)
+  private[diagram] def colour(fill: String): String =
+    val h = fill.stripPrefix("#")
+    if Hex.matches(h) then h.toUpperCase else "000000"
 
 end Logos
 
@@ -278,11 +314,16 @@ private object SvgLogo:
     "grey" -> "808080",
   )
 
+  // what a logo may be: so many characters, groups so deep
+  private val MAX_CHARS = 4 * 1024 * 1024
+  private val MAX_DEPTH = 64
+
   def read(svg: String): Either[String, Logo] =
     for
+      _    <- Either.cond(svg.length <= MAX_CHARS, (), "the SVG is larger than a logo should be")
       root <- document(svg)
       box  <- viewBox(root)
-      shapes = walk(root, Identity, Some("000000"), evenOdd = false)
+      shapes = walk(root, Identity, Some("000000"), evenOdd = false, depth = 0)
       logo <- Either.cond(shapes.nonEmpty, box(shapes), "the SVG has nothing to draw")
     yield logo
 
@@ -324,17 +365,20 @@ private object SvgLogo:
   // a fill: Some(hex) to paint, None for none; an inherited one when the shape says nothing
   private def fillOf(e: Element, inherited: Option[String]): Option[String] =
     attr(e, "fill").map(_.trim) match
-      case None                                          => inherited
-      case Some("none")                                  => None
-      case Some(v) if v.startsWith("#") && v.length == 7 => Some(v.drop(1).toUpperCase)
-      case Some(v) if v.startsWith("#") && v.length == 4 =>
+      case None                                    => inherited
+      case Some("none")                            => None
+      case Some(v) if v.matches("#[0-9A-Fa-f]{6}") => Some(v.drop(1).toUpperCase)
+      case Some(v) if v.matches("#[0-9A-Fa-f]{3}") =>
         Some(v.drop(1).flatMap(c => s"$c$c").toUpperCase)
-      case Some(v) if v.startsWith("rgb(")               =>
-        val parts = v.drop(
-          4
-        ).takeWhile(_ != ')').split(",").map(_.trim.stripSuffix("%").toDoubleOption.getOrElse(0.0))
-        Some(parts.take(3).map(x => f"${math.max(0, math.min(255, x.round.toInt))}%02X").mkString)
-      case Some(v) => Some(Named.getOrElse(v.toLowerCase, "000000"))
+      case Some(v) if v.startsWith("rgb(")         =>
+        // three components, each a number 0-255 or a percentage; what is missing is 0
+        val parts = v.drop(4).takeWhile(_ != ')').split(",").toList.map(_.trim).map: c =>
+          if c.endsWith("%") then c.stripSuffix("%").toDoubleOption.map(_ * 255 / 100)
+          else c.toDoubleOption
+        val rgb   = (parts.map(_.getOrElse(0.0)) ++ List(0.0, 0.0, 0.0)).take(3)
+        Some(rgb.map(x => f"${math.max(0, math.min(255, x.round.toInt))}%02X").mkString)
+      // a named colour this knows, else black (currentColor, a gradient, an unknown name)
+      case Some(v)                                 => Some(Named.getOrElse(v.toLowerCase, "000000"))
 
   private def transformOf(e: Element): Affine =
     val Call = """(matrix|translate|scale|rotate)\s*\(([^)]*)\)""".r
@@ -364,7 +408,9 @@ private object SvgLogo:
     outer: Affine,
     inherited: Option[String],
     evenOdd: Boolean,
+    depth: Int,
   ): List[LogoShape] =
+    if depth > MAX_DEPTH then return Nil
     val here              = outer.andThen(transformOf(node))
     val fill              = fillOf(node, inherited)
     val rule              = attr(node, "fill-rule").map(_ == "evenodd").getOrElse(evenOdd)
@@ -399,7 +445,7 @@ private object SvgLogo:
       case _                      =>
         val kids = node.getChildNodes
         (0 until kids.getLength).toList.map(kids.item).collect { case e: Element => e }
-          .flatMap(walk(_, here, fill, rule))
+          .flatMap(walk(_, here, fill, rule, depth + 1))
     end match
 
   end walk

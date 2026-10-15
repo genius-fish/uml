@@ -241,6 +241,60 @@ object LogoSpec extends ZIOSpecDefault:
           Logos.fromPicture("nope".getBytes, "image/png").isLeft,
         )
       ,
+      test("a fill that is not a colour, or a picture that is not one, never reaches a writer"):
+        val hostile = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4 4">
+          <path d="M0 0h4v4z" fill='#"/>abc'/>
+          <path d="M0 0h2v2z" fill="#GGGGGG"/>
+          <path d="M0 0h1v1z" fill="rgb(255, 50%)"/>
+        </svg>"""
+        val fills   = Logos.fromSvg(hostile).toOption.toList.flatMap:
+          case Logo.Vector(_, _, _, _, shapes) => shapes.map(_.fill)
+          case _                               => Nil
+        // built directly, past the reader
+        val forged  = Logo.Vector(0, 0, 1, 1, List(LogoShape("M0 0h1v1z", "\"/><x")))
+        val smuggle = Logo.Picture("AAAA\" onload=\"x", "image/png", 1, 1)
+        val graph   = SceneGraph(
+          "Forged",
+          List(
+            leaf("a", "A").copy(logo = Some(forged)),
+            leaf("b", "B").copy(logo = Some(smuggle)),
+          ),
+          Nil,
+        )
+        val d       = Diagram.draw(graph).toOption.get
+        val svg     = Svg.document(d)
+        assertTrue(
+          fills == List("000000", "000000", "FF8000"),
+          // a < in an attribute is not XML at all
+          Logos.fromSvg("""<svg viewBox="0 0 1 1"><path d="M0 0h1v1z" fill='#"/><g '/></svg>""").isLeft,
+          d.prims.collect { case c: Prim.Curve => c.fill }.forall(_.matches("[0-9A-F]{6}")),
+          !d.prims.exists(_.isInstanceOf[Prim.Image]),
+          !svg.contains("<x") && !svg.contains("onload"),
+          Tikz.picture(d).nonEmpty,
+          Png.image(d).nonEmpty,
+        )
+      ,
+      test("an SVG too deep, too large or without a size, and a picture that is no PNG or JPEG, are refused"):
+        val deep = "<svg viewBox=\"0 0 1 1\">" + "<g>" * 200 + "<path d=\"M0 0h1v1z\"/>" + "</g>" * 200 + "</svg>"
+        val gif  =
+          val out = ByteArrayOutputStream()
+          ImageIO.write(BufferedImage(2, 2, BufferedImage.TYPE_INT_RGB), "gif", out)
+          out.toByteArray
+        assertTrue(
+          // the shapes past the depth a logo may have are not drawn, and nothing is left
+          Logos.fromSvg(deep).isLeft,
+          Logos.fromSvg("<svg viewBox=\"0 0 1 1\"><path d=\"" + "M0 0h1v1z" * 500000 + "\"/></svg>").isLeft,
+          Logos.fromSvg("""<svg viewBox="0 0 0 0"><path d="M0 0h1v1z"/></svg>""").isLeft,
+          Logos.fromPicture(gif, "image/png").isLeft,
+          // what a picture is, not what it is called, decides its kind
+          Logos.fromPicture(
+            Base64.getDecoder.decode(picture match
+              case Logo.Picture(data, _, _, _) => data
+              case _                           => ""),
+            "image/jpeg",
+          ).exists { case Logo.Picture(_, "image/png", 4, 2) => true; case _ => false },
+        )
+      ,
       test("the same graph with logos gives the same drawing"):
         assertTrue(Diagram.draw(logos).toOption.get.prims == drawing.prims),
     )

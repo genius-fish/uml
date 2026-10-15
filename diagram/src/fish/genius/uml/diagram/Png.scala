@@ -194,7 +194,7 @@ object Png:
           case Seg.Cubic(a, b, p) =>
             outline.curveTo(x(a._1), y(a._2), x(b._1), y(b._2), x(p._1), y(p._2))
           case Seg.Close          => outline.closePath()
-        g.setColor(colour(fill))
+        g.setColor(colour(Logos.colour(fill)))
         g.fill(outline)
       case Prim.Image(ix, iy, w, h, data, _)                          =>
         scala.util.Try(

@@ -168,7 +168,8 @@ object Tikz:
       s"\\draw${options(List(Some("am link"), dash(d), Some(arrows)))} " +
       points.map(pt).mkString(" -- ") + ";"
     case Prim.Curve(segments, fill, evenOdd)                        =>
-      val rgb  = (0 to 2).map(i => Integer.parseInt(fill.substring(2 * i, 2 * i + 2), 16))
+      val hex  = Logos.colour(fill)
+      val rgb  = (0 to 2).map(i => Integer.parseInt(hex.substring(2 * i, 2 * i + 2), 16))
       val ink  = s"fill={rgb,255:red,${rgb(0)};green,${rgb(1)};blue,${rgb(2)}}"
       val path = segments.map:
         case Seg.Move(p)        => pt(p)

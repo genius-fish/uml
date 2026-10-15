@@ -122,11 +122,13 @@ object Svg:
           case Seg.Close          => "Z"
         .mkString(" ")
         val rule = if evenOdd then """ fill-rule="evenodd"""" else ""
-        s"""<path d="$d" fill="${hex(fill)}"$rule stroke="none"/>"""
+        s"""<path d="$d" fill="${hex(Logos.colour(fill))}"$rule stroke="none"/>"""
       case Prim.Image(ix, iy, w, h, data, mime)                       =>
         s"""<image x="${x(ix)}" y="${y(iy + h)}" width="${len(w)}" height="${len(
             h
-          )}" preserveAspectRatio="none" href="data:${escape(mime)};base64,$data"/>"""
+          )}" preserveAspectRatio="none" href="data:${escape(mime)};base64,${escape(
+            data
+          )}" xlink:href="data:${escape(mime)};base64,${escape(data)}"/>"""
     val defs                          =
       layers.map(l =>
         s"""<linearGradient id="fall-$l" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${hex(
@@ -144,7 +146,9 @@ object Svg:
             PT)}" flood-color="#000" flood-opacity="0.08"/></filter>""",
       )
     List(
-      s"""<svg xmlns="http://www.w3.org/2000/svg" width="${len(maxX - minX)}" height="${len(maxY -
+      s"""<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${len(
+          maxX - minX
+        )}" height="${len(maxY -
           minY)}" viewBox="0 0 ${len(maxX - minX)} ${len(maxY - minY)}">""",
       s"<title>${escape(drawing.name)}</title>",
       s"<defs>${defs.mkString}</defs>",

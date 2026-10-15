@@ -1233,9 +1233,14 @@ its colour and optionally cut by the even-odd rule) or a picture (`Logo.Picture(
 mime, width, height)`: a PNG or JPEG, base64). `Logos.fromSvg(svg)` reads one from an
 SVG document: its paths, rectangles, circles, ellipses, polygons and polylines, filled
 as the document (or the group round them) says, through the translate, scale, rotate
-and matrix transforms of groups and shapes; gradients, clip paths, masks and text are
-not drawn, and a document with a DTD is refused, so no entity reaches outside it.
-`Logos.fromPicture(bytes, mime)` reads a picture and its size.
+and matrix transforms of groups and shapes. It fills, it does not stroke: an outline
+icon drawn with strokes comes out as solid shapes. A fill it cannot read as a colour
+(`currentColor`, a gradient, an unknown name) is black; opacity, `display`, clip paths,
+masks and text are not drawn. A document with a DTD is refused, so no entity reaches
+outside it, as is one over 4 MB or with groups nested deeper than 64. `Logos.fromPicture(bytes, mime)`
+reads a picture and its size from its header: only a PNG or a JPEG (by what it is, not
+what it is called), of at most 16 million pixels. A logo built directly is drawn only
+in six-digit colours and with base64 picture data, so nothing else reaches a writer.
 
 A `Badge` with a logo is drawn as that logo, 1.4 times the glyph's height and up to
 three times as wide as high, in its own colours; without one it keeps its glyph. The
