@@ -167,6 +167,32 @@ object Tikz:
       val arrows = s"arrows={${start.map(head).getOrElse("")}-${end.map(head).getOrElse("")}}"
       s"\\draw${options(List(Some("am link"), dash(d), Some(arrows)))} " +
       points.map(pt).mkString(" -- ") + ";"
+    case Prim.Curve(segments, fill, evenOdd)                        =>
+      val rgb  = (0 to 2).map(i => Integer.parseInt(fill.substring(2 * i, 2 * i + 2), 16))
+      val ink  = s"fill={rgb,255:red,${rgb(0)};green,${rgb(1)};blue,${rgb(2)}}"
+      val path = segments.map:
+        case Seg.Move(p)        => pt(p)
+        case Seg.Line(p)        => s"-- ${pt(p)}"
+        case Seg.Cubic(a, b, p) => s".. controls ${pt(a)} and ${pt(b)} .. ${pt(p)}"
+        case Seg.Close          => "-- cycle"
+      .mkString(" ")
+      s"\\path${options(List(Some(ink), Option.when(evenOdd)("even odd rule")))} $path;"
+    case image: Prim.Image                                          =>
+      s"\\node[anchor=south west,inner sep=0pt] at ${pt((image.x, image.y))} " +
+      s"{\\includegraphics[width=${f(image.w)}cm,height=${f(image.h)}cm]{${fileOf(image)}}};"
+
+  // A picture's file, named after its content: the caller writes Tikz.files(drawing)
+  // next to the .tex it compiles.
+  def fileOf(image: Prim.Image): String =
+    val digest = java.security.MessageDigest.getInstance("SHA-1").digest(image.data.getBytes("UTF-8"))
+    val ext = if image.mime.contains("jp") then "jpg" else "png"
+    s"logo-${digest.take(8).map(b => f"$b%02x").mkString}.$ext"
+
+  // the files a drawing's pictures need, by the name the picture includes them as
+  def files(drawing: Diagram.Drawing): Map[String, Array[Byte]] =
+    drawing.prims.collect { case image: Prim.Image => image }
+      .map(image => fileOf(image) -> java.util.Base64.getDecoder.decode(image.data))
+      .toMap
 
   def escape(text: String): String = Notation.clean(text).flatMap:
     case '\\' => "\\textbackslash{}"

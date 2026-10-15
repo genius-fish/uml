@@ -1225,6 +1225,33 @@ glyph with its label, in as many columns as fit the drawing's width. A graph wit
 legend, or with an empty one, draws none. The 3D scene leaves badges, fill and legend
 out.
 
+### Logos
+
+A `Logo` is a vector logo (`Logo.Vector(minX, minY, width, height, shapes)`: filled
+outlines in SVG path syntax, in the coordinates of its own view box, each `LogoShape` in
+its colour and optionally cut by the even-odd rule) or a picture (`Logo.Picture(data,
+mime, width, height)`: a PNG or JPEG, base64). `Logos.fromSvg(svg)` reads one from an
+SVG document: its paths, rectangles, circles, ellipses, polygons and polylines, filled
+as the document (or the group round them) says, through the translate, scale, rotate
+and matrix transforms of groups and shapes; gradients, clip paths, masks and text are
+not drawn, and a document with a DTD is refused, so no entity reaches outside it.
+`Logos.fromPicture(bytes, mime)` reads a picture and its size.
+
+A `Badge` with a logo is drawn as that logo, 1.4 times the glyph's height and up to
+three times as wide as high, in its own colours; without one it keeps its glyph. The
+legend shows each entry's logo or glyph, centred in a column as wide as the widest. A
+leaf node with a `logo` shows it in its top left corner, as high as the icon in the
+opposite corner and up to three times as wide, and the name keeps as clear of it as of
+the icon. A container shows no logo.
+
+A logo is drawn as `Prim.Curve` (moves, lines and cubic curves; `SvgPath.parse` reads M,
+L, H, V, C, S, Q, T, A and Z, absolute and relative, a quadratic or an arc becoming
+cubics) and `Prim.Image`. The SVG writer writes a path and an embedded image, the PNG
+writer Java2D's paths and the decoded picture. The TikZ picture draws curves with
+controls and includes a picture as a file: `Tikz.files(drawing)` names each file the
+picture includes and gives its bytes, for the caller to write next to the `.tex` it
+compiles.
+
 ### The notation
 
 ArchiMate 3.2's box notation: a square box for structure, rounded corners for behaviour

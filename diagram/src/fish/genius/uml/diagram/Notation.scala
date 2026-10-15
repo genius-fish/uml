@@ -95,7 +95,58 @@ enum Prim derives CanEqual:
     start: Option[Head],
     end: Option[Head])
 
+  // a filled outline in a colour of its own (hex), as a logo is drawn: moves, lines and
+  // cubic curves, each piece closed; with evenOdd an inner piece cuts a hole
+  case Curve(
+    segments: List[Seg],
+    fill: String,
+    evenOdd: Boolean = false)
+
+  // a picture (PNG or JPEG, base64) from its lower left corner, stretched to w × h
+  case Image(
+    x: Double,
+    y: Double,
+    w: Double,
+    h: Double,
+    data: String,
+    mime: String)
+
 end Prim
+
+// A piece of a Curve's outline, in centimetres.
+enum Seg derives CanEqual:
+  case Move(to: Pt)
+  case Line(to: Pt)
+
+  case Cubic(
+    c1: Pt,
+    c2: Pt,
+    to: Pt)
+
+  case Close
+
+object Seg:
+
+  def shift(
+    seg: Seg,
+    dx: Double,
+    dy: Double,
+  ): Seg =
+    def p(pt: Pt): Pt = (pt._1 + dx, pt._2 + dy)
+    seg match
+      case Move(to)        => Move(p(to))
+      case Line(to)        => Line(p(to))
+      case Cubic(a, b, to) => Cubic(p(a), p(b), p(to))
+      case Close           => Close
+
+  // every point a segment names, its controls included (they bound its curve)
+  def points(seg: Seg): List[Pt] = seg match
+    case Move(to)        => List(to)
+    case Line(to)        => List(to)
+    case Cubic(a, b, to) => List(a, b, to)
+    case Close           => Nil
+
+end Seg
 
 object Notation:
 

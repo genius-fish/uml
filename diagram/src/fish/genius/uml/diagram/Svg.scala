@@ -113,6 +113,20 @@ object Svg:
             c.line
           )}" stroke-width="${f(Look.LINK_LINE * PT)}"${dash(d)}/>""" ::
         Heads.of(con).map(prim)).mkString("\n")
+      case Prim.Curve(segments, fill, evenOdd)                        =>
+        val d    = segments.map:
+          case Seg.Move(p)        => s"M ${x(p._1)} ${y(p._2)}"
+          case Seg.Line(p)        => s"L ${x(p._1)} ${y(p._2)}"
+          case Seg.Cubic(a, b, p) =>
+            s"C ${x(a._1)} ${y(a._2)} ${x(b._1)} ${y(b._2)} ${x(p._1)} ${y(p._2)}"
+          case Seg.Close          => "Z"
+        .mkString(" ")
+        val rule = if evenOdd then """ fill-rule="evenodd"""" else ""
+        s"""<path d="$d" fill="${hex(fill)}"$rule stroke="none"/>"""
+      case Prim.Image(ix, iy, w, h, data, mime)                       =>
+        s"""<image x="${x(ix)}" y="${y(iy + h)}" width="${len(w)}" height="${len(
+            h
+          )}" preserveAspectRatio="none" href="data:${escape(mime)};base64,$data"/>"""
     val defs                          =
       layers.map(l =>
         s"""<linearGradient id="fall-$l" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${hex(
@@ -170,6 +184,8 @@ object Extent:
       case Prim.Box(x, y, w, h, _, _, _, _, _) => List((x, y), (x + w, y + h))
       case Prim.Text(at, _, _, _, _, _, _)     => List(at)
       case Prim.Connector(ps, _, _, _)         => ps
+      case Prim.Curve(segments, _, _)          => segments.flatMap(Seg.points)
+      case Prim.Image(x, y, w, h, _, _)        => List((x, y), (x + w, y + h))
     if points.isEmpty then (0.0, 0.0, 1.0, 1.0)
     else
       (

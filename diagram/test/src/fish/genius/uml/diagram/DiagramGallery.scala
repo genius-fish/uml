@@ -384,6 +384,7 @@ object DiagramGallery extends ZIOSpecDefault:
       "layers" -> layers,
       "relationships" -> relationships,
       "badged" -> DiagramSpec.badged,
+      "logos" -> LogoSpec.logos,
     )
 
   private def palette: Map[String, String] =
@@ -420,6 +421,7 @@ object DiagramGallery extends ZIOSpecDefault:
         drawn.foreach:
           case (name, Right(d)) =>
             Files.writeString(dir.resolve(s"$name.tex"), Tikz.standalone(d, palette), StandardCharsets.UTF_8)
+            Tikz.files(d).foreach((file, bytes) => Files.write(dir.resolve(file), bytes))
             Files.writeString(dir.resolve(s"$name.svg"), Svg.document(d, palette), StandardCharsets.UTF_8)
             Files.write(dir.resolve(s"$name.png"), Png.image(d, 200, palette))
           case _                => ()

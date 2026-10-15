@@ -38,15 +38,51 @@ enum Glyph derives CanEqual:
   case Circle, Square, TriangleUp, Diamond, Star, Hexagon, TriangleDown, Cross, Pentagon,
     Ring, Ellipse, Chevron, Globe, Padlock, Warning, Failure
 
-final case class Badge(glyph: Glyph, label: String)
+// A badge is its logo when it has one (the glyph then stands in only where a logo
+// cannot be drawn), else its glyph.
+final case class Badge(
+  glyph: Glyph,
+  label: String,
+  logo: Option[Logo] = None)
+
+// A logo as a diagram draws it: filled outlines in SVG path syntax, in the coordinates
+// of its own view box (y running down, as in SVG), each in its colour (hex); or a
+// picture (PNG or JPEG, base64) of so many pixels.
+final case class LogoShape(
+  path: String,
+  fill: String,
+  evenOdd: Boolean = false)
+
+enum Logo derives CanEqual:
+
+  case Vector(
+    minX: Double,
+    minY: Double,
+    width: Double,
+    height: Double,
+    shapes: List[LogoShape])
+
+  case Picture(
+    data: String,
+    mime: String,
+    width: Int,
+    height: Int)
+
+  // width over height
+  def aspect: Double = this match
+    case Vector(_, _, w, h, _) => if h > 0 then w / h else 1.0
+    case Picture(_, _, w, h)   => if h > 0 then w.toDouble / h else 1.0
+
+end Logo
 
 // What the badges of a diagram stand for, drawn under it.
 final case class Legend(title: String, entries: List[Badge])
 
 // caption and note are for a flat diagram, which writes them in the box under the
 // label: the element's type (and technology), and a line or two about it. So are fill,
-// a colour (hex) that sets the box apart from its layer, and badges, the signs at its
-// foot; the 3D scene leaves all four out.
+// a colour (hex) that sets the box apart from its layer, badges, the signs at its
+// foot, and logo, the product's logo in a leaf's top left corner; the 3D scene leaves
+// them all out.
 final case class SceneNode(
   id: SceneId,
   kind: NodeKind,
@@ -56,11 +92,14 @@ final case class SceneNode(
   caption: Option[String] = None,
   note: Option[String] = None,
   fill: Option[String] = None,
-  badges: List[Badge] = Nil):
+  badges: List[Badge] = Nil,
+  logo: Option[Logo] = None):
   def isContainer: Boolean = children.nonEmpty
 
   // this node and everything standing on it, parents before children
   def flatten: List[SceneNode] = this :: children.flatMap(_.flatten)
+
+end SceneNode
 
 // label is written along the connector; the layout keeps room for it when the
 // options say how large it is (SceneLayout.Options.labelSize).

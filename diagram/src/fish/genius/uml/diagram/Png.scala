@@ -186,6 +186,35 @@ object Png:
         g.setStroke(stroke(Look.LINK_LINE, d))
         g.draw(path(ps, closed = false, Look.BEND * 2.54 / 72))
         Heads.of(con).foreach(draw)
+      case Prim.Curve(segments, fill, evenOdd)                        =>
+        val outline = Path2D.Double(if evenOdd then Path2D.WIND_EVEN_ODD else Path2D.WIND_NON_ZERO)
+        segments.foreach:
+          case Seg.Move(p)        => outline.moveTo(x(p._1), y(p._2))
+          case Seg.Line(p)        => outline.lineTo(x(p._1), y(p._2))
+          case Seg.Cubic(a, b, p) =>
+            outline.curveTo(x(a._1), y(a._2), x(b._1), y(b._2), x(p._1), y(p._2))
+          case Seg.Close          => outline.closePath()
+        g.setColor(colour(fill))
+        g.fill(outline)
+      case Prim.Image(ix, iy, w, h, data, _)                          =>
+        scala.util.Try(
+          ImageIO.read(java.io.ByteArrayInputStream(java.util.Base64.getDecoder.decode(data)))
+        )
+          .toOption
+          .flatMap(Option(_))
+          .foreach: picture =>
+            g.setRenderingHint(
+              RenderingHints.KEY_INTERPOLATION,
+              RenderingHints.VALUE_INTERPOLATION_BICUBIC,
+            )
+            g.drawImage(
+              picture,
+              x(ix).round.toInt,
+              y(iy + h).round.toInt,
+              (w * scale).round.toInt,
+              (h * scale).round.toInt,
+              null,
+            )
     drawing.prims.foreach(draw)
     g.dispose()
     val out                 = ByteArrayOutputStream()

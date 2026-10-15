@@ -337,6 +337,10 @@ object Activity:
         Prim.Box(x + dx, y + dy, w, h, r, fill, d, k, role)
       case t: Prim.Text                              => t.copy(baseline = p(t.baseline))
       case Prim.Connector(ps, dash, start, end)      => Prim.Connector(ps.map(p), dash, start, end)
+      case c: Prim.Curve => c.copy(segments = c.segments.map(Seg.shift(_, dx, dy)))
+      case i: Prim.Image => i.copy(x = i.x + dx, y = i.y + dy)
+
+  end shift
 
   // A node as it is set: its lines, and how far it reaches round the centre of its
   // shape (a task's box, an event's circle, a gateway's diamond, a container's frame):
