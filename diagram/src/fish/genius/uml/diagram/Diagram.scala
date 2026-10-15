@@ -838,8 +838,12 @@ object Diagram:
     ).flatten.headOption
     corner.getOrElse:
       if drawH > drawW then
-        // beside: as narrow as fits the drawing's height, its top on the drawing's top
-        val room = widths.reverse.find(r => laid(r)._2 <= drawH).getOrElse(drawW)
+        // beside: as narrow as fits the drawing's height, its top on the drawing's top;
+        // a long legend takes more columns, wider than the drawing if it must, before it
+        // would hang below it
+        val widest = narrowest * (groups.map(_._2.size).maxOption.getOrElse(1) + 1)
+        val rooms  = Iterator.iterate(narrowest)(_ + narrowest / 2).takeWhile(_ <= widest).toList
+        val room   = rooms.find(r => laid(r)._2 <= drawH).getOrElse(widest)
         laid(room)._3(maxX + LEGEND_GAP, maxY)
       else
         // under: as low as fits the drawing's width

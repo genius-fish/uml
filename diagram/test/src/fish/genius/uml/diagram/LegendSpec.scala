@@ -125,6 +125,23 @@ object LegendSpec extends ZIOSpecDefault:
            else math.abs((wx1 - wx0) - (bx1 - bx0)) < 1e-6)
         assertTrue(kept)
       ,
+      test("a long legend beside a short tall drawing takes more columns rather than hang below it"):
+        val many  = Legend(
+          "Legend",
+          Nil,
+          List(LegendSection(
+            "Elements",
+            (1 to 14).toList.map(i => LegendItem.Shape(ShapeType.BusinessProcess, s"Kind $i")),
+          )),
+        )
+        val g     = chain(3).copy(legend = Some(many))
+        val bare  = Extent.of(Diagram.draw(g.copy(legend = None)).toOption.get, 0)
+        val with_ = Extent.of(Diagram.draw(g).toOption.get, 0)
+        assertTrue(
+          bare._4 - bare._2 > bare._3 - bare._1,
+          math.abs((with_._4 - with_._2) - (bare._4 - bare._2)) < 1e-6,
+        )
+      ,
       test("a tall chain gets its legend beside it, as narrow as its height allows"):
         val g     = chain(9)
         val d     = Diagram.draw(g).toOption.get
