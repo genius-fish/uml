@@ -130,7 +130,9 @@ final case class SceneEdge(
   source: SceneId,
   target: SceneId,
   relationship: RelationshipType,
-  label: Option[String] = None)
+  label: Option[String] = None,
+  // a colour of its own (hex) for the line and its heads, to set it apart (proposed, say)
+  colour: Option[String] = None)
 
 // A walk through the graph in order, such as the interactions of a sequence diagram:
 // each step goes from one node to another and says what passes between them. The

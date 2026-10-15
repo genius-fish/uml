@@ -264,6 +264,63 @@ object DiagramSpec extends ZIOSpecDefault:
       test("the same graph gives the same drawing"):
         assertTrue(Diagram.draw(landscape).toOption.map(_.prims) == Option(drawing.prims))
       ,
+      test("an edge in a colour of its own draws its line and its head in it"):
+        val g     = SceneGraph(
+          "coloured",
+          List(
+            leaf("a", "A", ShapeType.ApplicationComponent),
+            leaf("b", "B", ShapeType.ApplicationComponent),
+            leaf("c", "C", ShapeType.ApplicationComponent),
+          ),
+          List(
+            SceneEdge(SceneId("ab"), SceneId("a"), SceneId("b"), RelationshipType.Flow, colour = Some("#2F6DB5")),
+            edge("bc", "b", "c", RelationshipType.Flow),
+          ),
+        )
+        val d     = Diagram.draw(g).toOption.get
+        val cons  = d.prims.collect { case c: Prim.Connector => c }
+        val heads = cons.flatMap(Heads.of)
+        val svg   = Svg.document(d)
+        val tikz  = Tikz.standalone(d)
+        assertTrue(
+          cons.count(_.ink.contains("am-fill-2f6db5")) == 1,
+          cons.count(_.ink.isEmpty) == 1,
+          heads.exists {
+            case p: Prim.Poly => p.fill == Ink.Layer("am-fill-2f6db5"); case _ => false
+          },
+          svg.contains("stroke=\"#2F6DB5\""),
+          tikz.contains("draw=am-fill-2f6db5") && tikz.contains("{am-fill-2f6db5}{HTML}{2F6DB5}"),
+          d.scene.relationships.find(_.key == SceneId("ab")).flatMap(_.colour).contains("#2F6DB5"),
+        )
+      ,
+      test("arrows and symbols are written as math, so pdflatex compiles them"):
+        val arrows = SceneGraph(
+          "Arrows",
+          List(
+            leaf("a", "persoon \u2194 rol", ShapeType.ApplicationComponent),
+            leaf("b", "\u2264 5 \u2192 \u2713", ShapeType.ApplicationComponent),
+          ),
+          Nil,
+        )
+        val tex    = Tikz.standalone(Diagram.draw(arrows).toOption.get)
+        val latex  = scala.util.Try(scala.sys.process.Process(Seq("pdflatex", "--version")).!!)
+          .isSuccess
+        val built  =
+          !latex || {
+            val dir = java.nio.file.Files.createTempDirectory("arrows")
+            java.nio.file.Files.writeString(dir.resolve("a.tex"), tex)
+            scala.sys.process.Process(
+              Seq("pdflatex", "-interaction=nonstopmode", "-halt-on-error", "a.tex"),
+              dir.toFile,
+            ).!(scala.sys.process.ProcessLogger(_ => ())) == 0
+          }
+        assertTrue(
+          tex.contains("\\ensuremath{\\leftrightarrow}"),
+          tex.contains("\\ensuremath{\\leq}") && tex.contains("\\ensuremath{\\surd}"),
+          !tex.contains("\u2194"),
+          built,
+        )
+      ,
       test("text is escaped for LaTeX and XML, and control characters do not get through"):
         val odd  = SceneGraph(
           "Odd <names> & \"quotes\"",

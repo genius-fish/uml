@@ -181,8 +181,8 @@ object Png:
           ))
         g.setColor(colour(if tone == Emphasis.Muted then c.muted else c.text))
         g.drawString(text, left.toFloat, y(at._2).toFloat)
-      case con @ Prim.Connector(ps, d, _, _)                          =>
-        g.setColor(colour(c.line))
+      case con @ Prim.Connector(ps, d, _, _, ink)                     =>
+        g.setColor(colour(ink.fold(c.line)(c.of)))
         g.setStroke(stroke(Look.LINK_LINE, d))
         g.draw(path(ps, closed = false, Look.BEND * 2.54 / 72))
         Heads.of(con).foreach(draw)

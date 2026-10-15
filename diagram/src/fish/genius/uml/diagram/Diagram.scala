@@ -132,7 +132,7 @@ object Diagram:
       val routes             = laidOut.zip(spread).map:
         case ((r, kind, _), points) =>
           val (dash, start, end) = Notation.ends(kind)
-          (r, points, Prim.Connector(points, dash, start, end))
+          (r, points, Prim.Connector(points, dash, start, end, r.colour.flatMap(fillName)))
       // what a label may not cover: the leaves, and the containers' headers
       val taken              = scene.elements.map: e =>
         val top = e.y + e.d / 2
@@ -173,7 +173,10 @@ object Diagram:
         .filter(l => l.entries.nonEmpty || l.sections.exists(_.items.nonEmpty))
         .toList
         .flatMap(legend(_, ordered, style, measure))
-      val colours = nodes.flatMap(n => n.fill.flatMap(h => fillName(h).map(_ -> hexOf(h)))).toMap
+      val colours =
+        (nodes.flatMap(n => n.fill.flatMap(h => fillName(h).map(_ -> hexOf(h)))) ++
+        scene.relationships.flatMap(r => r.colour.flatMap(h => fillName(h).map(_ -> hexOf(h)))))
+          .toMap
       Drawing(graph.name, ordered ++ keyed, scene, style, measure.family, overflow, colours)
     end for
 
@@ -320,7 +323,7 @@ object Diagram:
         if within(c._1, a._1, b._1) && within(a._2, c._2, d._2)
       yield (c._1, a._2, acrossPrim)
     found.distinctBy(c => (math.rint(c._1 * 1000), math.rint(c._2 * 1000))).flatMap:
-      case (x, y, Prim.Connector(_, dash, _, _)) =>
+      case (x, y, Prim.Connector(_, dash, _, _, _)) =>
         List(
           Prim.Box(
             x - GAP,
@@ -334,7 +337,7 @@ object Diagram:
           ),
           Prim.Connector(List((x - GAP * 1.6, y), (x + GAP * 1.6, y)), dash, None, None),
         )
-      case _                                     => Nil
+      case _                                        => Nil
 
   end crossings
 
@@ -727,12 +730,12 @@ object Diagram:
       if bounds.isEmpty then (0.0, 0.0) else (bounds.map(_._2).min, bounds.map(_._4).max)
     // what the legend may not cover: boxes, frames, marks, label patches, and the lines
     val taken        = drawn.flatMap:
-      case Prim.Connector(ps, _, _, _) =>
+      case Prim.Connector(ps, _, _, _, _) =>
         ps.zip(ps.drop(1)).map((a, b) =>
           (math.min(a._1, b._1), math.min(a._2, b._2), math.max(a._1, b._1), math.max(a._2, b._2))
         )
-      case _: Prim.Text                => Nil
-      case p                           => extent(p).toList
+      case _: Prim.Text                   => Nil
+      case p                              => extent(p).toList
     val groups       =
       Option.when(l.entries.nonEmpty)((None, l.entries.map(LegendItem.Mark(_)))).toList ++
       l.sections.filter(_.items.nonEmpty).map(s => (Some(s.title), s.items))
@@ -872,7 +875,7 @@ object Diagram:
       case Prim.Ellipse(c, rx, ry, _, _)       => Some((c._1 - rx, c._2 - ry, c._1 + rx, c._2 + ry))
       case Prim.Box(x, y, w, h, _, _, _, _, _) => Some((x, y, x + w, y + h))
       case Prim.Text(at, _, _, _, _, _, _)     => Some((at._1, at._2, at._1, at._2))
-      case Prim.Connector(ps, _, _, _)         => of(ps)
+      case Prim.Connector(ps, _, _, _, _)      => of(ps)
       case Prim.Curve(segments, _, _)          => of(segments.flatMap(Seg.points))
       case Prim.Image(x, y, w, h, _, _)        => Some((x, y, x + w, y + h))
 

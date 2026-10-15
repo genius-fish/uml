@@ -89,11 +89,13 @@ enum Prim derives CanEqual:
     centred: Boolean = true,
     backdrop: Option[Role] = None)
 
+  // with `ink`, the line and its heads in that layer's colour instead of the line's
   case Connector(
     points: List[Pt],
     dash: Dash,
     start: Option[Head],
-    end: Option[Head])
+    end: Option[Head],
+    ink: Option[String] = None)
 
   // a filled outline in a colour of its own (hex), as a logo is drawn: moves, lines and
   // cubic curves, each piece closed; with evenOdd an inner piece cuts a hole

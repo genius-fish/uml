@@ -168,6 +168,7 @@ object SceneLayout:
           start = placed.map(_._1),
           end = placed.map(_._2),
           label = edge.label.flatMap(text => built.labelOf(laid).map(_(text))),
+          colour = edge.colour,
         )
     val flows         = graph.flows.map: flow =>
       FlowRoute(

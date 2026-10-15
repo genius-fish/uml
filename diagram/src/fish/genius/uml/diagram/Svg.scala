@@ -108,9 +108,9 @@ object Svg:
             PT)}" text-anchor="$anchor"$face stroke="none" fill="${hex(ink)}">${escape(
             text
           )}</text>"""
-      case con @ Prim.Connector(ps, d, _, _)                          =>
+      case con @ Prim.Connector(ps, d, _, _, ink)                     =>
         (s"""<path d="${rounded(ps)}" fill="none" stroke="${hex(
-            c.line
+            ink.fold(c.line)(c.of)
           )}" stroke-width="${f(Look.LINK_LINE * PT)}"${dash(d)}/>""" ::
         Heads.of(con).map(prim)).mkString("\n")
       case Prim.Curve(segments, fill, evenOdd)                        =>
@@ -187,7 +187,7 @@ object Extent:
       case Prim.Ellipse(c, rx, ry, _, _) => List((c._1 - rx, c._2 - ry), (c._1 + rx, c._2 + ry))
       case Prim.Box(x, y, w, h, _, _, _, _, _) => List((x, y), (x + w, y + h))
       case Prim.Text(at, _, _, _, _, _, _)     => List(at)
-      case Prim.Connector(ps, _, _, _)         => ps
+      case Prim.Connector(ps, _, _, _, _)      => ps
       case Prim.Curve(segments, _, _)          => segments.flatMap(Seg.points)
       case Prim.Image(x, y, w, h, _, _)        => List((x, y), (x + w, y + h))
     if points.isEmpty then (0.0, 0.0, 1.0, 1.0)

@@ -51,7 +51,8 @@ final case class SceneRelationship(
   clear: Boolean,
   start: Option[ScenePoint] = None,
   end: Option[ScenePoint] = None,
-  label: Option[SceneLabel] = None)
+  label: Option[SceneLabel] = None,
+  colour: Option[String] = None)
 
 final case class ScenePoint(x: Double, y: Double)
 

@@ -1217,6 +1217,15 @@ for the row.
 A node's `fill` (six hex digits, `#` allowed) sets it apart from its layer: the box is
 drawn in that colour as in a layer of its own (edge, fall-off and icon mixed from it).
 The colour travels in `Drawing.colours`, as `am-fill-<hex>`, and every writer defines it.
+
+An edge's `colour` (`SceneEdge.colour`, six hex digits) does the same for a relationship:
+its line and its filled heads are drawn in that colour, which the scene carries on
+`SceneRelationship.colour` and the drawing on `Prim.Connector.ink`. A dossier sets a
+proposed flow apart this way.
+
+The TikZ writer writes the arrows and math symbols pdflatex's UTF-8 input does not know
+(↔ → ← ↑ ↓ ⇒ ⇐ ⇔ ≤ ≥ ≠ ≈ ± × ÷ ∞ • ✓ ✗) as `\ensuremath{…}`, so a label such as
+"persoon ↔ rol" compiles.
 A fill that is not a colour is ignored.
 
 `SceneGraph.legend` (`Legend(title, entries, sections)`) says what the diagram's marks

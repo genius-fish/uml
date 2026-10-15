@@ -163,9 +163,10 @@ object Tikz:
         case None       => ("inner sep=0pt,", at._1)
       s"\\node[anchor=$anchor,$patch text=$ink,font=\\sffamily$select" +
       s"\\fontsize{${f(size)}}{${f(size * 1.2)}}\\selectfont] at ${pt((x, at._2))} {${escape(text)}};"
-    case Prim.Connector(points, d, start, end)                      =>
+    case Prim.Connector(points, d, start, end, ink)                 =>
       val arrows = s"arrows={${start.map(head).getOrElse("")}-${end.map(head).getOrElse("")}}"
-      s"\\draw${options(List(Some("am link"), dash(d), Some(arrows)))} " +
+      val colour = ink.map(i => s"draw=$i,fill=$i")
+      s"\\draw${options(List(Some("am link"), dash(d), Some(arrows), colour))} " +
       points.map(pt).mkString(" -- ") + ";"
     case Prim.Curve(segments, fill, evenOdd)                        =>
       val hex  = Logos.colour(fill)
@@ -206,6 +207,29 @@ object Tikz:
     case '}'  => "\\}"
     case '~'  => "\\textasciitilde{}"
     case '^'  => "\\textasciicircum{}"
-    case c    => c.toString
+    case c    => Symbols.getOrElse(c, c.toString)
+
+  // characters pdflatex's UTF-8 input does not know, written as the math it draws them with
+  private val Symbols: Map[Char, String] = Map(
+    '\u2194' -> "\\ensuremath{\\leftrightarrow}",
+    '\u2192' -> "\\ensuremath{\\rightarrow}",
+    '\u2190' -> "\\ensuremath{\\leftarrow}",
+    '\u2191' -> "\\ensuremath{\\uparrow}",
+    '\u2193' -> "\\ensuremath{\\downarrow}",
+    '\u21D2' -> "\\ensuremath{\\Rightarrow}",
+    '\u21D0' -> "\\ensuremath{\\Leftarrow}",
+    '\u21D4' -> "\\ensuremath{\\Leftrightarrow}",
+    '\u2264' -> "\\ensuremath{\\leq}",
+    '\u2265' -> "\\ensuremath{\\geq}",
+    '\u2260' -> "\\ensuremath{\\neq}",
+    '\u2248' -> "\\ensuremath{\\approx}",
+    '\u00B1' -> "\\ensuremath{\\pm}",
+    '\u00D7' -> "\\ensuremath{\\times}",
+    '\u00F7' -> "\\ensuremath{\\div}",
+    '\u221E' -> "\\ensuremath{\\infty}",
+    '\u2022' -> "\\ensuremath{\\bullet}",
+    '\u2713' -> "\\ensuremath{\\surd}",
+    '\u2717' -> "\\ensuremath{\\times}",
+  )
 
 end Tikz
