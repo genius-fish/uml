@@ -82,6 +82,7 @@ private[diagram] object Look:
       case Role.Halo             => (None, Some(paper))
       case Role.Patch(on)        => (None, Some(ground(on)))
       case Role.Plain            => (Some(line), ink(fill))
+      case Role.Inked(layer)     => (Some(of(layer)), ink(fill))
 
     def weight(role: Role): Double = role match
       case Role.Element(_)   => BOX_LINE

@@ -275,6 +275,8 @@ object DiagramSpec extends ZIOSpecDefault:
           List(
             SceneEdge(SceneId("ab"), SceneId("a"), SceneId("b"), RelationshipType.Flow, colour = Some("#2F6DB5")),
             edge("bc", "b", "c", RelationshipType.Flow),
+            SceneEdge(SceneId("ca"), SceneId("c"), SceneId("a"), RelationshipType.Realization, colour = Some("#2F6DB5")),
+            SceneEdge(SceneId("ac"), SceneId("a"), SceneId("c"), RelationshipType.Serving, colour = Some("abc")),
           ),
         )
         val d     = Diagram.draw(g).toOption.get
@@ -283,11 +285,19 @@ object DiagramSpec extends ZIOSpecDefault:
         val svg   = Svg.document(d)
         val tikz  = Tikz.standalone(d)
         assertTrue(
-          cons.count(_.ink.contains("am-fill-2f6db5")) == 1,
-          cons.count(_.ink.isEmpty) == 1,
+          cons.count(_.ink.contains("am-fill-2f6db5")) >= 2,
+          // a colour that is not six hex digits draws as any other line
+          cons.count(_.ink.isEmpty) >= 2,
+          // filled and open heads alike are outlined in the colour, a filled one filled in it
           heads.exists {
             case p: Prim.Poly => p.fill == Ink.Layer("am-fill-2f6db5"); case _ => false
           },
+          heads.exists {
+            case p: Prim.Poly => p.fill == Ink.Paper && p.role == Role.Inked("am-fill-2f6db5")
+            case _            => false
+          },
+          // two lines and their two heads stroked in the colour
+          svg.split("stroke=\"#2F6DB5\"").length - 1 >= 4,
           svg.contains("stroke=\"#2F6DB5\""),
           tikz.contains("draw=am-fill-2f6db5") && tikz.contains("{am-fill-2f6db5}{HTML}{2F6DB5}"),
           d.scene.relationships.find(_.key == SceneId("ab")).flatMap(_.colour).contains("#2F6DB5"),

@@ -114,6 +114,8 @@ object Tikz:
     case Role.Patch(on)        => List(field(on).map("fill=" + _))
     case Role.Plain            =>
       List(Some("draw=am-line"), plain(fill).map("fill=" + _), Some("line width=0.5pt"))
+    case Role.Inked(layer)     =>
+      List(Some(s"draw=$layer"), plain(fill).map("fill=" + _), Some("line width=0.5pt"))
 
   // the fill a text's backdrop takes, the field it stands on
   private def field(role: Role): Option[String] = role match

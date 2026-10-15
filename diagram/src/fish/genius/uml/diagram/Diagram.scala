@@ -323,7 +323,7 @@ object Diagram:
         if within(c._1, a._1, b._1) && within(a._2, c._2, d._2)
       yield (c._1, a._2, acrossPrim)
     found.distinctBy(c => (math.rint(c._1 * 1000), math.rint(c._2 * 1000))).flatMap:
-      case (x, y, Prim.Connector(_, dash, _, _, _)) =>
+      case (x, y, Prim.Connector(_, dash, _, _, ink)) =>
         List(
           Prim.Box(
             x - GAP,
@@ -335,9 +335,9 @@ object Diagram:
             stroke = false,
             role = Role.Patch(field((x, y))),
           ),
-          Prim.Connector(List((x - GAP * 1.6, y), (x + GAP * 1.6, y)), dash, None, None),
+          Prim.Connector(List((x - GAP * 1.6, y), (x + GAP * 1.6, y)), dash, None, None, ink),
         )
-      case _                                        => Nil
+      case _                                          => Nil
 
   end crossings
 

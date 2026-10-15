@@ -35,6 +35,8 @@ enum Role derives CanEqual:
   // a flat patch of the field it lies on (a container, a grouping, the page): the
   // gap where one line crosses another, the ground under a connector's label
   case Patch(on: Role)
+  // drawn in a layer's colour of its own: the heads of a connector in a colour (its ink)
+  case Inked(layer: String)
 
 // how a line of text is set: its weight, and whether it is the main text or quieter
 enum Weight derives CanEqual:

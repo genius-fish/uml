@@ -16,12 +16,12 @@ object Heads:
       connector.end.toList.flatMap(h => ps.dropRight(1).lastOption.map(from => at(h, ps.last, from)))
     val heads = (start ++ end).flatten
     // a connector in a colour of its own has its heads in it too
-    connector.ink.fold(heads)(ink =>
+    connector.ink.fold(heads): ink =>
+      def filled(fill: Ink) = if fill == Ink.Line then Ink.Layer(ink) else fill
       heads.map:
-        case p: Prim.Poly if p.fill == Ink.Line   => p.copy(fill = Ink.Layer(ink))
-        case c: Prim.Circle if c.fill == Ink.Line => c.copy(fill = Ink.Layer(ink))
-        case other                                => other
-    )
+        case p: Prim.Poly   => p.copy(fill = filled(p.fill), role = Role.Inked(ink))
+        case c: Prim.Circle => c.copy(fill = filled(c.fill), role = Role.Inked(ink))
+        case other          => other
 
   // a head with its tip at `tip`, pointing away from `from`
   def at(
