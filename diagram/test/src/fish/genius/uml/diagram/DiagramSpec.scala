@@ -174,6 +174,28 @@ object DiagramSpec extends ZIOSpecDefault:
           rels.forall(r => xOf(r.source) < xOf(r.target)),
         )
       ,
+      test("laid out to the right, a reply runs back west to east, routed round no box"):
+        val reply = SceneGraph(
+          "request and reply",
+          List("a", "b", "c").map(i => leaf(i, s"Box $i", ShapeType.ApplicationComponent)),
+          List(
+            edge("ab", "a", "b", RelationshipType.Flow),
+            edge("bc", "b", "c", RelationshipType.Flow),
+            edge("ca", "c", "a", RelationshipType.Flow),
+          ),
+        )
+        val right = Diagram.draw(reply, Diagram.Options(direction = SceneLayout.Direction.Right))
+          .toOption.get
+        val xOf   = right.scene.elements.map(e => e.key -> e.x).toMap
+        val back  = right.scene.relationships.find(_.key == SceneId("ca")).get
+        val ahead = right.scene.relationships.filterNot(_.key == SceneId("ca"))
+        assertTrue(
+          ahead.forall(r => r.sourcePort == PortName.East && r.targetPort == PortName.West),
+          xOf(SceneId("a")) < xOf(SceneId("b")) && xOf(SceneId("b")) < xOf(SceneId("c")),
+          back.sourcePort == PortName.West && back.targetPort == PortName.East,
+          right.overflow == 0,
+        )
+      ,
       test("laid out to the right, a nested landscape keeps every box apart and every line"):
         val right  = Diagram.draw(landscape, Diagram.Options(direction = SceneLayout.Direction.Right))
           .toOption.get
