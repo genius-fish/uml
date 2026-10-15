@@ -53,7 +53,8 @@ object SceneLayout:
   /**
    * Which way the layers run: down the page (the default, and back to front in a scene), or
    * left to right, which draws a chain (a flow) wide instead of tall. Laid out to the right,
-   * no row is folded: the rows are the layers' columns then.
+   * no row is folded: the rows are the layers' columns then. It is meant for a flat diagram
+   * (`Diagram.Options.direction`); a 3D scene's panes assume the layers run back to front.
    */
   enum Direction derives CanEqual:
     case Down, Right
@@ -94,7 +95,7 @@ object SceneLayout:
       else ElkPass.run(structure, Map.empty, folds, options, modelOrder)
       laid  <- settle(
         structure,
-        ElkPass.sidesOf(structure, first),
+        ElkPass.sidesOf(structure, first, options.direction),
         folds,
         options,
         modelOrder,
@@ -115,7 +116,7 @@ object SceneLayout:
     ElkPass
       .run(structure, sides, folds, options, modelOrder)
       .flatMap: built =>
-        val again = ElkPass.sidesOf(structure, built)
+        val again = ElkPass.sidesOf(structure, built, options.direction)
         if again == sides || rounds <= 1 then Right((sides, built))
         else settle(structure, again, folds, options, modelOrder, rounds - 1)
 

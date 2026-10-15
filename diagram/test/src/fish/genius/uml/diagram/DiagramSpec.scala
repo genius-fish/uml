@@ -157,6 +157,33 @@ object DiagramSpec extends ZIOSpecDefault:
         val (rightW, rightH)         = span(Diagram.draw(chain, right).toOption.get)
         assertTrue(downH > downW, rightW > rightH)
       ,
+      test("laid out to the right, a fork and a join leave east and enter west"):
+        val forked = SceneGraph(
+          "fork and join",
+          List("a", "b", "c", "d", "e", "f").map(i => leaf(i, s"Box $i", ShapeType.ApplicationComponent)),
+          List("b", "c", "d", "e").map(i => edge(s"a$i", "a", i, RelationshipType.Flow)) ++
+          List("b", "c", "d", "e").map(i => edge(s"${i}f", i, "f", RelationshipType.Flow)),
+        )
+        val right  = Diagram.draw(forked, Diagram.Options(direction = SceneLayout.Direction.Right))
+          .toOption.get
+        val rels   = right.scene.relationships
+        val xOf    = right.scene.elements.map(e => e.key -> e.x).toMap
+        assertTrue(
+          rels.size == 8,
+          rels.forall(r => r.sourcePort == PortName.East && r.targetPort == PortName.West),
+          rels.forall(r => xOf(r.source) < xOf(r.target)),
+        )
+      ,
+      test("laid out to the right, a nested landscape keeps every box apart and every line"):
+        val right  = Diagram.draw(landscape, Diagram.Options(direction = SceneLayout.Direction.Right))
+          .toOption.get
+        val leaves = right.scene.elements.filterNot(_.container)
+        assertTrue(
+          right.overflow == 0,
+          leaves.combinations(2).forall { case List(a, b) => !overlaps(a, b); case _ => true },
+          right.scene.relationships.size == landscape.edges.size,
+        )
+      ,
       test("each connector has its own end: no two meet a box at the same point"):
         val ends = drawing.scene.relationships.flatMap(r => r.start.toList ++ r.end.toList)
         assertTrue(

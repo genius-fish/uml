@@ -188,19 +188,36 @@ private[scene] object ElkPass:
 
   end foldsOf
 
-  // ELK's y runs down the page, which is towards the viewer.
-  def sidesOf(structure: SceneStructure, built: Built): Map[SceneId, Sides] =
+  // ELK's y runs down the page, which is towards the viewer. The sides follow the way the
+  // layers run: down the page an edge leaves south for north, across it east for west, and
+  // only where the boxes do not stand apart that way is the other axis asked.
+  def sidesOf(
+    structure: SceneStructure,
+    built: Built,
+    direction: SceneLayout.Direction = SceneLayout.Direction.Down,
+  ): Map[SceneId, Sides] =
     structure.edges
       .flatMap: edge =>
         built.rectOf(edge.source).zip(built.rectOf(edge.target)).map: (source, target) =>
-          val sides =
-            if source.bottom <= target.y then Sides(PortName.South, PortName.North)
-            else if target.bottom <= source.y then Sides(PortName.North, PortName.South)
-            else if source.right <= target.x then Sides(PortName.East, PortName.West)
-            else if target.right <= source.x then Sides(PortName.West, PortName.East)
-            else if source.y + source.h / 2 <= target.y + target.h / 2 then
-              Sides(PortName.South, PortName.North)
-            else Sides(PortName.North, PortName.South)
+          def vertical   =
+            if source.bottom <= target.y then Some(Sides(PortName.South, PortName.North))
+            else if target.bottom <= source.y then Some(Sides(PortName.North, PortName.South))
+            else None
+          def horizontal =
+            if source.right <= target.x then Some(Sides(PortName.East, PortName.West))
+            else if target.right <= source.x then Some(Sides(PortName.West, PortName.East))
+            else None
+          val sides      = direction match
+            case SceneLayout.Direction.Down  =>
+              vertical.orElse(horizontal).getOrElse:
+                if source.y + source.h / 2 <= target.y + target.h / 2 then
+                  Sides(PortName.South, PortName.North)
+                else Sides(PortName.North, PortName.South)
+            case SceneLayout.Direction.Right =>
+              horizontal.orElse(vertical).getOrElse:
+                if source.x + source.w / 2 <= target.x + target.w / 2 then
+                  Sides(PortName.East, PortName.West)
+                else Sides(PortName.West, PortName.East)
           edge.id -> sides
       .toMap
 
@@ -300,9 +317,9 @@ private[scene] object ElkPass:
       val ends: Option[(ElkConnectableShape, ElkConnectableShape)] = sides.get(edge.id) match
         // an edge that runs up, against the layers, is handed to ELK the other way
         // round, so ELK routes it straight instead of looping round its inverted ports
-        case Some(laid) if options.spreadPorts && upward(laid) =>
+        case Some(laid) if options.spreadPorts && upward(laid, options.direction) =>
           own(edge.target, laid.to).zip(own(edge.source, laid.from))
-        case Some(laid) if options.spreadPorts                 =>
+        case Some(laid) if options.spreadPorts                                    =>
           own(edge.source, laid.from).zip(own(edge.target, laid.to))
         case Some(laid) => ports.get((edge.source, laid.from)).zip(ports.get((edge.target, laid.to)))
         case None => nodes.get(edge.source).zip(nodes.get(edge.target))
@@ -320,7 +337,8 @@ private[scene] object ElkPass:
         edge.id -> elkEdge
     val reversed                                          = Option
       .when(options.spreadPorts)(
-        structure.edges.filter(e => sides.get(e.id).exists(upward)).map(_.id).toSet
+        structure.edges.filter(e => sides.get(e.id).exists(upward(_, options.direction)))
+          .map(_.id).toSet
       )
       .getOrElse(Set.empty)
     Built(root, nodes, edges.toMap, kept, reversed)
@@ -423,9 +441,11 @@ private[scene] object ElkPass:
 
   end port
 
-  // an edge leaving its source's north side for its target's south: up the page
-  private def upward(laid: Sides): Boolean = laid.from == PortName.North &&
-    laid.to == PortName.South
+  // an edge that runs against the layers: up the page (north to south) when they run down,
+  // back to the left (west to east) when they run to the right
+  private def upward(laid: Sides, direction: SceneLayout.Direction): Boolean = direction match
+    case SceneLayout.Direction.Down  => laid.from == PortName.North && laid.to == PortName.South
+    case SceneLayout.Direction.Right => laid.from == PortName.West && laid.to == PortName.East
 
   private def portSide(side: PortName): PortSide = side match
     case PortName.North => PortSide.NORTH
