@@ -75,8 +75,30 @@ enum Logo derives CanEqual:
 
 end Logo
 
-// What the badges of a diagram stand for, drawn under it.
-final case class Legend(title: String, entries: List[Badge])
+// What a diagram's marks stand for, drawn under it: its badges (entries), and sections
+// of their own, each with a heading, such as the element types, the relationships and
+// the logos a diagram holds.
+final case class Legend(
+  title: String,
+  entries: List[Badge],
+  sections: List[LegendSection] = Nil)
+
+final case class LegendSection(title: String, items: List[LegendItem])
+
+// One line of a legend: a badge (its glyph or logo), an element type (a small box in
+// its layer's colour with its icon), a relationship (a short line with its ends), or a
+// logo; each with what it stands for.
+enum LegendItem derives CanEqual:
+  case Mark(badge: Badge)
+  case Shape(shape: ShapeType, text: String)
+  case Line(relationship: RelationshipType, text: String)
+  case LogoMark(logo: fish.genius.uml.scene.Logo, text: String)
+
+  def label: String = this match
+    case Mark(badge)    => badge.label
+    case Shape(_, t)    => t
+    case Line(_, t)     => t
+    case LogoMark(_, t) => t
 
 // caption and note are for a flat diagram, which writes them in the box under the
 // label: the element's type (and technology), and a line or two about it. So are fill,

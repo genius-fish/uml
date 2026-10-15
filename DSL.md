@@ -1219,10 +1219,15 @@ drawn in that colour as in a layer of its own (edge, fall-off and icon mixed fro
 The colour travels in `Drawing.colours`, as `am-fill-<hex>`, and every writer defines it.
 A fill that is not a colour is ignored.
 
-`SceneGraph.legend` (`Legend(title, entries)`) says what the badges stand for. It is
-drawn under the diagram, left-aligned with it, in a framed box: the title, then each
-glyph with its label, in as many columns as fit the drawing's width. A graph without a
-legend, or with an empty one, draws none. The 3D scene leaves badges, fill and legend
+`SceneGraph.legend` (`Legend(title, entries, sections)`) says what the diagram's marks
+stand for. It is drawn under the diagram, left-aligned with it, in a framed box: the
+title, then the badges (`entries`), then each `LegendSection` under its heading. A
+section's items (`LegendItem`) are a badge (`Mark`), an element type (`Shape`: a small
+box in its layer's colour with the type's icon), a relationship (`Line`: a short line
+with that relationship's dash and ends) or a logo (`LogoMark`), each with its text.
+Each group's items stand in as many columns as fit the drawing's width, every mark
+centred in a column as wide as the widest of its group. Empty sections are left out,
+and a legend with nothing in it draws none. The 3D scene leaves badges, fill and legend
 out.
 
 ### Logos

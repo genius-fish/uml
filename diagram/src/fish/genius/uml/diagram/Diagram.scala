@@ -166,8 +166,10 @@ object Diagram:
         case _                                                   => false
       val (backs, rest)      = boxes.filterNot(isText).partition(isField)
       val ordered = backs ++ rest ++ routes.map(_._3) ++ gaps ++ boxes.filter(isText) ++ said
-      val keyed   =
-        graph.legend.filter(_.entries.nonEmpty).toList.flatMap(legend(_, ordered, style, measure))
+      val keyed   = graph.legend
+        .filter(l => l.entries.nonEmpty || l.sections.exists(_.items.nonEmpty))
+        .toList
+        .flatMap(legend(_, ordered, style, measure))
       val colours = nodes.flatMap(n => n.fill.flatMap(h => fillName(h).map(_ -> hexOf(h)))).toMap
       Drawing(graph.name, ordered ++ keyed, scene, style, measure.family, overflow, colours)
     end for
@@ -697,8 +699,9 @@ object Diagram:
 
   private def hexOf(hex: String): String = hex.stripPrefix("#").toUpperCase
 
-  // The legend under the drawing, left-aligned with it: its title, then each badge
-  // with what it stands for, in as many columns as fit the drawing's width.
+  // The legend under the drawing, left-aligned with it: its title, its badges, then each
+  // section under its heading, the items of each in as many columns as fit the
+  // drawing's width, every mark centred in a column as wide as the widest of its own.
   private def legend(
     l: Legend,
     drawn: List[Prim],
@@ -718,47 +721,120 @@ object Diagram:
       if points.isEmpty then (0.0, 0.0) else (points.map(_._1).min, points.map(_._1).max)
     val bottom        = points.map(_._2).minOption.getOrElse(0.0)
     val pad           = style.padding
-    val marks         = l.entries.map(mark(_, style))
-    val markW         = marks.map(_._1).max
-    val markH         = marks.map(_._2).max
-    val rowH          = math.max(markH, style.lead(style.captionSize)) + BADGE_GAP
-    val entryW        = l.entries
-      .map(b => markW + 0.12 + measure.width(b.label, style.captionSize, Weight.Regular))
-      .max + 0.3
+    val room          = math.max(right - left - 2 * pad, 0.0)
+    // the badges first, without a heading, then the sections; empty ones left out
+    val groups        =
+      Option.when(l.entries.nonEmpty)((None, l.entries.map(LegendItem.Mark(_)))).toList ++
+      l.sections.filter(_.items.nonEmpty).map(s => (Some(s.title), s.items))
+    final case class Laid(
+      heading: Option[String],
+      items: List[LegendItem],
+      markW: Double,
+      markH: Double,
+      entryW: Double,
+      columns: Int,
+      rowH: Double):
+      val rows: Int      = (items.size + columns - 1) / columns
+      val headH: Double  = heading.fold(0.0)(_ => style.lead(style.captionSize) + style.gap)
+      val height: Double = headH + rows * rowH
+      val width: Double  = columns * entryW
+    val laid          = groups.map: (heading, items) =>
+      val marks  = items.map(itemMark(_, style))
+      val markW  = marks.map(_._1).max
+      val markH  = marks.map(_._2).max
+      val entryW =
+        items.map(i =>
+          markW + 0.12 + measure.width(i.label, style.captionSize, Weight.Regular)
+        ).max +
+        0.3
+      val cols   = math.max(1, math.min(items.size, (room / entryW).toInt))
+      Laid(
+        heading,
+        items,
+        markW,
+        markH,
+        entryW,
+        cols,
+        math.max(markH, style.lead(style.captionSize)) + BADGE_GAP,
+      )
     val titleW        = measure.width(l.title, style.nameSize, Weight.SemiBold)
-    val columns       =
-      math.max(1, math.min(l.entries.size, ((right - left - 2 * pad) / entryW).toInt))
-    val rows          = (l.entries.size + columns - 1) / columns
-    val w             = math.max(titleW, columns * entryW) + 2 * pad
-    val titleH        = style.lead(style.nameSize)
-    val h             = titleH + rows * rowH + 2 * pad
-    val top           = bottom - LEGEND_GAP
-    val frame         =
-      Prim.Box(left, top - h, w, h, SQUARE, Ink.Paper, role = Role.Plain)
-    val title         = stack(
-      left + pad,
-      top - pad,
-      List(Line(l.title, style.nameSize, Weight.SemiBold)),
-      style,
-      centred = false,
-    )
-    val entries       = l.entries.zipWithIndex.flatMap: (b, i) =>
-      val (row, column) = (i / columns, i % columns)
-      val x             = left + pad + column * entryW
-      val yTop          = top - pad - titleH - row * rowH
-      val (w, h)        = mark(b, style)
-      // marks centred in a column as wide as the widest, on the middle of the row
-      drawMark(b, x + (markW - w) / 2, yTop - (markH + h) / 2, style, Role.Mark("am-line")) ++
+    val headW  = laid.flatMap(_.heading).map(measure.width(_, style.captionSize, Weight.SemiBold))
+    val w      = (titleW :: headW ++ laid.map(_.width)).max + 2 * pad
+    val titleH = style.lead(style.nameSize)
+    val h      = titleH + laid.map(_.height + style.gap).sum + 2 * pad
+    val top    = bottom - LEGEND_GAP
+    val frame  = Prim.Box(left, top - h, w, h, SQUARE, Ink.Paper, role = Role.Plain)
+    val title  =
       stack(
-        x + markW + 0.12,
-        yTop - (markH - style.lead(style.captionSize)) / 2,
-        List(Line(b.label, style.captionSize)),
+        left + pad,
+        top - pad,
+        List(Line(l.title, style.nameSize, Weight.SemiBold)),
         style,
         centred = false,
       )
-    frame :: title ++ entries
+    val body   = laid.foldLeft((top - pad - titleH, List.empty[Prim])):
+      case ((yStart, done), g) =>
+        val heading = g.heading.toList.flatMap: t =>
+          stack(
+            left + pad,
+            yStart - style.gap,
+            List(Line(t, style.captionSize, Weight.SemiBold, Emphasis.Muted)),
+            style,
+            centred = false,
+          )
+        val items   = g.items.zipWithIndex.flatMap: (item, i) =>
+          val (row, column) = (i / g.columns, i % g.columns)
+          val x             = left + pad + column * g.entryW
+          val yTop          = yStart - g.headH - row * g.rowH
+          val (mw, mh)      = itemMark(item, style)
+          drawItem(item, x + (g.markW - mw) / 2, yTop - (g.markH + mh) / 2, style) ++
+          stack(
+            x + g.markW + 0.12,
+            yTop - (g.markH - style.lead(style.captionSize)) / 2,
+            List(Line(item.label, style.captionSize)),
+            style,
+            centred = false,
+          )
+        (yStart - g.height - style.gap, done ++ heading ++ items)
+    frame :: title ++ body._2
 
   end legend
+
+  private val SHAPE_W = 0.5
+  private val SHAPE_H = 0.32
+  private val LINE_W  = 0.7
+
+  // a legend item's mark: (width, height)
+  private def itemMark(item: LegendItem, style: Style): (Double, Double) = item match
+    case LegendItem.Mark(b)           => mark(b, style)
+    case LegendItem.Shape(_, _)       => (SHAPE_W, SHAPE_H)
+    case LegendItem.Line(_, _)        => (LINE_W, style.badgeSize)
+    case LegendItem.LogoMark(logo, _) =>
+      val h = style.badgeSize * LOGO_BADGE
+      (Logos.width(logo, h), h)
+
+  // a legend item's mark drawn from (x, y), its lower left corner
+  private def drawItem(
+    item: LegendItem,
+    x: Double,
+    y: Double,
+    style: Style,
+  ): List[Prim] = item match
+    case LegendItem.Mark(b)               => drawMark(b, x, y, style, Role.Mark("am-line"))
+    case LegendItem.Shape(shape, _)       =>
+      val layer  = Notation.layer(shape.group)
+      val radius =
+        if Notation.outline(shape) == Notation.Outline.Rounded then ROUNDED / 2 else SQUARE
+      val s      = SHAPE_H * 0.62
+      Prim.Box(x, y, SHAPE_W, SHAPE_H, radius, Ink.Layer(layer), role = Role.Element(layer)) ::
+      place(Notation.icon(shape), x + (SHAPE_W - s) / 2, y + (SHAPE_H - s) / 2, s, Role.Mark(layer))
+    case LegendItem.Line(relationship, _) =>
+      val (dash, start, end) = Notation.ends(relationship)
+      val mid                = y + style.badgeSize / 2
+      List(Prim.Connector(List((x, mid), (x + LINE_W, mid)), dash, start, end))
+    case LegendItem.LogoMark(logo, _)     =>
+      val (w, h) = itemMark(item, style)
+      Logos.place(logo, x, y, w, h)
 
   // an icon drawn in a unit square, placed at (x, y), scaled to s, as a mark of its box
   private[diagram] def place(

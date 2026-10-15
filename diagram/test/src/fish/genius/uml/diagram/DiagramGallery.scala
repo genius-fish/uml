@@ -385,6 +385,7 @@ object DiagramGallery extends ZIOSpecDefault:
       "relationships" -> relationships,
       "badged" -> DiagramSpec.badged,
       "logos" -> LogoSpec.logos,
+      "legend" -> LegendSpec.legended,
     )
 
   private def palette: Map[String, String] =
