@@ -342,6 +342,43 @@ object DiagramSpec extends ZIOSpecDefault:
           Diagram.fillName("not a colour").isEmpty,
         )
       ,
+      test("a filled container is drawn in its colour, and a label on it stands on that colour"):
+        val inner = SceneGraph(
+          "Filled",
+          List(
+            SceneNode(
+              SceneId("sys"),
+              NodeKind.Element(ShapeType.ApplicationComponent),
+              "Billing",
+              List(
+                leaf("a", "Invoicing", ShapeType.ApplicationComponent),
+                leaf("b", "Ledger", ShapeType.ApplicationComponent),
+              ),
+              fill = Some("C8E6C9"),
+              badges = List(Badge(Glyph.Star, "never drawn on a container")),
+            )
+          ),
+          List(edge("f", "a", "b", RelationshipType.Flow, Some("books"))),
+        )
+        val d     = Diagram.draw(inner).toOption.get
+        val name  = "am-fill-c8e6c9"
+        assertTrue(
+          d.prims.exists:
+            case Prim.Box(_, _, _, _, _, _, _, _, Role.Container(`name`)) => true
+            case _                                                        =>
+              false
+          ,
+          d.prims.exists:
+            case Prim.Box(_, _, _, _, _, _, _, _, Role.Patch(Role.Container(`name`))) => true
+            case _                                                                    =>
+              false
+          ,
+          // a container carries no badges: its signs stay off its header
+          !d.prims.exists:
+            case Prim.Poly(_, true, Ink.Line, _, Role.Mark(`name`)) => true
+            case _                                                  => false,
+        )
+      ,
       test("the legend stands under the drawing, every badge with what it stands for"):
         val d      = Diagram.draw(badged).toOption.get
         val lowest = d.scene.elements.map(e => e.y - e.d / 2).min

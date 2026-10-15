@@ -138,7 +138,9 @@ object Diagram:
       val fields             = scene.elements.filter(_.container).flatMap: e =>
         byNode.get(e.key).map: n =>
           val role = n.kind match
-            case NodeKind.Element(shape) => Role.Container(Notation.layer(shape.group))
+            // a filled container's field is its own colour, as its box is drawn
+            case NodeKind.Element(shape) =>
+              Role.Container(n.fill.flatMap(fillName).getOrElse(Notation.layer(shape.group)))
             case _                       => Role.Group
           (e, role)
       def field(p: Pt): Role =
