@@ -1220,8 +1220,13 @@ The colour travels in `Drawing.colours`, as `am-fill-<hex>`, and every writer de
 A fill that is not a colour is ignored.
 
 `SceneGraph.legend` (`Legend(title, entries, sections)`) says what the diagram's marks
-stand for. It is drawn under the diagram, left-aligned with it, in a framed box: the
-title, then the badges (`entries`), then each `LegendSection` under its heading. A
+stand for, in a framed box set smaller than the diagram (0.8 of its sizes): the title,
+then the badges (`entries`), then each `LegendSection` under its heading. It stands
+where the drawing keeps room for it: in a corner of the drawing (bottom right, bottom
+left, top right, top left) that no box, frame, label or line passes through, as wide
+as fits; if no corner is free, beside a drawing taller than wide (top-aligned, as
+narrow as its height allows) or under a wider one (as low as its width allows). So a
+legend never makes a tall diagram taller or a wide one wider. A
 section's items (`LegendItem`) are a badge (`Mark`), an element type (`Shape`: a small
 box in its layer's colour with the type's icon), a relationship (`Line`: a short line
 with that relationship's dash and ends) or a logo (`LogoMark`), each with its text.

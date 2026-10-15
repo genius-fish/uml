@@ -699,110 +699,181 @@ object Diagram:
 
   private def hexOf(hex: String): String = hex.stripPrefix("#").toUpperCase
 
-  // The legend under the drawing, left-aligned with it: its title, its badges, then each
-  // section under its heading, the items of each in as many columns as fit the
-  // drawing's width, every mark centred in a column as wide as the widest of its own.
+  // The legend, smaller than what it explains (LEGEND_SCALE), placed where the drawing
+  // keeps room for it: in a corner of the drawing that nothing is drawn in, if one is
+  // free; else beside a drawing that is taller than wide, as narrow as its height allows,
+  // or under a wider one, as low as its width allows; so it never makes a tall drawing
+  // taller or a wide one wider. Inside, its title, its badges, then each section under
+  // its heading, the items of each in columns, every mark centred in a column as wide as
+  // the widest of its own.
   private def legend(
     l: Legend,
     drawn: List[Prim],
     style: Style,
     measure: Measure,
   ): List[Prim] =
-    val points        = drawn.flatMap:
-      case Prim.Poly(ps, _, _, _, _)     => ps
-      case Prim.Circle(c, r, _, _)       => List((c._1 - r, c._2 - r), (c._1 + r, c._2 + r))
-      case Prim.Ellipse(c, rx, ry, _, _) => List((c._1 - rx, c._2 - ry), (c._1 + rx, c._2 + ry))
-      case Prim.Box(x, y, w, h, _, _, _, _, _) => List((x, y), (x + w, y + h))
-      case Prim.Text(at, _, _, _, _, _, _)     => List(at)
-      case Prim.Connector(ps, _, _, _)         => ps
-      case Prim.Curve(segments, _, _)          => segments.flatMap(Seg.points)
-      case Prim.Image(x, y, w, h, _, _)        => List((x, y), (x + w, y + h))
-    val (left, right) =
-      if points.isEmpty then (0.0, 0.0) else (points.map(_._1).min, points.map(_._1).max)
-    val bottom        = points.map(_._2).minOption.getOrElse(0.0)
-    val pad           = style.padding
-    val room          = math.max(right - left - 2 * pad, 0.0)
-    // the badges first, without a heading, then the sections; empty ones left out
-    val groups        =
+    val small        = style.copy(badgeSize = style.badgeSize * LEGEND_SCALE)
+    val labelSize    = style.noteSize * LEGEND_SCALE
+    val headSize     = style.noteSize * LEGEND_SCALE
+    val titleSize    = style.captionSize
+    val pad          = style.padding * LEGEND_SCALE
+    val bounds       = drawn.flatMap(extent)
+    val (minX, maxX) =
+      if bounds.isEmpty then (0.0, 0.0) else (bounds.map(_._1).min, bounds.map(_._3).max)
+    val (minY, maxY) =
+      if bounds.isEmpty then (0.0, 0.0) else (bounds.map(_._2).min, bounds.map(_._4).max)
+    // what the legend may not cover: boxes, frames, marks, label patches, and the lines
+    val taken        = drawn.flatMap:
+      case Prim.Connector(ps, _, _, _) =>
+        ps.zip(ps.drop(1)).map((a, b) =>
+          (math.min(a._1, b._1), math.min(a._2, b._2), math.max(a._1, b._1), math.max(a._2, b._2))
+        )
+      case _: Prim.Text                => Nil
+      case p                           => extent(p).toList
+    val groups       =
       Option.when(l.entries.nonEmpty)((None, l.entries.map(LegendItem.Mark(_)))).toList ++
       l.sections.filter(_.items.nonEmpty).map(s => (Some(s.title), s.items))
-    final case class Laid(
+    final case class Group(
       heading: Option[String],
       items: List[LegendItem],
       markW: Double,
       markH: Double,
       entryW: Double,
-      columns: Int,
-      rowH: Double):
-      val rows: Int      = (items.size + columns - 1) / columns
-      val headH: Double  = heading.fold(0.0)(_ => style.lead(style.captionSize) + style.gap)
-      val height: Double = headH + rows * rowH
-      val width: Double  = columns * entryW
-    val laid          = groups.map: (heading, items) =>
-      val marks  = items.map(itemMark(_, style))
-      val markW  = marks.map(_._1).max
-      val markH  = marks.map(_._2).max
-      val entryW =
-        items.map(i =>
-          markW + 0.12 + measure.width(i.label, style.captionSize, Weight.Regular)
-        ).max +
-        0.3
-      val cols   = math.max(1, math.min(items.size, (room / entryW).toInt))
-      Laid(
+      rowH: Double)
+    val measured     = groups.map: (heading, items) =>
+      val marks = items.map(itemMark(_, small))
+      val markW = marks.map(_._1).max
+      val markH = marks.map(_._2).max
+      Group(
         heading,
         items,
         markW,
         markH,
-        entryW,
-        cols,
-        math.max(markH, style.lead(style.captionSize)) + BADGE_GAP,
+        items.map(i => markW + 0.1 + measure.width(i.label, labelSize, Weight.Regular)).max + 0.22,
+        math.max(markH, style.lead(labelSize)) + BADGE_GAP * LEGEND_SCALE,
       )
-    val titleW        = measure.width(l.title, style.nameSize, Weight.SemiBold)
-    val headW  = laid.flatMap(_.heading).map(measure.width(_, style.captionSize, Weight.SemiBold))
-    val w      = (titleW :: headW ++ laid.map(_.width)).max + 2 * pad
-    val titleH = style.lead(style.nameSize)
-    val h      = titleH + laid.map(_.height + style.gap).sum + 2 * pad
-    val top    = bottom - LEGEND_GAP
-    val frame  = Prim.Box(left, top - h, w, h, SQUARE, Ink.Paper, role = Role.Plain)
-    val title  =
-      stack(
-        left + pad,
-        top - pad,
-        List(Line(l.title, style.nameSize, Weight.SemiBold)),
-        style,
-        centred = false,
+    val titleW       = measure.width(l.title, titleSize, Weight.SemiBold)
+    val headW        = groups.flatMap(_._1).map(measure.width(_, headSize, Weight.SemiBold))
+    val titleH       = style.lead(titleSize)
+    val headH        = style.lead(headSize) + style.gap * LEGEND_SCALE
+    // the legend laid out within `room` of width: its size, and how to draw it from its
+    // top left corner
+    def laid(room: Double): (Double, Double, (Double, Double) => List[Prim]) =
+      val columns = measured.map(g =>
+        math.max(1, math.min(g.items.size, ((room - 2 * pad) / g.entryW).toInt))
       )
-    val body   = laid.foldLeft((top - pad - titleH, List.empty[Prim])):
-      case ((yStart, done), g) =>
-        val heading = g.heading.toList.flatMap: t =>
-          stack(
-            left + pad,
-            yStart - style.gap,
-            List(Line(t, style.captionSize, Weight.SemiBold, Emphasis.Muted)),
-            style,
-            centred = false,
-          )
-        val items   = g.items.zipWithIndex.flatMap: (item, i) =>
-          val (row, column) = (i / g.columns, i % g.columns)
-          val x             = left + pad + column * g.entryW
-          val yTop          = yStart - g.headH - row * g.rowH
-          val (mw, mh)      = itemMark(item, style)
-          drawItem(item, x + (g.markW - mw) / 2, yTop - (g.markH + mh) / 2, style) ++
-          stack(
-            x + g.markW + 0.12,
-            yTop - (g.markH - style.lead(style.captionSize)) / 2,
-            List(Line(item.label, style.captionSize)),
-            style,
-            centred = false,
-          )
-        (yStart - g.height - style.gap, done ++ heading ++ items)
-    frame :: title ++ body._2
+      val heights = measured.zip(columns).map: (g, c) =>
+        g.heading.fold(0.0)(_ => headH) + ((g.items.size + c - 1) / c) * g.rowH
+      val w = (titleW :: headW ++ measured.zip(columns).map((g, c) => c * g.entryW)).max + 2 * pad
+      val h = titleH + heights.map(_ + style.gap * LEGEND_SCALE).sum + 2 * pad
+      def draw(left: Double, top: Double): List[Prim] =
+        val frame = Prim.Box(left, top - h, w, h, SQUARE, Ink.Paper, role = Role.Plain)
+        val title = stack(
+          left + pad,
+          top - pad,
+          List(Line(l.title, titleSize, Weight.SemiBold)),
+          style,
+          centred = false,
+        )
+        val body  =
+          measured.zip(columns).zip(heights).foldLeft((top - pad - titleH, List.empty[Prim])):
+            case ((yStart, done), ((g, cols), height)) =>
+              val heading = g.heading.toList.flatMap: t =>
+                stack(
+                  left + pad,
+                  yStart - style.gap * LEGEND_SCALE,
+                  List(Line(t, headSize, Weight.SemiBold, Emphasis.Muted)),
+                  style,
+                  centred = false,
+                )
+              val start   = yStart - g.heading.fold(0.0)(_ => headH)
+              val items   = g.items.zipWithIndex.flatMap: (item, i) =>
+                val (row, column) = (i / cols, i % cols)
+                val x             = left + pad + column * g.entryW
+                val yTop          = start - row * g.rowH
+                val (mw, mh)      = itemMark(item, small)
+                drawItem(item, x + (g.markW - mw) / 2, yTop - (g.markH + mh) / 2, small) ++
+                stack(
+                  x + g.markW + 0.1,
+                  yTop - (g.markH - style.lead(labelSize)) / 2,
+                  List(Line(item.label, labelSize)),
+                  style,
+                  centred = false,
+                )
+              (yStart - height - style.gap * LEGEND_SCALE, done ++ heading ++ items)
+        frame :: title ++ body._2
+      end draw
+      (w, h, draw)
+    end laid
+    val (drawW, drawH) = (maxX - minX, maxY - minY)
+    val narrowest                                                            = laid(0)._1
+    val widths = List(drawW, drawW * 0.7, drawW * 0.5, drawW * 0.35, narrowest)
+      .filter(_ >= narrowest).distinct
+    def free(
+      x0: Double,
+      y0: Double,
+      x1: Double,
+      y1: Double,
+    ): Boolean =
+      x0 >= minX - 1e-9 && x1 <= maxX + 1e-9 && y0 >= minY - 1e-9 && y1 <= maxY + 1e-9 &&
+      taken.forall(
+        (
+          a,
+          b,
+          c,
+          d,
+        ) =>
+          x1 + LEGEND_AIR <= a || x0 - LEGEND_AIR >= c || y1 + LEGEND_AIR <= b ||
+          y0 - LEGEND_AIR >= d
+      )
+    // a free corner: bottom right, bottom left, top right, top left; the widest that fits
+    val corner = (for
+      (right, bottom) <- List((true, true), (false, true), (true, false), (false, false))
+      room            <- widths
+    yield
+      val (w, h, draw) = laid(room)
+      val left         = if right then maxX - w else minX
+      val top          = if bottom then minY + h else maxY
+      Option.when(free(left, top - h, left + w, top))(draw(left, top))
+    ).flatten.headOption
+    corner.getOrElse:
+      if drawH > drawW then
+        // beside: as narrow as fits the drawing's height, its top on the drawing's top
+        val room = widths.reverse.find(r => laid(r)._2 <= drawH).getOrElse(drawW)
+        laid(room)._3(maxX + LEGEND_GAP, maxY)
+      else
+        // under: as low as fits the drawing's width
+        laid(math.max(drawW, narrowest))._3(minX, minY - LEGEND_GAP)
 
   end legend
 
-  private val SHAPE_W = 0.5
-  private val SHAPE_H = 0.32
-  private val LINE_W  = 0.7
+  private val LEGEND_SCALE = 0.8
+  private val LEGEND_AIR   = 0.15
+
+  // the rectangle a prim covers: (x0, y0, x1, y1)
+  private def extent(p: Prim): Option[(Double, Double, Double, Double)] =
+    def of(ps: List[Pt]) =
+      Option.when(ps.nonEmpty)((
+        ps.map(_._1).min,
+        ps.map(_._2).min,
+        ps.map(_._1).max,
+        ps.map(_._2).max,
+      ))
+    p match
+      case Prim.Poly(ps, _, _, _, _)           => of(ps)
+      case Prim.Circle(c, r, _, _)             => Some((c._1 - r, c._2 - r, c._1 + r, c._2 + r))
+      case Prim.Ellipse(c, rx, ry, _, _)       => Some((c._1 - rx, c._2 - ry, c._1 + rx, c._2 + ry))
+      case Prim.Box(x, y, w, h, _, _, _, _, _) => Some((x, y, x + w, y + h))
+      case Prim.Text(at, _, _, _, _, _, _)     => Some((at._1, at._2, at._1, at._2))
+      case Prim.Connector(ps, _, _, _)         => of(ps)
+      case Prim.Curve(segments, _, _)          => of(segments.flatMap(Seg.points))
+      case Prim.Image(x, y, w, h, _, _)        => Some((x, y, x + w, y + h))
+
+  end extent
+
+  private val SHAPE_W = 0.5 * LEGEND_SCALE
+  private val SHAPE_H = 0.32 * LEGEND_SCALE
+  private val LINE_W  = 0.7 * LEGEND_SCALE
 
   // a legend item's mark: (width, height)
   private def itemMark(item: LegendItem, style: Style): (Double, Double) = item match

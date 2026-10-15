@@ -379,21 +379,25 @@ object DiagramSpec extends ZIOSpecDefault:
             case _                                                  => false,
         )
       ,
-      test("the legend stands under the drawing, every badge with what it stands for"):
+      test("the legend names every badge, in a frame that covers no box"):
         val d      = Diagram.draw(badged).toOption.get
-        val lowest = d.scene.elements.map(e => e.y - e.d / 2).min
         val said   = d.prims.collect { case Prim.Text(at, text, _, _, _, _, _) => (at, text) }
         val legend = said.filter((_, t) => t.startsWith("Solution ") || t == "Realized by (SBB)")
         val none   = Diagram.draw(badged.copy(legend = None)).toOption.get
+        val frame  = d.prims.collectFirst { case b @ Prim.Box(_, _, _, _, _, Ink.Paper, _, true, Role.Plain) => b }.get
+        def apart(e: SceneElement) =
+          e.x + e.w / 2 <= frame.x || e.x - e.w / 2 >= frame.x + frame.w ||
+          e.y + e.d / 2 <= frame.y || e.y - e.d / 2 >= frame.y + frame.h
         assertTrue(
           legend.size == 13,
-          legend.forall((at, _) => at._2 < lowest),
+          legend.forall((at, _) =>
+            at._1 >= frame.x && at._1 <= frame.x + frame.w && at._2 >= frame.y && at._2 <= frame.y + frame.h
+          ),
+          d.scene.elements.forall(apart),
           !none.prims.exists:
             case Prim.Text(_, "Realized by (SBB)", _, _, _, _, _) => true
             case _                                                =>
-              false
-          ,
-          Extent.of(d, 0)._2 < lowest - 1.0,
+              false,
         )
       ,
       test("every glyph is drawn inside its unit square"):
