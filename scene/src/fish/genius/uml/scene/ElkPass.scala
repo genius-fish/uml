@@ -209,7 +209,12 @@ private[scene] object ElkPass:
     options: SceneLayout.Options,
     modelOrder: Boolean,
   ): Unit =
-    elkNode.setProperty(CoreOptions.DIRECTION, Direction.DOWN)
+    elkNode.setProperty(
+      CoreOptions.DIRECTION,
+      options.direction match
+        case SceneLayout.Direction.Down  => Direction.DOWN
+        case SceneLayout.Direction.Right => Direction.RIGHT,
+    )
     // A fixed seed and the model's own order make the same graph give the same scene;
     // ELK 0.9.1 can fail on model order with hierarchy, so a caller may switch it off.
     elkNode.setProperty(CoreOptions.RANDOM_SEED, Integer.valueOf(SEED))

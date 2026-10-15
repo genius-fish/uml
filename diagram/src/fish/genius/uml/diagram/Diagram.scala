@@ -37,14 +37,16 @@ object Diagram:
   end Style
 
   // pageWidth is the width a diagram should keep within, in centimetres: a row wider
-  // folds, so the diagram is printed at its own size rather than scaled down
+  // folds, so the diagram is printed at its own size rather than scaled down; direction
+  // Right lays the layers out left to right (a chain drawn wide, for a slide) and folds no row
   final case class Options(
     style: Style = Style(),
     nodeSpacing: Double = 0.8,
     layerSpacing: Double = 1.1,
     containerPadding: Double = 0.35,
     maxPerRow: Int = 0,
-    pageWidth: Double = 13.0)
+    pageWidth: Double = 13.0,
+    direction: SceneLayout.Direction = SceneLayout.Direction.Down)
 
   // What was drawn, and the scene it was drawn from; `overflow` counts the lines wider
   // than their room, which only a single word longer than the widest box can make.
@@ -85,6 +87,7 @@ object Diagram:
           labelSize = text => labels.get(text).map(l => (l.w, l.h)),
           compact = true,
           rowWidth = options.pageWidth,
+          direction = options.direction,
         ),
       )
     // ELK sizes a container from its children, so a long name may not fit beside its

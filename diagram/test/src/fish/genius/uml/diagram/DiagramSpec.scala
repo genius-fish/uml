@@ -143,6 +143,20 @@ object DiagramSpec extends ZIOSpecDefault:
           erp.d > Diagram.Style().boxHeight,
         )
       ,
+      test("a chain runs down the page by default, and left to right when asked"):
+        val chain                    = SceneGraph(
+          "chain",
+          (1 to 5).toList.map(i => leaf(s"n$i", s"Step $i", ShapeType.ApplicationComponent)),
+          (1 to 4).toList.map(i => edge(s"e$i", s"n$i", s"n${i + 1}", RelationshipType.Flow)),
+        )
+        def span(d: Diagram.Drawing) =
+          val es = d.scene.elements
+          (es.map(e => e.x + e.w).max - es.map(_.x).min, es.map(e => e.y + e.d).max - es.map(_.y).min)
+        val (downW, downH)           = span(Diagram.draw(chain).toOption.get)
+        val right                    = Diagram.Options(direction = SceneLayout.Direction.Right)
+        val (rightW, rightH)         = span(Diagram.draw(chain, right).toOption.get)
+        assertTrue(downH > downW, rightW > rightH)
+      ,
       test("each connector has its own end: no two meet a box at the same point"):
         val ends = drawing.scene.relationships.flatMap(r => r.start.toList ++ r.end.toList)
         assertTrue(

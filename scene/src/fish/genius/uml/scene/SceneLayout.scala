@@ -47,7 +47,16 @@ object SceneLayout:
     spreadPorts: Boolean = false,
     labelSize: String => Option[(Double, Double)] = _ => None,
     compact: Boolean = false,
-    rowWidth: Double = 0)
+    rowWidth: Double = 0,
+    direction: Direction = Direction.Down)
+
+  /**
+   * Which way the layers run: down the page (the default, and back to front in a scene), or
+   * left to right, which draws a chain (a flow) wide instead of tall. Laid out to the right,
+   * no row is folded: the rows are the layers' columns then.
+   */
+  enum Direction derives CanEqual:
+    case Down, Right
 
   def layout(graph: SceneGraph, options: Options = Options()): Either[SceneError, Scene] =
     graph.problems match
@@ -78,7 +87,9 @@ object SceneLayout:
   ): Either[SceneError, (Map[SceneId, Sides], ElkPass.Built)] =
     for
       plain <- ElkPass.run(structure, Map.empty, Nil, options, modelOrder)
-      folds = ElkPass.foldsOf(structure, plain, options)
+      folds =
+        if options.direction == Direction.Right then Nil
+        else ElkPass.foldsOf(structure, plain, options)
       first <- if folds.isEmpty then Right(plain)
       else ElkPass.run(structure, Map.empty, folds, options, modelOrder)
       laid  <- settle(

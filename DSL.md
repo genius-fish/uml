@@ -1311,6 +1311,10 @@ apart, in the order they part.
   cannot (it fails on some nested graphs) the layout falls back to the plain one.
 - `rowWidth`: a row of one parent wider than this (a page, `Diagram.Options.pageWidth`,
   13 cm) folds, so the diagram prints at its own size rather than scaled down.
+- `direction` (`SceneLayout.Direction`, also on `Diagram.Options`): `Down`, the default,
+  runs the layers down the page (back to front in a scene); `Right` runs them left to
+  right, which draws a chain wide instead of tall (a figure for a slide). Laid out to the
+  right no row is folded, since the rows are the layers' columns then.
 - `labelSize`: how large a connector's label is, so ELK keeps room for it.
   `SceneRelationship.label` carries where it went. ELK places the label of a connector
   that crosses a container's edge in another frame; when the room it kept is off the
