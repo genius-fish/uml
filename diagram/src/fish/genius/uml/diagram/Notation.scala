@@ -45,6 +45,11 @@ enum Role derives CanEqual:
   case Patch(on: Role)
   // drawn in a layer's colour of its own: the heads of a connector in a colour (its ink)
   case Inked(layer: String)
+  // a mark (an icon, a sign) on a faded box: its lines and solid parts in that colour, by
+  // name, at a mark's weight, and its light parts in paper
+  case Faint(colour: String)
+
+end Role
 
 // how a line of text is set: its weight, and whether it is the main text or quieter
 enum Weight derives CanEqual:
@@ -104,13 +109,16 @@ enum Prim derives CanEqual:
     centred: Boolean = true,
     backdrop: Option[Role] = None)
 
-  // with `ink`, the line and its heads in that layer's colour instead of the line's
+  // with `ink`, the line and its heads in that layer's colour instead of the line's; with
+  // `weight`, the line that many times its normal width and its heads grown with it
+  // (Look.headScale), as an integration's volume is drawn
   case Connector(
     points: List[Pt],
     dash: Dash,
     start: Option[Head],
     end: Option[Head],
-    ink: Option[String] = None)
+    ink: Option[String] = None,
+    weight: Double = 1.0)
 
   // a filled outline in a colour of its own (hex), as a logo is drawn: moves, lines and
   // cubic curves, each piece closed; with evenOdd an inner piece cuts a hole

@@ -1218,6 +1218,12 @@ triangle) for an open risk; `Decision` (the flowchart diamond with a question ma
 an open decision; and the API styles `Rest`, `GraphQl`, `Grpc`, `Event` and `Batch`. The
 box grows by a row when its lines leave no room, and wide enough for the row.
 
+A badge's `text` (`Badge(glyph, label, text = Some("06/2027"))`) is a short word set right
+after its sign, at the caption's size in the muted ink, its capitals centred on the sign: a
+phase-out's date, a risk's code or count. The row counts it, so the box widens for it, and
+the next badge stands a little further off so each sign reads with its own text. A blank
+text is none. The legend names the badge by its label alone.
+
 The signs are one family (`Signs`): each is drawn on a grid of 24 units, every line 2
 units wide with round caps and joins, its ink within units 2 to 22, sized optically (a
 circle 20 units across, a square 18, a triangle and a diamond to the edges of that area).
@@ -1253,6 +1259,21 @@ SceneNode(SceneId("crm"), NodeKind.Element(ShapeType.ApplicationComponent), "CRM
   tag = Some(CornerTag("T", "#2E7D32")))
 ```
 
+A node marked `faded` is drawn paler, as an element a gap analysis removes: its fill 38%
+of its layer (or of its own `fill`) against paper, its edge, icon and signs in a lighter
+ink, and its text as light as it can be while its name and note keep WCAG's 4.5:1 and its
+caption and badge texts 3:1 on every ground they stand on (the fill, the top of its
+fall-off, a container's field). Each writer derives these colours from the palette it
+draws with (`Look.Colours.fade`, named `am-fade-<part>-<layer>`): TikZ as xcolor mixes
+(`\colorlet{am-fade-fill-am-business}{am-business!38!am-paper}`) after the layer colours,
+so a document's own layer colours fade too. The text's share is worked out from the palette
+the writer knows; a document that redefines `am-text` or `am-paper` darker or lighter
+after the fact is not checked. A palette whose text holds on no mix gets black or white,
+written as a colour of its own. A container fades its frame, field and header; what stands
+in it keeps its own look. A grouping, a junction, a logo and a tag are not faded.
+`LegendItem.Faded(shape, text)` shows a faded sample, in the shape's layer with its icon,
+or on paper without one.
+
 A node's `fill` (six hex digits, `#` allowed) sets it apart from its layer: the box is
 drawn in that colour as in a layer of its own (edge, fall-off and icon mixed from it).
 The colour travels in `Drawing.colours`, as `am-fill-<hex>`, and every writer defines it.
@@ -1261,6 +1282,15 @@ An edge's `colour` (`SceneEdge.colour`, six hex digits) does the same for a rela
 its line and its filled heads are drawn in that colour, which the scene carries on
 `SceneRelationship.colour` and the drawing on `Prim.Connector.ink`. A dossier sets a
 proposed flow apart this way.
+
+An edge's `weight` (`SceneEdge.weight`, 1 by default) draws its line that many times its
+normal width, an integration's volume say (1.0, 1.6 and 2.4 for three steps). One that is
+not a positive number counts as 1, one above 2.5 as 2.5. Its dashes and dots grow with it,
+and its heads half as fast ((1 + weight) / 2, so 1.7 at 2.4), so a heavy line still ends
+in a head that reads; TikZ scales the arrows.meta tips, SVG and PNG the drawn heads. Where
+it passes over another line, the piece drawn again keeps its weight. In the drawing it is
+`Prim.Connector.weight`. `LegendItem.Weighted(relationship, weight, text)` shows it as a
+line of that relationship, half as long again as a plain one.
 
 A node's `outline` (`Outline(dash, weight, colour)`, from `scene`) draws its edge its own
 way and keeps its fill: the layer's colour, or `fill` when one is set. `dash` is a
@@ -1296,12 +1326,16 @@ section's items (`LegendItem`) are a badge (`Mark`), an element type (`Shape`: a
 box in its layer's colour with the type's icon), a relationship (`Line`: a short line
 with that relationship's dash and ends), a logo (`LogoMark`), an outline (`Outlined(outline,
 text, shape = None)`: a small box with that edge, in the shape's layer with its icon when
-a shape is given, on paper otherwise) or a tag (`Tagged(tag, text)`: its pill), each with
-its text.
+a shape is given, on paper otherwise), a tag (`Tagged(tag, text)`: its pill), a faded box
+(`Faded(shape, text)`), a weighted line (`Weighted(relationship, weight, text)`) or a
+swatch (`Swatch(fill, text, shape = None)`: a small box in that fill, drawn as a node with
+that `fill` is, with the shape's icon when one is given; a step of a heat scale, listed in
+the order given; a fill that is not six hex digits leaves the box out and keeps the text),
+each with its text.
 Each group's items stand in as many columns as fit the drawing's width, every mark
 centred in a column as wide as the widest of its group. Empty sections are left out,
 and a legend with nothing in it draws none. The 3D scene leaves badges, fill, outline, tag,
-edge signs and legend out.
+faded, edge signs, edge weights and legend out.
 
 ### Logos
 

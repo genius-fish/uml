@@ -346,8 +346,7 @@ object Activity:
       case Prim.Box(x, y, w, h, r, fill, d, k, role, pen) =>
         Prim.Box(x + dx, y + dy, w, h, r, fill, d, k, role, pen)
       case t: Prim.Text                                   => t.copy(baseline = p(t.baseline))
-      case Prim.Connector(ps, dash, start, end, ink)      =>
-        Prim.Connector(ps.map(p), dash, start, end, ink)
+      case c: Prim.Connector                              => c.copy(points = c.points.map(p))
       case c: Prim.Curve => c.copy(segments = c.segments.map(Seg.shift(_, dx, dy)))
       case s: Prim.Path  => s.copy(segments = s.segments.map(Seg.shift(_, dx, dy)))
       case i: Prim.Image => i.copy(x = i.x + dx, y = i.y + dy)

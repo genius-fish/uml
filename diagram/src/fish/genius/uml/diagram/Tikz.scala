@@ -24,8 +24,13 @@ object Tikz:
     val colours = all.map: (name, hex) =>
       if own.exists(_._1 == name) then s"\\definecolor{$name}{HTML}{$hex}"
       else s"\\providecolor{$name}{HTML}{$hex}"
+    // a faded layer's colours mixed from the layer as the document defines it, after it
+    val faded   = drawing.faded.distinct.flatMap(Look.colours(palette ++ drawing.colours).fade)
+      .map(d =>
+        d.mix.fold(s"\\definecolor{${d.name}}{HTML}{${d.hex}}")(m => s"\\colorlet{${d.name}}{$m}")
+      )
     val face    = drawing.style.typeface
-    (colours ++ List(s"\\begin{tikzpicture}[$STYLES]") ++
+    (colours ++ faded ++ List(s"\\begin{tikzpicture}[$STYLES]") ++
     drawing.prims.map(prim(_, face)) ++ List("\\end{tikzpicture}")).mkString("\n")
 
   // a standalone document around the picture, for pdflatex, set in the drawing's face
@@ -50,7 +55,7 @@ object Tikz:
 
   private def pt(p: Pt): String = s"(${f(p._1)},${f(p._2)})"
 
-  private def dash(d: Dash, scale: Double = 1.0): Option[String] = d match
+  private def dash(d: Dash, scale: Double): Option[String] = d match
     case Dash.Solid  => None
     case Dash.Dashed =>
       Some(s"dash pattern=on ${f(Look.DASH_ON * scale)}pt off ${f(Look.DASH_OFF * scale)}pt")
@@ -134,6 +139,11 @@ object Tikz:
       List(Some("draw=am-line"), plain(fill).map("fill=" + _), Some("line width=0.5pt"))
     case Role.Inked(layer)     =>
       List(Some(s"draw=$layer"), plain(fill).map("fill=" + _), Some("line width=0.5pt"))
+    case Role.Faint(colour)    =>
+      val inked = fill match
+        case Ink.Line => Some(colour)
+        case other    => plain(other)
+      List(Some(s"draw=$colour"), inked.map("fill=" + _), Some("line width=0.4pt"))
 
   // the fill a text's backdrop takes, the field it stands on
   private def field(role: Role): Option[String] = role match
@@ -203,12 +213,18 @@ object Tikz:
         case None       => ("inner sep=0pt,", at._1)
       s"\\node[anchor=$anchor,$patch text=$ink,font=\\sffamily$select" +
       s"\\fontsize{${f(size)}}{${f(size * 1.2)}}\\selectfont] at ${pt((x, at._2))} {${escape(text)}};"
-    case Prim.Connector(points, d, start, end, ink)                 =>
-      val arrows = s"arrows={${start.map(head).getOrElse("")}-${end.map(head).getOrElse("")}}"
+    case Prim.Connector(points, d, start, end, ink, weight)         =>
+      // a heavier line, its dashes and dots grown with it, and its tips grown half as fast
+      val w            = Look.linkWeight(weight)
+      val heavy        = Option.when(w != 1.0)(s"line width=${f(Look.LINK_LINE * w)}pt")
+      val scale        = Look.headScale(w)
+      def tip(h: Head) =
+        if scale == 1.0 then head(h) else head(h).replaceFirst("]$", s",scale=${f(scale)}]")
+      val arrows       = s"arrows={${start.map(tip).getOrElse("")}-${end.map(tip).getOrElse("")}}"
       // the draw colour only: a filled tip takes it already, and fill= on a \\draw fills the
       // polygon a bent path encloses (APP-2257)
-      val colour = ink.map(i => s"draw=$i")
-      s"\\draw${options(List(Some("am link"), dash(d), Some(arrows), colour))} " +
+      val colour       = ink.map(i => s"draw=$i")
+      s"\\draw${options(List(Some("am link"), heavy, dash(d, w), Some(arrows), colour))} " +
       points.map(pt).mkString(" -- ") + ";"
     case Prim.Curve(segments, fill, evenOdd)                        =>
       val hex = Logos.colour(fill)

@@ -19,7 +19,7 @@ object Png:
     dpi: Int = 150,
     palette: Map[String, String] = Map.empty,
   ): Array[Byte] =
-    val c                        = Look.colours(palette ++ drawing.colours)
+    val c                        = Look.colours(palette ++ drawing.colours).fading(drawing.faded)
     val scale                    = dpi / 2.54
     val (minX, minY, maxX, maxY) = Extent.of(drawing, MARGIN)
     val (w, h) = (((maxX - minX) * scale).ceil.toInt, ((maxY - minY) * scale).ceil.toInt)
@@ -42,7 +42,7 @@ object Png:
     def stroke(
       width: Double,
       d: Dash,
-      scale: Double = 1.0,
+      scale: Double,
     )                                            = d match
       case Dash.Solid  => BasicStroke(pt(width), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND)
       case Dash.Dashed => BasicStroke(
@@ -199,9 +199,10 @@ object Png:
           case Emphasis.Inked(name) => c.of(name)
           case Emphasis.Main        => c.text))
         g.drawString(text, left.toFloat, y(at._2).toFloat)
-      case con @ Prim.Connector(ps, d, _, _, ink)                     =>
+      case con @ Prim.Connector(ps, d, _, _, ink, weight)             =>
+        val heavy = Look.linkWeight(weight)
         g.setColor(colour(ink.fold(c.line)(c.of)))
-        g.setStroke(stroke(Look.LINK_LINE, d))
+        g.setStroke(stroke(Look.LINK_LINE * heavy, d, heavy))
         g.draw(path(ps, closed = false, Look.BEND * 2.54 / 72))
         Heads.of(con).foreach(draw)
       case Prim.Curve(segments, fill, evenOdd)                        =>

@@ -1,5 +1,6 @@
 package fish.genius.uml.diagram
 
+import fish.genius.uml.dsl.archimate.ShapeType
 import fish.genius.uml.scene.*
 
 // An ArchiMate graph as a flat diagram: laid out by the same ELK pass as the 3D scene
@@ -57,7 +58,10 @@ object Diagram:
     style: Style,
     family: String,
     overflow: Int,
-    colours: Map[String, String] = Map.empty)
+    colours: Map[String, String] = Map.empty,
+    // the layers a faded box or legend item is drawn from, whose faded colours each writer
+    // derives from the palette it draws with (Look.Colours.fade)
+    faded: List[String] = Nil)
 
   val PT: Double = 2.54 / 72.0
 
@@ -115,6 +119,7 @@ object Diagram:
       val byId               = byNode
       val placed             = scene.elements.map(e => e.key -> e).toMap
       val kinds              = graph.edges.map(e => e.id -> e.relationship).toMap
+      val weights            = graph.edges.map(e => e.id -> Look.linkWeight(e.weight)).toMap
       val boxes              = scene.elements.flatMap: e =>
         byId.get(e.key).toList.flatMap(n =>
           element(e, n, sized.get(n.id), headed.get(e.key), tall, style, measure)
@@ -132,7 +137,8 @@ object Diagram:
       val routes             = laidOut.zip(spread).map:
         case ((r, kind, _), points) =>
           val (dash, start, end) = Notation.ends(kind)
-          (r, points, Prim.Connector(points, dash, start, end, r.colour.flatMap(fillName)))
+          val weight             = weights.getOrElse(r.key, 1.0)
+          (r, points, Prim.Connector(points, dash, start, end, r.colour.flatMap(fillName), weight))
       // what a label may not cover: the leaves, and the containers' headers
       val taken              = scene.elements.map: e =>
         val top = e.y + e.d / 2
@@ -141,9 +147,9 @@ object Diagram:
       val fields             = scene.elements.filter(_.container).flatMap: e =>
         byNode.get(e.key).map: n =>
           val role = n.kind match
-            // a filled container's field is its own colour, as its box is drawn
-            case NodeKind.Element(shape) =>
-              Role.Container(n.fill.flatMap(fillName).getOrElse(Notation.layer(shape.group)))
+            // a filled container's field is its own colour, as its box is drawn, and a
+            // faded one's its faded colour
+            case NodeKind.Element(shape) => Role.Container(drawnLayer(n, shape))
             case _                       => Role.Group
           (e, role)
       def field(p: Pt): Role =
@@ -185,7 +191,12 @@ object Diagram:
           nodes.flatMap(n => n.tag.toList.flatMap(tagColours)) ++
           scene.relationships.flatMap(r => r.colour.flatMap(h => fillName(h).map(_ -> hexOf(h)))))
           .toMap
-      Drawing(graph.name, ordered ++ keyed, scene, style, measure.family, overflow, colours)
+      val faded   = (nodes.filter(_.faded).flatMap(n =>
+        n.kind match
+          case NodeKind.Element(shape) => List(layerOf(n, shape))
+          case _                       => Nil
+      ) ++ legendFaded(graph.legend)).distinct
+      Drawing(graph.name, ordered ++ keyed, scene, style, measure.family, overflow, colours, faded)
     end for
 
   end draw
@@ -403,7 +414,7 @@ object Diagram:
         if within(c._1, a._1, b._1) && within(a._2, c._2, d._2)
       yield (c._1, a._2, acrossPrim)
     found.distinctBy(c => (math.rint(c._1 * 1000), math.rint(c._2 * 1000))).flatMap:
-      case (x, y, Prim.Connector(_, dash, _, _, ink)) =>
+      case (x, y, Prim.Connector(_, dash, _, _, ink, weight)) =>
         List(
           Prim.Box(
             x - GAP,
@@ -415,9 +426,9 @@ object Diagram:
             stroke = false,
             role = Role.Patch(field((x, y))),
           ),
-          Prim.Connector(List((x - GAP * 1.6, y), (x + GAP * 1.6, y)), dash, None, None, ink),
+          Prim.Connector(List((x - GAP * 1.6, y), (x + GAP * 1.6, y)), dash, None, None, ink, weight),
         )
-      case _                                          => Nil
+      case _                                                  => Nil
 
   end crossings
 
@@ -489,7 +500,7 @@ object Diagram:
       val narrow = measure.wrap(node.label, style.boxWidth - wrapAt, style.nameSize, Weight.Medium)
       val w0     = if node.note.nonEmpty || narrow.size > 2 then style.wideWidth else style.boxWidth
       val set    = lines(w0)
-      val badged = badgeRow(node, style)
+      val badged = badgeRow(node, style, measure)
       val w      =
         (w0 :: badged._1 :: set.map(l =>
           measure.width(l.text, l.size, l.weight) + room(l)
@@ -658,14 +669,21 @@ object Diagram:
           penOf(node.outline),
         ) :: heading(x0 + style.padding, tabH, Role.Group)
       case NodeKind.Element(shape) =>
-        val layer = node.fill.flatMap(fillName).getOrElse(Notation.layer(shape.group))
+        val layer = drawnLayer(node, shape)
         val fill  = Ink.Layer(layer)
         val role  = if e.container then Role.Container(layer) else Role.Element(layer)
         val dash  = node.outline.fold(Dash.Solid)(o => dashOf(o.dash))
-        val pen   = penOf(node.outline)
-        def frame(radius: Double) =
+        // a faded box's edge is its faded edge, unless its outline has a colour of its own
+        val faint = Option.when(node.faded)(layerOf(node, shape))
+        val pen   =
+          val own = penOf(node.outline)
+          faint.fold(own)(l => own.copy(ink = own.ink.orElse(Some(Look.faded(Look.Faded.Edge, l)))))
+        // its marks (the icon, a band, its signs) faint, and its text paler
+        val mark  = faint.fold(Role.Mark(layer))(l => Role.Faint(Look.faded(Look.Faded.Mark, l)))
+        def toned(lines: List[Line]) = faint.fold(lines)(l => lines.map(fadeLine(_, l)))
+        def frame(radius: Double)    =
           Prim.Box(x0, y0, e.w, e.d, radius, fill, dash, role = role, pen = pen)
-        val outline               = Notation.outline(shape) match
+        val outline                  = Notation.outline(shape) match
           case Notation.Outline.Square  => List(frame(SQUARE))
           case Notation.Outline.Rounded => List(frame(ROUNDED))
           case Notation.Outline.Banded  =>
@@ -674,7 +692,7 @@ object Diagram:
               Prim.Poly(
                 List((x0, top - style.band), (x0 + e.w, top - style.band)),
                 closed = false,
-                role = Role.Mark(layer),
+                role = mark,
               ),
             )
           case Notation.Outline.Cut     =>
@@ -698,27 +716,36 @@ object Diagram:
                 pen,
               )
             )
-        val s                     = style.iconSize
-        val icon                  =
+        val s                        = style.iconSize
+        val icon                     =
           place(
             Notation.icon(shape),
             x0 + e.w - style.padding - s,
             top - style.padding - s,
             s,
-            Role.Mark(layer),
+            mark,
           )
-        val text                  =
-          if e.container then heading(x0 + style.padding, header, Role.Container(layer))
+        val text                     =
+          if e.container then
+            stack(
+              x0 + style.padding,
+              top - (header - saidH) / 2,
+              toned(said),
+              style,
+              centred = false,
+              backdrop = Some(Role.Container(layer)),
+            )
           else
-            val lines  =
+            val lines  = toned(
               box.map(_.lines).getOrElse(List(Line(node.label, style.nameSize, Weight.Medium)))
+            )
             val band   =
               if Notation.outline(shape) == Notation.Outline.Banded then style.band else 0.0
             val noteAt =
               if node.note.nonEmpty then lines.indexWhere(_.size == style.noteSize) else -1
             val height = lines.map(l => style.lead(l.size)).sum +
               (if noteAt >= 0 then style.gap else 0.0)
-            val row    = badgeRow(node, style)._2
+            val row    = badgeRow(node, style, measure)._2
             stack(
               e.x,
               e.y - band / 2 + row / 2 + height / 2,
@@ -727,13 +754,17 @@ object Diagram:
               centred = true,
               gapBefore = noteAt,
             )
-        val badges                =
-          if e.container then Nil else stamp(node.badges, e.x, y0 + style.padding, style, layer)
+        val badges                   =
+          if e.container then Nil
+          else
+            val words =
+              faint.fold(Emphasis.Muted)(l => Emphasis.Inked(Look.faded(Look.Faded.Muted, l)))
+            stamp(node.badges, e.x, y0 + style.padding, style, measure, mark, words)
         // a leaf's logo in its top left corner, as high as the icon
-        val logo                  = node.logo.filterNot(_ => e.container).toList.flatMap: l =>
+        val logo                     = node.logo.filterNot(_ => e.container).toList.flatMap: l =>
           Logos.place(l, x0 + style.padding, top - style.padding - s, logoWidth(node, style), s)
         // its tag beside the icon, on the icon's middle
-        val tag                   = node.tag.flatMap(_.valid).toList.flatMap: (code, fill) =>
+        val tag                      = node.tag.flatMap(_.valid).toList.flatMap: (code, fill) =>
           val (w, h) = tagSize(code, style, measure)
           drawTag(
             code,
@@ -748,10 +779,14 @@ object Diagram:
 
   end element
 
-  private val BADGE_GAP  = 0.06
-  private val LEGEND_GAP = 0.5
+  private val BADGE_GAP      = 0.06
+  // between a badge's mark and its text
+  private val BADGE_TEXT_GAP = 0.04
+  // between a badge with text and the next one
+  private val BADGE_WORD_GAP = 0.16
+  private val LEGEND_GAP     = 0.5
   // a logo badge stands this much higher than a glyph, since a logo has more to show
-  private val LOGO_BADGE = 1.4
+  private val LOGO_BADGE     = 1.4
 
   // the width a leaf's corner logo takes, as high as the icon
   private def logoWidth(node: SceneNode, style: Style): Double =
@@ -777,30 +812,90 @@ object Diagram:
       Logos.place(l, x, y, w, h)
     )
 
+  // the room between each badge and the next: wider after one with text, so each sign
+  // reads with its own text rather than its neighbour's
+  private def gaps(badges: List[Badge]): List[Double] =
+    badges.dropRight(1).map(b => if badgeText(b).isDefined then BADGE_WORD_GAP else BADGE_GAP)
+
+  // a badge's text as it is set, when it has one that says anything
+  private def badgeText(b: Badge): Option[String] = b.text.map(_.trim).filter(_.nonEmpty)
+
+  // the width a badge takes in a box's row: its mark, and its text after it
+  private def badgeWidth(
+    b: Badge,
+    style: Style,
+    measure: Measure,
+  ): Double =
+    mark(b, style)._1 +
+    badgeText(b).fold(0.0)(t => BADGE_TEXT_GAP + measure.width(t, style.captionSize, Weight.Regular))
+
   // The room a box's badges take: the width of their row (with the padding either
   // side), and the height it adds to the box; nothing when it has none.
-  private def badgeRow(node: SceneNode, style: Style): (Double, Double) =
+  private def badgeRow(
+    node: SceneNode,
+    style: Style,
+    measure: Measure,
+  ): (Double, Double) =
     if node.badges.isEmpty then (0.0, 0.0)
     else
-      val marks = node.badges.map(mark(_, style))
+      val widths = node.badges.map(badgeWidth(_, style, measure))
       (
-        marks.map(_._1).sum + (marks.size - 1) * BADGE_GAP + 2 * style.padding,
-        marks.map(_._2).max + style.gap,
+        widths.sum + gaps(node.badges).sum + 2 * style.padding,
+        node.badges.map(mark(_, style)._2).max + style.gap,
       )
 
   // badges in a row centred on x, standing on y: a glyph in its box's mark colour, a
-  // logo in its own
+  // logo in its own, and a badge's text after its mark at the caption's size, its capitals
+  // centred on the mark, in `words` (the muted ink, or a faded box's)
   private def stamp(
     badges: List[Badge],
     x: Double,
     y: Double,
     style: Style,
-    layer: String,
+    measure: Measure,
+    role: Role,
+    words: Emphasis,
   ): List[Prim] =
-    val widths = badges.map(mark(_, style)._1)
-    val width  = widths.sum + (badges.size - 1) * BADGE_GAP
-    val starts = widths.scanLeft(x - width / 2)((at, w) => at + w + BADGE_GAP)
-    badges.zip(starts).flatMap((b, at) => drawMark(b, at, y, style, Role.Mark(layer)))
+    val widths = badges.map(badgeWidth(_, style, measure))
+    val width  = widths.sum + gaps(badges).sum
+    val starts =
+      widths.zip(gaps(badges) :+ 0.0).scanLeft(x - width / 2)((at, wg) => at + wg._1 + wg._2)
+    badges.zip(starts).flatMap: (b, at) =>
+      val (w, h) = mark(b, style)
+      drawMark(b, at, y, style, role) ++ badgeText(b).toList.map: t =>
+        val baseline = y + h / 2 - CAP_HEIGHT * style.captionSize * PT / 2
+        Prim.Text(
+          (at + w + BADGE_TEXT_GAP, baseline),
+          t,
+          style.captionSize,
+          tone = words,
+          centred = false,
+        )
+
+  end stamp
+
+  // a faded box's layer: what its own colours are named after (Look.Colours.fade)
+  private def layerOf(node: SceneNode, shape: ShapeType): String =
+    node.fill.flatMap(fillName).getOrElse(Notation.layer(shape.group))
+
+  // the layer a box is drawn in: its own, or its faded fill
+  private def drawnLayer(node: SceneNode, shape: ShapeType): String =
+    val layer = layerOf(node, shape)
+    if node.faded then Look.faded(Look.Faded.Fill, layer) else layer
+
+  // a line of a faded box, in its faded text or its faded muted ink
+  private def fadeLine(line: Line, layer: String): Line = line.tone match
+    case Emphasis.Muted    => line.copy(tone = Emphasis.Inked(Look.faded(Look.Faded.Muted, layer)))
+    case Emphasis.Main     => line.copy(tone = Emphasis.Inked(Look.faded(Look.Faded.Text, layer)))
+    case Emphasis.Inked(_) => line
+
+  // the layers a legend's faded items are drawn from: a shape's, or the paper's
+  private def legendFaded(legend: Option[Legend]): List[String] =
+    legend.toList.flatMap(_.sections).flatMap(_.items).collect:
+      case LegendItem.Faded(shape, _) => fadedLegendLayer(shape)
+
+  private def fadedLegendLayer(shape: Option[ShapeType]): String =
+    shape.fold("am-paper")(sh => Notation.layer(sh.group))
 
   // A tag: its code in capitals at a small size (small caps, which no font is asked for,
   // so every writer sets the same letters), each character centred in a cell as wide as
@@ -880,14 +975,7 @@ object Diagram:
     else List("000000", "FFFFFF").maxBy(contrast(fill, _))
 
   // WCAG 2's contrast ratio between two colours (hex)
-  private[diagram] def contrast(a: String, b: String): Double =
-    def luminance(hex: String) =
-      val List(r, g, bl) =
-        (0 to 2).toList.map(i => Integer.parseInt(hex.substring(2 * i, 2 * i + 2), 16) / 255.0)
-          .map(c => if c <= 0.03928 then c / 12.92 else math.pow((c + 0.055) / 1.055, 2.4))
-      0.2126 * r + 0.7152 * g + 0.0722 * bl
-    val (la, lb)               = (luminance(a), luminance(b))
-    (math.max(la, lb) + 0.05) / (math.min(la, lb) + 0.05)
+  private[diagram] def contrast(a: String, b: String): Double = Look.contrast(a, b)
 
   // a tag's fill and ink, as layers of their own every writer defines
   private def tagColours(tag: CornerTag): List[(String, String)] =
@@ -921,9 +1009,10 @@ object Diagram:
   // the colours a legend's outline samples are drawn in
   private def legendColours(legend: Option[Legend]): List[(String, String)] =
     legend.toList.flatMap(_.sections).flatMap(_.items).flatMap:
-      case LegendItem.Outlined(o, _, _) => outlineColour(Some(o))
-      case LegendItem.Tagged(t, _)      => tagColours(t)
-      case _                            => Nil
+      case LegendItem.Outlined(o, _, _)  => outlineColour(Some(o))
+      case LegendItem.Tagged(t, _)       => tagColours(t)
+      case LegendItem.Swatch(fill, _, _) => fillName(fill).map(_ -> hexOf(fill)).toList
+      case _                             => Nil
 
   private[diagram] def penOf(outline: Option[Outline]): Pen =
     outline.fold(Pen.Normal)(o => Pen(o.effectiveWeight, o.validColour.flatMap(fillName)))
@@ -953,12 +1042,12 @@ object Diagram:
       if bounds.isEmpty then (0.0, 0.0) else (bounds.map(_._2).min, bounds.map(_._4).max)
     // what the legend may not cover: boxes, frames, marks, label patches, and the lines
     val taken        = drawn.flatMap:
-      case Prim.Connector(ps, _, _, _, _) =>
+      case Prim.Connector(ps, _, _, _, _, _) =>
         ps.zip(ps.drop(1)).map((a, b) =>
           (math.min(a._1, b._1), math.min(a._2, b._2), math.max(a._1, b._1), math.max(a._2, b._2))
         )
-      case _: Prim.Text                   => Nil
-      case p                              => extent(p).toList
+      case _: Prim.Text                      => Nil
+      case p                                 => extent(p).toList
     val groups       =
       Option.when(l.entries.nonEmpty)((None, l.entries.map(LegendItem.Mark(_)))).toList ++
       l.sections.filter(_.items.nonEmpty).map(s => (Some(s.title), s.items))
@@ -1098,7 +1187,7 @@ object Diagram:
       case Prim.Ellipse(c, rx, ry, _, _) => Some((c._1 - rx, c._2 - ry, c._1 + rx, c._2 + ry))
       case Prim.Box(x, y, w, h, _, _, _, _, _, _) => Some((x, y, x + w, y + h))
       case Prim.Text(at, _, _, _, _, _, _)        => Some((at._1, at._2, at._1, at._2))
-      case Prim.Connector(ps, _, _, _, _)         => of(ps)
+      case Prim.Connector(ps, _, _, _, _, _)      => of(ps)
       case Prim.Curve(segments, _, _)             => of(segments.flatMap(Seg.points))
       // its ink reaches half its line beyond its points
       case Prim.Path(segments, _, w, _, _)        =>
@@ -1115,9 +1204,12 @@ object Diagram:
 
   end extent
 
-  private val SHAPE_W = 0.5 * LEGEND_SCALE
-  private val SHAPE_H = 0.32 * LEGEND_SCALE
-  private val LINE_W  = 0.7 * LEGEND_SCALE
+  private val SHAPE_W    = 0.5 * LEGEND_SCALE
+  private val SHAPE_H    = 0.32 * LEGEND_SCALE
+  private val LINE_W     = 0.7 * LEGEND_SCALE
+  // a weighted line's sample against a plain one's, and the widest head's span in points
+  private val WEIGHTED_W = 1.5
+  private val HEAD_SPAN  = 5.4
 
   // a legend item's mark: (width, height)
   private def itemMark(
@@ -1125,13 +1217,19 @@ object Diagram:
     style: Style,
     measure: Measure,
   ): (Double, Double) = item match
-    case LegendItem.Mark(b)           => mark(b, style)
-    case LegendItem.Tagged(tag, _)    =>
+    case LegendItem.Mark(b)            => mark(b, style)
+    case LegendItem.Tagged(tag, _)     =>
       tag.validCode.fold((0.0, 0.0))(tagSize(_, style, measure))
-    case LegendItem.Shape(_, _)       => (SHAPE_W, SHAPE_H)
-    case LegendItem.Outlined(_, _, _) => (SHAPE_W, SHAPE_H)
-    case LegendItem.Line(_, _)        => (LINE_W, style.badgeSize)
-    case LegendItem.LogoMark(logo, _) =>
+    case LegendItem.Shape(_, _)        => (SHAPE_W, SHAPE_H)
+    case LegendItem.Outlined(_, _, _)  => (SHAPE_W, SHAPE_H)
+    case LegendItem.Faded(_, _)        => (SHAPE_W, SHAPE_H)
+    case LegendItem.Swatch(fill, _, _) =>
+      if fillName(fill).isDefined then (SHAPE_W, SHAPE_H) else (0.0, 0.0)
+    case LegendItem.Line(_, _)         => (LINE_W, style.badgeSize)
+    // longer, so its heads, grown with it, leave some line between them; as high as they are
+    case LegendItem.Weighted(_, w, _)  =>
+      (LINE_W * WEIGHTED_W, math.max(style.badgeSize, HEAD_SPAN * Look.headScale(w) * PT))
+    case LegendItem.LogoMark(logo, _)  =>
       val h = style.badgeSize * LOGO_BADGE
       (Logos.width(logo, h), h)
 
@@ -1143,17 +1241,17 @@ object Diagram:
     style: Style,
     measure: Measure,
   ): List[Prim] = item match
-    case LegendItem.Mark(b)                     => drawMark(b, x, y, style, Role.Mark("am-line"))
-    case LegendItem.Tagged(tag, _)              =>
+    case LegendItem.Mark(b)                      => drawMark(b, x, y, style, Role.Mark("am-line"))
+    case LegendItem.Tagged(tag, _)               =>
       tag.valid.toList.flatMap((code, fill) => drawTag(code, fill, x, y, style, measure))
-    case LegendItem.Shape(shape, _)             =>
+    case LegendItem.Shape(shape, _)              =>
       val layer  = Notation.layer(shape.group)
       val radius =
         if Notation.outline(shape) == Notation.Outline.Rounded then ROUNDED / 2 else SQUARE
       val s      = SHAPE_H * 0.62
       Prim.Box(x, y, SHAPE_W, SHAPE_H, radius, Ink.Layer(layer), role = Role.Element(layer)) ::
       place(Notation.icon(shape), x + (SHAPE_W - s) / 2, y + (SHAPE_H - s) / 2, s, Role.Mark(layer))
-    case LegendItem.Outlined(outline, _, shape) =>
+    case LegendItem.Outlined(outline, _, shape)  =>
       val dash = dashOf(outline.dash)
       val pen  = penOf(Some(outline))
       shape match
@@ -1187,11 +1285,51 @@ object Diagram:
             pen = pen,
           ))
       end match
-    case LegendItem.Line(relationship, _)       =>
+    case LegendItem.Line(relationship, _)        =>
       val (dash, start, end) = Notation.ends(relationship)
       val mid                = y + style.badgeSize / 2
       List(Prim.Connector(List((x, mid), (x + LINE_W, mid)), dash, start, end))
-    case LegendItem.LogoMark(logo, _)           =>
+    case LegendItem.Weighted(relationship, w, _) =>
+      val (dash, start, end) = Notation.ends(relationship)
+      val (mw, mh)           = itemMark(item, style, measure)
+      val mid                = y + mh / 2
+      List(Prim.Connector(
+        List((x, mid), (x + mw, mid)),
+        dash,
+        start,
+        end,
+        weight = Look.linkWeight(w),
+      ))
+    case LegendItem.Faded(shape, _)              =>
+      val base   = fadedLegendLayer(shape)
+      val layer  = Look.faded(Look.Faded.Fill, base)
+      val faint  = Role.Faint(Look.faded(Look.Faded.Mark, base))
+      val radius =
+        shape.filter(Notation.outline(_) == Notation.Outline.Rounded).fold(SQUARE)(_ => ROUNDED / 2)
+      val s      = SHAPE_H * 0.62
+      Prim.Box(
+        x,
+        y,
+        SHAPE_W,
+        SHAPE_H,
+        radius,
+        Ink.Layer(layer),
+        role = Role.Element(layer),
+        pen = Pen(ink = Some(Look.faded(Look.Faded.Edge, base))),
+      ) :: shape.toList.flatMap(sh =>
+        place(Notation.icon(sh), x + (SHAPE_W - s) / 2, y + (SHAPE_H - s) / 2, s, faint)
+      )
+    case LegendItem.Swatch(fill, _, shape)       =>
+      fillName(fill).toList.flatMap: layer =>
+        val radius = shape.filter(Notation.outline(_) == Notation.Outline.Rounded).fold(SQUARE)(_ =>
+          ROUNDED / 2
+        )
+        val s      = SHAPE_H * 0.62
+        Prim.Box(x, y, SHAPE_W, SHAPE_H, radius, Ink.Layer(layer), role = Role.Element(layer)) ::
+        shape.toList.flatMap(sh =>
+          place(Notation.icon(sh), x + (SHAPE_W - s) / 2, y + (SHAPE_H - s) / 2, s, Role.Mark(layer))
+        )
+    case LegendItem.LogoMark(logo, _)            =>
       val (w, h) = itemMark(item, style, measure)
       Logos.place(logo, x, y, w, h)
 

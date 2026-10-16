@@ -15,7 +15,7 @@ object Svg:
   private val MARGIN = 0.15
 
   def document(drawing: Diagram.Drawing, palette: Map[String, String] = Map.empty): String =
-    val c                        = Look.colours(palette ++ drawing.colours)
+    val c                        = Look.colours(palette ++ drawing.colours).fading(drawing.faded)
     val measure                  = Measure(drawing.style.typeface)
     val (minX, minY, maxX, maxY) = Extent.of(drawing, MARGIN)
     def x(v: Double)             = f((v - minX) * PX)
@@ -23,7 +23,7 @@ object Svg:
     def len(v: Double)           = f(v * PX)
     def hex(h: String)           = s"#$h"
     def points(ps: List[Pt])     = ps.map(q => s"${x(q._1)},${y(q._2)}").mkString(" ")
-    def dash(d: Dash, scale: Double = 1.0): String = d match
+    def dash(d: Dash, scale: Double): String = d match
       case Dash.Solid  => ""
       case Dash.Dashed =>
         s""" stroke-dasharray="${f(Look.DASH_ON * scale * PT)} ${f(Look.DASH_OFF * scale * PT)}""""
@@ -33,11 +33,11 @@ object Svg:
     def width(
       base: Double,
       d: Dash,
-      scale: Double = 1.0,
-    ): String                                      =
+      scale: Double,
+    ): String                                =
       val points = if d == Dash.Dotted then Look.DOT_LINE * scale else base * scale
       s""" stroke-width="${f(points * PT)}""""
-    val layers                                     = drawing.prims.collect:
+    val layers                               = drawing.prims.collect:
       case Prim.Box(_, _, _, _, _, _, _, _, Role.Element(layer), _) => layer
       case Prim.Poly(_, _, _, _, Role.Element(layer), _)            => layer
     .distinct
@@ -47,7 +47,7 @@ object Svg:
       stroke: Boolean = true,
       pen: Pen = Pen.Normal,
       d: Dash = Dash.Solid,
-    ): String                                      =
+    ): String                                =
       val (look, inked) = c.look(role, fill)
       val edge          = look.map(e => pen.ink.fold(e)(c.of))
       val filled        = role match
@@ -65,7 +65,7 @@ object Svg:
       s"""fill="$filled"$drawn$shadow"""
     end paint
     // a polyline with its bends rounded, as TikZ's rounded corners draws it
-    def rounded(ps: List[Pt]): String              =
+    def rounded(ps: List[Pt]): String        =
       val r     = Look.BEND * 2.54 / 72
       val steps = ps.indices.drop(1).dropRight(1).map: i =>
         val (a, v, b) = (ps(i - 1), ps(i), ps(i + 1))
@@ -82,14 +82,14 @@ object Svg:
       (s"M ${x(ps.head._1)} ${y(ps.head._2)}" +: steps :+
       s"L ${x(ps.last._1)} ${y(ps.last._2)}").mkString(" ")
     end rounded
-    def path(segments: List[Seg]): String          = segments.map:
+    def path(segments: List[Seg]): String    = segments.map:
       case Seg.Move(p)        => s"M ${x(p._1)} ${y(p._2)}"
       case Seg.Line(p)        => s"L ${x(p._1)} ${y(p._2)}"
       case Seg.Cubic(a, b, p) =>
         s"C ${x(a._1)} ${y(a._2)} ${x(b._1)} ${y(b._2)} ${x(p._1)} ${y(p._2)}"
       case Seg.Close          => "Z"
     .mkString(" ")
-    def prim(p: Prim): String                      = p match
+    def prim(p: Prim): String                = p match
       case Prim.Poly(ps, closed, fill, d, role, pen)                  =>
         val tag              = if closed then "polygon" else "polyline"
         val (fillAttr, rest) =
@@ -131,10 +131,11 @@ object Svg:
             PT)}" text-anchor="$anchor"$face stroke="none" fill="${hex(ink)}">${escape(
             text
           )}</text>"""
-      case con @ Prim.Connector(ps, d, _, _, ink)                     =>
+      case con @ Prim.Connector(ps, d, _, _, ink, weight)             =>
+        val w = Look.linkWeight(weight)
         (s"""<path d="${rounded(ps)}" fill="none" stroke="${hex(
             ink.fold(c.line)(c.of)
-          )}"${width(Look.LINK_LINE, d)}${dash(d)}/>""" ::
+          )}"${width(Look.LINK_LINE, d, w)}${dash(d, w)}/>""" ::
         Heads.of(con).map(prim)).mkString("\n")
       case Prim.Curve(segments, fill, evenOdd)                        =>
         val rule = if evenOdd then """ fill-rule="evenodd"""" else ""
@@ -152,7 +153,7 @@ object Svg:
           )}" preserveAspectRatio="none" href="data:${escape(mime)};base64,${escape(
             data
           )}" xlink:href="data:${escape(mime)};base64,${escape(data)}"/>"""
-    val defs                                       =
+    val defs                                 =
       layers.map(l =>
         s"""<linearGradient id="fall-$l" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${hex(
             c.top(l)
@@ -210,7 +211,7 @@ object Extent:
       case Prim.Ellipse(c, rx, ry, _, _) => List((c._1 - rx, c._2 - ry), (c._1 + rx, c._2 + ry))
       case Prim.Box(x, y, w, h, _, _, _, _, _, _) => List((x, y), (x + w, y + h))
       case Prim.Text(at, _, _, _, _, _, _)        => List(at)
-      case Prim.Connector(ps, _, _, _, _)         => ps
+      case Prim.Connector(ps, _, _, _, _, _)      => ps
       case Prim.Curve(segments, _, _)             => segments.flatMap(Seg.points)
       case Prim.Path(segments, _, w, _, _)        =>
         segments.flatMap(Seg.points).flatMap(p =>

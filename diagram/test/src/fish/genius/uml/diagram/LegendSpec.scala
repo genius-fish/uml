@@ -85,7 +85,7 @@ object LegendSpec extends ZIOSpecDefault:
   private def below(p: Prim): Boolean = p match
     case Prim.Text(at, _, _, _, _, _, _)            => within(at)
     case b @ Prim.Box(x, y, w, h, _, _, _, _, _, _) => b != frame && within((x, y)) && within((x + w, y + h))
-    case Prim.Connector(ps, _, _, _, _)             => ps.forall(within)
+    case Prim.Connector(ps, _, _, _, _, _)          => ps.forall(within)
     case Prim.Curve(segs, _, _)                     => segs.flatMap(Seg.points).forall(within)
     case _                                          => false
 
@@ -183,7 +183,7 @@ object LegendSpec extends ZIOSpecDefault:
         val legendBoxes = drawing.prims.filter(below).collect:
           case Prim.Box(_, _, w, _, _, _, _, _, Role.Element(layer), _) if w < 1 => layer
         val lines       = drawing.prims.filter(below).collect:
-          case Prim.Connector(_, dash, start, end, _) => (dash, start, end)
+          case Prim.Connector(_, dash, start, end, _, _) => (dash, start, end)
         assertTrue(
           legendBoxes.toSet == Set("am-business", "am-application", "am-technology"),
           legendBoxes.size == 4,

@@ -93,7 +93,7 @@ object DiagramGallery extends ZIOSpecDefault:
     val kinds = RelationshipType.values.toList
     SceneGraph(
       "Every relationship",
-      kinds.zipWithIndex.flatMap((k, i) =>
+      kinds.zipWithIndex.flatMap((_, i) =>
         List(
           leaf(s"s$i", s"Source ${i + 1}", ShapeType.ApplicationComponent),
           leaf(s"t$i", s"Target ${i + 1}", ShapeType.ApplicationService),
@@ -500,6 +500,10 @@ object DiagramGallery extends ZIOSpecDefault:
       "logos" -> LogoSpec.logos,
       "legend" -> LegendSpec.legended,
       "signs" -> signs,
+      "retiring" -> EncodingSpec.retiring,
+      "gap" -> EncodingSpec.gap,
+      "volumes" -> EncodingSpec.volumes,
+      "heat" -> EncodingSpec.heatMap,
     )
 
   private def palette: Map[String, String] =

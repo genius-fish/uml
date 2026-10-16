@@ -10,7 +10,7 @@ object ActivitySpec extends ZIOSpecDefault:
   private val drawn = Activity.draw(order)
 
   private def arrows(d: Diagram.Drawing) =
-    d.prims.collect { case c @ Prim.Connector(_, Dash.Solid, None, Some(Head.FilledTriangle), _) => c }
+    d.prims.collect { case c @ Prim.Connector(_, Dash.Solid, None, Some(Head.FilledTriangle), _, _) => c }
 
   private def texts(d: Diagram.Drawing) = d.prims.collect { case t: Prim.Text => t }
 
@@ -103,7 +103,7 @@ object ActivitySpec extends ZIOSpecDefault:
       ,
       test("a note stands beside its node in a bracket, tied to it by a dotted line"):
         val words  = texts(claim).map(_.text)
-        val dotted = claim.prims.collect { case c @ Prim.Connector(_, Dash.Dotted, None, None, _) => c }
+        val dotted = claim.prims.collect { case c @ Prim.Connector(_, Dash.Dotted, None, None, _, _) => c }
         assertTrue(words.contains("Within ten working days"), dotted.size == 1)
       ,
       test("tasks keep their widest when there is room, and narrow when there is not"):
@@ -218,7 +218,7 @@ object ActivitySpec extends ZIOSpecDefault:
             arrows(drawn).map(_.points.head).filter(p =>
               math.abs(p._2 - cy) < 1e-6 && (math.abs(p._1 - x0) < 1e-6 || math.abs(p._1 - x1) < 1e-6)
             )
-        val strokes = drawn.prims.collect { case c @ Prim.Connector(_, _, None, None, _) => c }
+        val strokes = drawn.prims.collect { case c @ Prim.Connector(_, _, None, None, _, _) => c }
         assertTrue(
           corners.size == 2,
           texts(drawn).exists(_.text == "yes"),
@@ -285,9 +285,9 @@ object ActivitySpec extends ZIOSpecDefault:
       test("the shipment draws every flow, message and association, clear of its nodes, the same twice"):
         val g        = DiagramGallery.shipment
         val messages = shipment.prims.collect {
-          case c @ Prim.Connector(_, Dash.Dashed, Some(Head.OpenDot), Some(Head.OpenTriangle), _) => c
+          case c @ Prim.Connector(_, Dash.Dashed, Some(Head.OpenDot), Some(Head.OpenTriangle), _, _) => c
         }
-        val ties     = shipment.prims.collect { case c @ Prim.Connector(_, Dash.Dotted, None, Some(Head.Barb), _) => c }
+        val ties = shipment.prims.collect { case c @ Prim.Connector(_, Dash.Dotted, None, Some(Head.Barb), _, _) => c }
         assertTrue(
           arrows(shipment).size == g.flows.size,
           messages.size == g.messages.size,
@@ -353,7 +353,7 @@ object ActivitySpec extends ZIOSpecDefault:
       test("data stand beside their task, tied by a dotted line with its head where the data goes"):
         val confirm = task(shipment, "Confirm")
         val ties    = shipment.prims.collect {
-          case c @ Prim.Connector(_, Dash.Dotted, _, _, _) if c.start.isDefined || c.end.isDefined => c
+          case c @ Prim.Connector(_, Dash.Dotted, _, _, _, _) if c.start.isDefined || c.end.isDefined => c
         }
         val read    = ties.find(c => math.abs(c.points.head._1 - (confirm.x + confirm.w)) < 1e-6)
         assertTrue(
@@ -366,7 +366,7 @@ object ActivitySpec extends ZIOSpecDefault:
       test("a message to a pool drawn as a black box ends at that pool's edge"):
         val lanes    = boxes(shipment, _ == Role.Group).filter(_.fill == Ink.Empty).sortBy(_.x)
         val customer = lanes.head
-        val ends     = shipment.prims.collect { case Prim.Connector(ps, Dash.Dashed, _, Some(Head.OpenTriangle), _) =>
+        val ends = shipment.prims.collect { case Prim.Connector(ps, Dash.Dashed, _, Some(Head.OpenTriangle), _, _) =>
           ps.last
         }
         assertTrue(ends.count(p => math.abs(p._1 - (customer.x + customer.w)) < 1e-6) == 2)
@@ -398,7 +398,7 @@ object ActivitySpec extends ZIOSpecDefault:
         val d      = Activity.draw(g)
         val frames = boxes(d, _.isInstanceOf[Role.Container]).sortBy(_.w)
         val deep   = task(d, "Deep")
-        val end    = d.prims.collect { case Prim.Connector(ps, Dash.Dashed, _, _, _) => ps.last }
+        val end    = d.prims.collect { case Prim.Connector(ps, Dash.Dashed, _, _, _, _) => ps.last }
         val outer  = frames.last
         assertTrue(
           frames.size == 2,
@@ -461,7 +461,7 @@ object ActivitySpec extends ZIOSpecDefault:
         ))
         val header =
           d.prims.collect { case Prim.Poly(List(a, b), false, _, _, Role.Group, _) if a._2 == b._2 => a._2 }.head
-        val line   = d.prims.collect { case Prim.Connector(ps, Dash.Dashed, _, _, _) => ps }.head
+        val line   = d.prims.collect { case Prim.Connector(ps, Dash.Dashed, _, _, _, _) => ps }.head
         val label  = texts(d).find(_.text == "order").get
         assertTrue(line.forall(_._2 < header - 0.1), label.baseline._2 + 0.25 < header)
       ,
