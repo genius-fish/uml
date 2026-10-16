@@ -96,15 +96,24 @@ publish:
 #        make release-finalize
 # ---------------------------------------------------------------------------
 
+# The release path runs the full gate and stages NOTHING (GFSDK-2). Whatever fix/fmt changed is
+# for a human to review and commit; mill-release's clean-tree check counts staged changes as
+# dirty, so `git add -u` here only turned a reformat into "Uncommitted changes detected".
+# A tree the gate left dirty stops before releasePrepare, with the files named.
 release-prepare:
 	@if [ -z "$(TYPE)" ]; then \
 		echo "[ERROR] Usage: make release-prepare TYPE=patch|minor|major"; exit 1; \
 	fi
+	@if [ -n "$$(git status --porcelain | grep -v '^??')" ]; then \
+		echo "[ERROR] The tree is not clean. Commit or stash before release-prepare:"; \
+		git status --short | grep -v '^??'; exit 1; \
+	fi
 	./mill clean
 	$(MAKE) validate
 	@if [ -n "$$(git status --porcelain | grep -v '^??')" ]; then \
-		echo "[WARN] Validation made formatting changes, staging them"; \
-		git add -u; \
+		echo "[ERROR] validate (fix/fmt) changed the tree. Nothing was staged."; \
+		echo "[ERROR] Review and commit these changes, then run release-prepare again:"; \
+		git status --short | grep -v '^??'; exit 1; \
 	fi
 	./mill release.releasePrepare --releaseType $(TYPE)
 
