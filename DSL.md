@@ -1207,12 +1207,50 @@ taller.
 ### Badges, a fill of its own, and the legend
 
 A leaf may carry `badges`: small signs at its foot, in a row centred under what it says,
-drawn solid in its box's mark colour (`Badge(glyph, label)`). `Glyph` has twelve
-geometric glyphs to tell things apart (circle, square, triangles up and down, diamond,
-star, hexagon, cross, pentagon, ring, ellipse, chevron), and four with a meaning: a globe
-and a padlock for a public and a closed API, a warning and a failure for a degraded and
-a failing health. The box grows by a row when its lines leave no room, and wide enough
-for the row.
+in its box's mark colour (`Badge(glyph, label)`). `Glyph` has twelve geometric glyphs to
+tell things apart (circle, square, triangles up and down, diamond, star, hexagon, cross,
+pentagon, ring, ellipse, chevron), and signs with a meaning: a globe and a padlock for a
+public and a closed API; a warning and a failure for a degraded and a failing health;
+`GapAdd`, `GapModify` and `GapRemove` (+, ~ and − in a frame) for what a gap does to an
+element (a retained one has no sign); `PhaseOut` (the sun setting) for an element being
+phased out; `Risk` (a shield with an exclamation mark, a shape apart from the warning's
+triangle) for an open risk; `Decision` (the flowchart diamond with a question mark) for
+an open decision; and the API styles `Rest`, `GraphQl`, `Grpc`, `Event` and `Batch`. The
+box grows by a row when its lines leave no room, and wide enough for the row.
+
+The signs are one family (`Signs`): each is drawn on a grid of 24 units, every line 2
+units wide with round caps and joins, its ink within units 2 to 22, sized optically (a
+circle 20 units across, a square 18, a triangle and a diamond to the edges of that area).
+A solid sign is filled and stroked at the same weight, so its corners round as a line's
+do. Every sign is a vector path (`Prim.Path`, its line width in centimetres), never a
+font's glyph, so TikZ, SVG and PNG draw the same outline, and its weight scales with it:
+0.57 pt at a badge's 0.24 cm, 0.45 pt in the legend.
+
+An edge's `sign` (`SceneEdge.sign`, a `Glyph`) stands at the middle of its line, on a
+disc of the field it lies on so the line stops short of it; just before the line's label
+when it has one, so the two read together; in the line's colour when it has its own. The
+API styles are meant for it:
+
+```scala
+SceneEdge(SceneId("e1"), SceneId("shop"), SceneId("api"), RelationshipType.Flow,
+  label = Some("orders"), sign = Some(Glyph.Rest))
+```
+
+A node's `tag` (`CornerTag(code, fill)`, from `scene`) is a short code in a small pill
+beside the icon at the box's top right (on a container, in its header): a verdict (I, T,
+M, E), a classification. The code is one to three characters, set in capitals at 0.72 of
+the name's size (small caps), each in a cell as wide as the widest figure or capital
+(tabular figures; a column of verdicts has pills of one width). Its ink is the text colour
+or paper, whichever stands out more on the fill, and black or white when neither keeps
+WCAG's 4.5:1. The name and caption wrap as they would without it and the box grows by
+its room on both sides, so it never covers them, the icon or a logo. A longer or blank
+code, or a fill that is not six hex digits, is left out. The scene's JSON carries it on
+`SceneElement.tag`.
+
+```scala
+SceneNode(SceneId("crm"), NodeKind.Element(ShapeType.ApplicationComponent), "CRM",
+  tag = Some(CornerTag("T", "#2E7D32")))
+```
 
 A node's `fill` (six hex digits, `#` allowed) sets it apart from its layer: the box is
 drawn in that colour as in a layer of its own (edge, fall-off and icon mixed from it).
@@ -1255,13 +1293,14 @@ narrow as its height allows) or under a wider one (as low as its width allows). 
 legend never makes a tall diagram taller or a wide one wider. A
 section's items (`LegendItem`) are a badge (`Mark`), an element type (`Shape`: a small
 box in its layer's colour with the type's icon), a relationship (`Line`: a short line
-with that relationship's dash and ends), a logo (`LogoMark`) or an outline (`Outlined(outline,
+with that relationship's dash and ends), a logo (`LogoMark`), an outline (`Outlined(outline,
 text, shape = None)`: a small box with that edge, in the shape's layer with its icon when
-a shape is given, on paper otherwise), each with its text.
+a shape is given, on paper otherwise) or a tag (`Tagged(tag, text)`: its pill), each with
+its text.
 Each group's items stand in as many columns as fit the drawing's width, every mark
 centred in a column as wide as the widest of its group. Empty sections are left out,
-and a legend with nothing in it draws none. The 3D scene leaves badges, fill, outline and
-legend out.
+and a legend with nothing in it draws none. The 3D scene leaves badges, fill, outline, tag,
+edge signs and legend out.
 
 ### Logos
 
@@ -1491,8 +1530,11 @@ val drawing = Activity.draw(
 
 The layout is layered. The flows that close a loop (found by a walk from the starts,
 following flows in their order) are set aside; every node is placed on the row its
-longest path from a start gives it, and in its lane on a track of its own when its row
-holds more than one node there, ordered under the nodes it comes from. A flow goes
+longest path from a start gives it, and in its lane in a slot of its own when its row
+holds more than one node there, ordered under the nodes it comes from. A slot is as wide
+as its node with its data, notes and event names, the lane's spare room shared out, so a
+lane is as wide as its widest row; a node stays under the one it comes from when its slot
+allows. A flow goes
 straight down when it can, else down, across in the gap above its target (or below its
 source) and down again, else round the right of what is in the way; a loop goes back
 up round the right of everything it passes and into the right of its target. Where
@@ -1500,4 +1542,7 @@ two flows cross, the one across is broken, as in `Diagram`. The walk and the ran
 recurse once per node of a chain, which suits a process of dossier size (hundreds of
 steps), not one of tens of thousands. Tasks wrap narrower
 (`Options.taskWidth`, then 2.4 and 2.0 cm) until the diagram keeps within
-`Options.pageWidth`.
+`Options.pageWidth`, but a task's name never takes more than two lines: a task whose
+name would take three widens until it takes two (up to 6 cm). The name is set at
+`Style.nameSize`, the size of box text in the other diagrams, so a process that keeps
+within the page prints its tasks as large as the views beside it.
