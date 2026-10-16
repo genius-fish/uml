@@ -155,6 +155,23 @@ object SceneLayoutSpec extends ZIOSpecDefault:
           """{}""".fromJson[Outline].toOption.contains(Outline()),
         )
       ,
+      test("a node's tag is carried to its element and written in the scene's JSON"):
+        val verdict = CornerTag("T", "#2E7D32")
+        val tagged = row.copy(nodes = row.nodes.map(n => if n.label == "Middle" then n.copy(tag = Some(verdict)) else n))
+        val laidOut = SceneLayout.layout(tagged).toOption.get
+        val json    = laidOut.toJson
+        assertTrue(
+          laidOut.elements.find(_.name == "Middle").flatMap(_.tag).contains(verdict),
+          laidOut.elements.filter(_.name != "Middle").forall(_.tag.isEmpty),
+          json.contains(""""tag":{"code":"T","fill":"#2E7D32"}"""),
+          json.fromJson[Scene].toOption.contains(laidOut),
+          // what a diagram draws: one to three characters in capitals, a fill of six hex digits
+          CornerTag(" c1 ", "#abcdef").valid.contains(("C1", "ABCDEF")),
+          CornerTag("ABCD", "#ABCDEF").valid.isEmpty,
+          CornerTag("  ", "#ABCDEF").valid.isEmpty,
+          CornerTag("I", "green").valid.isEmpty,
+        )
+      ,
       test("every node gets a plinth, and no two plinths on one floor overlap"):
         assertTrue(scene.elements.size == graph.allNodes.size, SceneChecks.overlaps(scene).isEmpty)
       ,

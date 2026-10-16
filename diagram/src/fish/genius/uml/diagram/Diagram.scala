@@ -100,7 +100,7 @@ object Diagram:
           byNode.get(e.key).map: n =>
             e.key -> measure.wrap(
               n.label,
-              e.w - 3 * style.padding - style.iconSize,
+              e.w - 3 * style.padding - style.iconSize - tagRoom(n, style, measure),
               style.nameSize,
               Weight.SemiBold,
             )
@@ -182,6 +182,7 @@ object Diagram:
         (nodes.flatMap(n => n.fill.flatMap(h => fillName(h).map(_ -> hexOf(h)))) ++
           nodes.flatMap(n => outlineColour(n.outline)) ++
           legendColours(graph.legend) ++
+          nodes.flatMap(n => n.tag.toList.flatMap(tagColours)) ++
           scene.relationships.flatMap(r => r.colour.flatMap(h => fillName(h).map(_ -> hexOf(h)))))
           .toMap
       Drawing(graph.name, ordered ++ keyed, scene, style, measure.family, overflow, colours)
@@ -431,16 +432,24 @@ object Diagram:
       // the name and caption keep clear of the icon, and of a little air beside it
       // a logo in the top left corner keeps the name as clear as the icon does
       val corner           = math.max(style.iconSize, logoWidth(node, style))
-      val clear            = 2 * (style.padding + corner + ICON_AIR)
+      // they wrap as they would without a tag, and the box grows by the room the tag
+      // takes beside the icon, on both sides so they stay centred (APP-2261)
+      val wrapAt           = 2 * (style.padding + corner + ICON_AIR)
+      val clear            =
+        2 * (style.padding + math.max(
+          style.iconSize + tagRoom(node, style, measure),
+          logoWidth(node, style),
+        ) +
+        ICON_AIR)
       val full             = 2 * style.padding
       def lines(w: Double) =
         measure
-          .wrap(node.label, w - clear, style.nameSize, Weight.Medium)
+          .wrap(node.label, w - wrapAt, style.nameSize, Weight.Medium)
           .map(Line(_, style.nameSize, Weight.Medium)) ++
         node.caption.toList.flatMap(c =>
           measure.wrap(
             c,
-            w - clear,
+            w - wrapAt,
             style.captionSize,
           ).map(Line(_, style.captionSize, tone = Emphasis.Muted))
         ) ++
@@ -448,7 +457,7 @@ object Diagram:
           measure.wrap(n, w - full, style.noteSize).map(Line(_, style.noteSize))
         )
       def room(l: Line)    = if l.size == style.noteSize then full else clear
-      val narrow = measure.wrap(node.label, style.boxWidth - clear, style.nameSize, Weight.Medium)
+      val narrow = measure.wrap(node.label, style.boxWidth - wrapAt, style.nameSize, Weight.Medium)
       val w0     = if node.note.nonEmpty || narrow.size > 2 then style.wideWidth else style.boxWidth
       val set    = lines(w0)
       val badged = badgeRow(node, style)
@@ -694,7 +703,18 @@ object Diagram:
         // a leaf's logo in its top left corner, as high as the icon
         val logo                  = node.logo.filterNot(_ => e.container).toList.flatMap: l =>
           Logos.place(l, x0 + style.padding, top - style.padding - s, logoWidth(node, style), s)
-        outline ++ icon ++ logo ++ text ++ badges
+        // its tag beside the icon, on the icon's middle
+        val tag                   = node.tag.flatMap(_.valid).toList.flatMap: (code, fill) =>
+          val (w, h) = tagSize(code, style, measure)
+          drawTag(
+            code,
+            fill,
+            x0 + e.w - style.padding - s - ICON_AIR - w,
+            top - style.padding - s / 2 - h / 2,
+            style,
+            measure,
+          )
+        outline ++ icon ++ logo ++ tag ++ text ++ badges
     end match
 
   end element
@@ -753,6 +773,99 @@ object Diagram:
     val starts = widths.scanLeft(x - width / 2)((at, w) => at + w + BADGE_GAP)
     badges.zip(starts).flatMap((b, at) => drawMark(b, at, y, style, Role.Mark(layer)))
 
+  // A tag: its code in capitals at a small size (small caps, which no font is asked for,
+  // so every writer sets the same letters), each character centred in a cell as wide as
+  // the widest figure or capital (tabular figures, likewise, and so a column of verdicts,
+  // I beside M, has pills of one width), in a pill as high as the caps with air round them,
+  // its ends round; a character wider still (a symbol) widens its own tag's cells
+  private def tagText(style: Style): Double = style.nameSize * TAG_TEXT
+
+  private def tagCell(
+    code: String,
+    style: Style,
+    measure: Measure,
+  ): Double =
+    val size = tagText(style)
+    (('0' to '9') ++ ('A' to 'Z') ++ code).map(_.toString)
+      .map(c => measure.width(c, size, Weight.SemiBold)).max
+
+  // (width, height) of a tag's pill
+  private[diagram] def tagSize(
+    code: String,
+    style: Style,
+    measure: Measure,
+  ): (Double, Double) =
+    val size = tagText(style)
+    val h    = (CAP_HEIGHT * size + 2 * TAG_AIR_Y) * PT
+    val w    = code.length * tagCell(code, style, measure) + 2 * TAG_AIR_X * PT
+    (Measure.round(math.max(w, h)), Measure.round(h))
+
+  // the room a node's tag takes beside its icon; nothing without one
+  private def tagRoom(
+    node: SceneNode,
+    style: Style,
+    measure: Measure,
+  ): Double =
+    node.tag.flatMap(_.validCode).fold(0.0)(c => tagSize(c, style, measure)._1 + ICON_AIR)
+
+  // the pill from (x, y), its lower left corner, and its code
+  private def drawTag(
+    code: String,
+    fill: String,
+    x: Double,
+    y: Double,
+    style: Style,
+    measure: Measure,
+  ): List[Prim] =
+    val (w, h)   = tagSize(code, style, measure)
+    val cell     = tagCell(code, style, measure)
+    val size     = tagText(style)
+    val name     = fillName(fill).get
+    val ink      = fillName(tagInk(fill)).get
+    val left     = x + (w - code.length * cell) / 2
+    val baseline = y + h / 2 - CAP_HEIGHT * size * PT / 2
+    Prim.Box(x, y, w, h, h / 2, Ink.Layer(name), role = Role.Inked(name)) ::
+    code.toList.zipWithIndex.map: (c, i) =>
+      Prim.Text(
+        (left + (i + 0.5) * cell, baseline),
+        c.toString,
+        size,
+        Weight.SemiBold,
+        Emphasis.Inked(name = ink),
+      )
+
+  end drawTag
+
+  // the ink a tag's code is set in on its fill: the text colour or paper, whichever stands
+  // out more, and black or white when neither reaches 4.5:1 (one of them always does)
+  private[diagram] def tagInk(fill: String): String =
+    val dark  = Notation.palette.toMap.apply("am-text")
+    val light = Notation.palette.toMap.apply("am-paper")
+    val best  = List(dark, light).maxBy(contrast(fill, _))
+    if contrast(fill, best) >= 4.5 then best
+    else List("000000", "FFFFFF").maxBy(contrast(fill, _))
+
+  // WCAG 2's contrast ratio between two colours (hex)
+  private[diagram] def contrast(a: String, b: String): Double =
+    def luminance(hex: String) =
+      val List(r, g, bl) =
+        (0 to 2).toList.map(i => Integer.parseInt(hex.substring(2 * i, 2 * i + 2), 16) / 255.0)
+          .map(c => if c <= 0.03928 then c / 12.92 else math.pow((c + 0.055) / 1.055, 2.4))
+      0.2126 * r + 0.7152 * g + 0.0722 * bl
+    val (la, lb)               = (luminance(a), luminance(b))
+    (math.max(la, lb) + 0.05) / (math.min(la, lb) + 0.05)
+
+  // a tag's fill and ink, as layers of their own every writer defines
+  private def tagColours(tag: CornerTag): List[(String, String)] =
+    tag.valid.toList.flatMap((_, fill) =>
+      List(fill, tagInk(fill)).flatMap(h => fillName(h).map(_ -> h))
+    )
+
+  private val TAG_TEXT   = 0.72 // a tag's code against the name's size
+  private val CAP_HEIGHT = 0.72 // a capital's height against its size
+  private val TAG_AIR_X  = 1.8  // points either side of the code
+  private val TAG_AIR_Y  = 1.5  // points above and under the caps
+
   // A fill colour as the name of a layer of its own, so a box in it is drawn as any
   // other (its edge, its fall-off and its icon mixed from it); None for what is not a
   // colour.
@@ -775,7 +888,8 @@ object Diagram:
   private def legendColours(legend: Option[Legend]): List[(String, String)] =
     legend.toList.flatMap(_.sections).flatMap(_.items).flatMap:
       case LegendItem.Outlined(o, _, _) => outlineColour(Some(o))
-      case _                            => None
+      case LegendItem.Tagged(t, _)      => tagColours(t)
+      case _                            => Nil
 
   private[diagram] def penOf(outline: Option[Outline]): Pen =
     outline.fold(Pen.Normal)(o => Pen(o.effectiveWeight, o.validColour.flatMap(fillName)))
@@ -822,7 +936,7 @@ object Diagram:
       entryW: Double,
       rowH: Double)
     val measured     = groups.map: (heading, items) =>
-      val marks = items.map(itemMark(_, small))
+      val marks = items.map(itemMark(_, small, measure))
       val markW = marks.map(_._1).max
       val markH = marks.map(_._2).max
       Group(
@@ -872,8 +986,8 @@ object Diagram:
                 val (row, column) = (i / cols, i % cols)
                 val x             = left + pad + column * g.entryW
                 val yTop          = start - row * g.rowH
-                val (mw, mh)      = itemMark(item, small)
-                drawItem(item, x + (g.markW - mw) / 2, yTop - (g.markH + mh) / 2, small) ++
+                val (mw, mh)      = itemMark(item, small, measure)
+                drawItem(item, x + (g.markW - mw) / 2, yTop - (g.markH + mh) / 2, small, measure) ++
                 stack(
                   x + g.markW + 0.1,
                   yTop - (g.markH - style.lead(labelSize)) / 2,
@@ -962,8 +1076,14 @@ object Diagram:
   private val LINE_W  = 0.7 * LEGEND_SCALE
 
   // a legend item's mark: (width, height)
-  private def itemMark(item: LegendItem, style: Style): (Double, Double) = item match
+  private def itemMark(
+    item: LegendItem,
+    style: Style,
+    measure: Measure,
+  ): (Double, Double) = item match
     case LegendItem.Mark(b)           => mark(b, style)
+    case LegendItem.Tagged(tag, _)    =>
+      tag.validCode.fold((0.0, 0.0))(tagSize(_, style, measure))
     case LegendItem.Shape(_, _)       => (SHAPE_W, SHAPE_H)
     case LegendItem.Outlined(_, _, _) => (SHAPE_W, SHAPE_H)
     case LegendItem.Line(_, _)        => (LINE_W, style.badgeSize)
@@ -977,8 +1097,11 @@ object Diagram:
     x: Double,
     y: Double,
     style: Style,
+    measure: Measure,
   ): List[Prim] = item match
     case LegendItem.Mark(b)                     => drawMark(b, x, y, style, Role.Mark("am-line"))
+    case LegendItem.Tagged(tag, _)              =>
+      tag.valid.toList.flatMap((code, fill) => drawTag(code, fill, x, y, style, measure))
     case LegendItem.Shape(shape, _)             =>
       val layer  = Notation.layer(shape.group)
       val radius =
@@ -1025,7 +1148,7 @@ object Diagram:
       val mid                = y + style.badgeSize / 2
       List(Prim.Connector(List((x, mid), (x + LINE_W, mid)), dash, start, end))
     case LegendItem.LogoMark(logo, _)           =>
-      val (w, h) = itemMark(item, style)
+      val (w, h) = itemMark(item, style, measure)
       Logos.place(logo, x, y, w, h)
 
   // an icon drawn in a unit square, placed at (x, y), scaled to s, as a mark of its box

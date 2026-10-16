@@ -113,7 +113,10 @@ object Svg:
           case Weight.Medium   => """ font-weight="500""""
           case Weight.Italic   => """ font-style="italic""""
           case Weight.Regular  => ""
-        val ink    = if tone == Emphasis.Muted then c.muted else c.text
+        val ink    = tone match
+          case Emphasis.Muted       => c.muted
+          case Emphasis.Inked(name) => c.of(name)
+          case Emphasis.Main        => c.text
         val patch  = backdrop.map: on =>
           val w   = measure.width(text, size, weight)
           val pad = 1.2 * 2.54 / 72

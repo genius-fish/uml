@@ -188,7 +188,10 @@ object Tikz:
       )
     case Prim.Text(at, text, size, weight, tone, centred, backdrop) =>
       val anchor     = if centred then "base" else "base west"
-      val ink        = if tone == Emphasis.Muted then "am-muted" else "am-text"
+      val ink        = tone match
+        case Emphasis.Muted       => "am-muted"
+        case Emphasis.Inked(name) => name
+        case Emphasis.Main        => "am-text"
       val select     = face.select.getOrElse(weight, "")
       // on a backdrop the node grows by its padding, so a west-anchored line moves
       // back by as much to keep its text where Diagram put it

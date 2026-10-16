@@ -50,8 +50,11 @@ enum Role derives CanEqual:
 enum Weight derives CanEqual:
   case Regular, Medium, SemiBold, Italic
 
+// the main text, quieter text, or text in a colour of its own by name (a tag's code on
+// its fill)
 enum Emphasis derives CanEqual:
   case Main, Muted
+  case Inked(name: String)
 
 enum Prim derives CanEqual:
 

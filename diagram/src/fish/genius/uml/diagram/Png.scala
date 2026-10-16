@@ -194,7 +194,10 @@ object Png:
             width + 2 * pt(1.2),
             m.getAscent + m.getDescent,
           ))
-        g.setColor(colour(if tone == Emphasis.Muted then c.muted else c.text))
+        g.setColor(colour(tone match
+          case Emphasis.Muted       => c.muted
+          case Emphasis.Inked(name) => c.of(name)
+          case Emphasis.Main        => c.text))
         g.drawString(text, left.toFloat, y(at._2).toFloat)
       case con @ Prim.Connector(ps, d, _, _, ink)                     =>
         g.setColor(colour(ink.fold(c.line)(c.of)))

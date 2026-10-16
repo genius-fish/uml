@@ -115,6 +115,28 @@ object Outline:
   val MAX_WEIGHT = 4.0
   given JsonCodec[Outline] = DeriveJsonCodec.gen
 
+// A short code in a small pill at a box's top right, in a fill of its own: a verdict
+// (I, T, M, E), a classification. A diagram sets it in capitals at a small size (small
+// caps) with every character in a cell of one width (tabular figures), in a dark or a
+// light ink, whichever keeps a contrast of at least 4.5:1 on the fill. A code of more
+// than three characters, or a blank one, is left out, and so is a fill that is not six
+// hex digits.
+final case class CornerTag(code: String, fill: String):
+
+  def validCode: Option[String] =
+    Option(code.trim).filter(c => c.nonEmpty && c.codePointCount(0, c.length) <= CornerTag.MAX_CODE)
+      .map(_.toUpperCase)
+
+  def validFill: Option[String] =
+    Option(fill.stripPrefix("#")).filter(_.matches("[0-9A-Fa-f]{6}")).map(_.toUpperCase)
+
+  // the tag as it is drawn: its code and its fill, when both are good
+  def valid: Option[(String, String)] = validCode.zip(validFill)
+
+object CornerTag:
+  val MAX_CODE = 3
+  given JsonCodec[CornerTag] = DeriveJsonCodec.gen
+
 // What a diagram's marks stand for, drawn under it: its badges (entries), and sections
 // of their own, each with a heading, such as the element types, the relationships and
 // the logos a diagram holds.
@@ -127,8 +149,8 @@ final case class LegendSection(title: String, items: List[LegendItem])
 
 // One line of a legend: a badge (its glyph or logo), an element type (a small box in
 // its layer's colour with its icon), a relationship (a short line with its ends), a
-// logo, or an outline (a small box with that edge: in a shape's layer with its icon
-// when one is given, else on paper); each with what it stands for.
+// logo, an outline (a small box with that edge: in a shape's layer with its icon
+// when one is given, else on paper), or a tag (its pill); each with what it stands for.
 enum LegendItem derives CanEqual:
   case Mark(badge: Badge)
   case Shape(shape: ShapeType, text: String)
@@ -140,12 +162,15 @@ enum LegendItem derives CanEqual:
     text: String,
     shape: Option[ShapeType] = None)
 
+  case Tagged(tag: CornerTag, text: String)
+
   def label: String = this match
     case Mark(badge)       => badge.label
     case Shape(_, t)       => t
     case Line(_, t)        => t
     case LogoMark(_, t)    => t
     case Outlined(_, t, _) => t
+    case Tagged(_, t)      => t
 
 end LegendItem
 
@@ -166,7 +191,8 @@ final case class SceneNode(
   fill: Option[String] = None,
   badges: List[Badge] = Nil,
   logo: Option[Logo] = None,
-  outline: Option[Outline] = None):
+  outline: Option[Outline] = None,
+  tag: Option[CornerTag] = None):
   def isContainer: Boolean = children.nonEmpty
 
   // this node and everything standing on it, parents before children

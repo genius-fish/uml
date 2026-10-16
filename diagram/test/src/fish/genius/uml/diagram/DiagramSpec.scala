@@ -345,6 +345,129 @@ object DiagramSpec extends ZIOSpecDefault:
           d.scene.relationships.find(_.key == SceneId("ab")).flatMap(_.colour).contains("#2F6DB5"),
         )
       ,
+      test("a tag's code keeps 4.5:1 on any fill, in the text colour or paper where they do"):
+        // every colour of a 16-step cube, the greys and the ArchiMate layers among them
+        val steps = (0 to 15).map(i => f"${i * 17}%02X")
+        val fills = for r <- steps; g <- steps; b <- steps yield s"$r$g$b"
+        assertTrue(
+          fills.forall(f => Diagram.contrast(f, Diagram.tagInk(f)) >= 4.5),
+          Diagram.tagInk("FFFFFF") == "1F1F1F",
+          Diagram.tagInk("1F1F1F") == "FFFFFF",
+          math.abs(Diagram.contrast("000000", "FFFFFF") - 21.0) < 1e-9,
+        )
+      ,
+      test("a tag stands beside the icon at the top right, clear of the name, the caption and the logo"):
+        val measure             = Measure(Diagram.Style().typeface)
+        def node(
+          id: String,
+          label: String,
+          tag: CornerTag,
+        )                       =
+          leaf(id, label, ShapeType.ApplicationComponent, Some("[IT System: Java, Kafka]"))
+            .copy(tag = Some(tag), logo = Some(LogoSpec.framed))
+        val graph               = SceneGraph(
+          "Tagged",
+          List(
+            node("crm", "Customer Relationship Management Platform", CornerTag("T", "#2E7D32")),
+            node("dwh", "DWH", CornerTag("C3", "#FFEB3B")),
+            node("ods", "Operational Data Store", CornerTag("11", "#1A237E")),
+            SceneNode(
+              SceneId("bad"),
+              NodeKind.Element(ShapeType.ApplicationComponent),
+              "Untagged",
+              tag = Some(CornerTag("ABCD", "#000000")),
+            ),
+          ),
+          Nil,
+        )
+        val d                   = Diagram.draw(graph).toOption.get
+        val pills               =
+          d.prims.collect { case b @ Prim.Box(_, _, _, _, _, Ink.Layer(n), _, _, Role.Inked(m), _) if n == m => b }
+        val codes               = d.prims.collect { case t @ Prim.Text(_, _, _, _, Emphasis.Inked(_), _, _) => t }
+        // the ink the rest of the box's text and marks take up
+        val words               = d.prims.collect:
+          case t @ Prim.Text(_, _, _, _, tone, _, _) if !tone.isInstanceOf[Emphasis.Inked] =>
+            val w = measure.width(t.text, t.size, t.weight)
+            val h = t.size * Diagram.PT
+            (t.baseline._1 - w / 2, t.baseline._2 - 0.25 * h, t.baseline._1 + w / 2, t.baseline._2 + 0.75 * h)
+        val marks               = d.prims.collect:
+          case Prim.Poly(ps, _, _, _, Role.Mark(_), _) =>
+            (ps.map(_._1).min, ps.map(_._2).min, ps.map(_._1).max, ps.map(_._2).max)
+          case Prim.Circle(c, r, _, Role.Mark(_))      => (c._1 - r, c._2 - r, c._1 + r, c._2 + r)
+          case Prim.Curve(segs, _, _)                  =>
+            val ps = segs.flatMap(Seg.points); (ps.map(_._1).min, ps.map(_._2).min, ps.map(_._1).max, ps.map(_._2).max)
+        def apart(a: (Double, Double, Double, Double), b: Prim.Box) =
+          a._3 <= b.x + 1e-6 || a._1 >= b.x + b.w - 1e-6 || a._4 <= b.y + 1e-6 || a._2 >= b.y + b.h - 1e-6
+        def within(b: Prim.Box) = d.scene.elements.exists(e =>
+          b.x >= e.x - e.w / 2 && b.x + b.w <= e.x + e.w / 2 && b.y >= e.y - e.d / 2 && b.y + b.h <= e.y + e.d / 2
+        )
+        // tabular: the same cells for "11" as for any other two characters
+        val ods                 = codes.filter(c =>
+          pills.exists(p =>
+            p.y < c.baseline._2 && c.baseline._2 < p.y + p.h && p.x < c.baseline._1 && c.baseline._1 < p.x + p.w &&
+            p.h > 0 && d.prims.contains(p) && c.text == "1"
+          )
+        )
+        val c3                  = codes.filter(c => c.text == "C" || c.text == "3")
+        assertTrue(
+          pills.size == 3,
+          pills.forall(within),
+          pills.forall(p => words.forall(apart(_, p))),
+          pills.forall(p => marks.forall(apart(_, p))),
+          codes.map(_.text).sorted == List("1", "1", "3", "C", "T"),
+          codes.forall(_.weight == Weight.SemiBold),
+          math.abs((ods(1).baseline._1 - ods(0).baseline._1) - (c3(1).baseline._1 - c3(0).baseline._1)) < 1e-9,
+          // a tag widens its box rather than wrap its name or caption again
+          {
+            val bare = Diagram.draw(graph.copy(nodes = graph.nodes.map(_.copy(tag = None)))).toOption.get
+            def said(x: Diagram.Drawing)              =
+              x.prims.collect { case Prim.Text(_, t, _, _, Emphasis.Main | Emphasis.Muted, _, _) => t }.sorted
+            def width(x: Diagram.Drawing, id: String) = x.scene.elements.find(_.key == SceneId(id)).get.w
+            said(bare) == said(d) && width(d, "dwh") > width(bare, "dwh")
+          },
+          // two characters, one width, whatever they are
+          pills.filter(_.w > pills.map(_.w).min + 1e-9).map(_.w).distinct.size == 1,
+          d.colours.get("am-fill-2e7d32").contains("2E7D32"),
+          d.colours.get(s"am-fill-${Diagram.tagInk("2E7D32").toLowerCase}").nonEmpty,
+          Tikz.picture(d).contains(s"text=am-fill-${Diagram.tagInk("1A237E").toLowerCase}"),
+          Svg.document(d).contains(s"""fill="#${Diagram.tagInk("FFEB3B")}">C</text>"""),
+          Png.image(d).nonEmpty,
+          d.overflow == 0,
+        )
+      ,
+      test("a tag stands in the legend as its pill, and a tag on a container in its header"):
+        val graph = SceneGraph(
+          "Verdicts",
+          List(
+            SceneNode(
+              SceneId("domain"),
+              NodeKind.Element(ShapeType.ApplicationComponent),
+              "Sales domain",
+              List(leaf("crm", "CRM", ShapeType.ApplicationComponent)),
+              tag = Some(CornerTag("M", "#F57C00")),
+            )
+          ),
+          Nil,
+          legend = Some(Legend(
+            "Verdict",
+            Nil,
+            List(LegendSection("TIME", List(LegendItem.Tagged(CornerTag("I", "#1565C0"), "Invest")))),
+          )),
+        )
+        val d     = Diagram.draw(graph).toOption.get
+        val pills =
+          d.prims.collect { case _ @Prim.Box(_, _, _, _, _, Ink.Layer(n), _, _, Role.Inked(m), _) if n == m => n }
+        val box   = d.scene.elements.find(_.key == SceneId("domain")).get
+        val code  = d.prims.collect { case t @ Prim.Text(_, "M", _, _, Emphasis.Inked(_), _, _) => t }.head
+        assertTrue(
+          pills.sorted == List("am-fill-1565c0", "am-fill-f57c00"),
+          d.colours.contains("am-fill-1565c0"),
+          // in the header: the container's top band, at its right
+          code.baseline._2 > box.y + box.d / 2 - 0.6,
+          code.baseline._1 > box.x,
+          d.prims.exists { case Prim.Text(_, "Invest", _, _, _, _, _) => true; case _ => false },
+        )
+      ,
       test("a node with an outline of its own keeps its fill and draws its edge that way"):
         val proposed = Outline(Stroke.Dashed, 2.0, Some("#D9534F"))
         def outlined(

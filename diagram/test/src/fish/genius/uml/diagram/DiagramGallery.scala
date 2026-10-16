@@ -258,8 +258,9 @@ object DiagramGallery extends ZIOSpecDefault:
         leaf("geo2", "Another block", ShapeType.ApplicationService).copy(badges = marks.slice(6, 12).map(badge)),
         leaf("api", "Order API", ShapeType.ApplicationComponent).copy(badges = marks.slice(12, 16).map(badge)),
         leaf("gap", "Legacy checkout", ShapeType.ApplicationComponent).copy(badges = marks.drop(16).map(badge)),
-        leaf("shop", "Web Shop", ShapeType.ApplicationComponent),
-        leaf("stock", "Stock", ShapeType.ApplicationComponent),
+        leaf("shop", "Web Shop", ShapeType.ApplicationComponent).copy(tag = Some(CornerTag("I", "#2E7D32"))),
+        leaf("stock", "Stock Management Service", ShapeType.ApplicationComponent, Some("[IT System: Java]"))
+          .copy(tag = Some(CornerTag("M", "#FFC107"))),
       ),
       List(
         edge("e1", "shop", "api", RelationshipType.Flow, Some("orders")).copy(sign = Some(Glyph.Rest)),
@@ -275,6 +276,14 @@ object DiagramGallery extends ZIOSpecDefault:
           List(
             LegendSection("Marks", marks.map(g => LegendItem.Mark(badge(g)))),
             LegendSection("API styles", api.map(g => LegendItem.Mark(badge(g)))),
+            LegendSection(
+              "TIME",
+              List(
+                LegendItem.Tagged(CornerTag("I", "#2E7D32"), "Invest"),
+                LegendItem.Tagged(CornerTag("M", "#FFC107"), "Migrate"),
+                LegendItem.Tagged(CornerTag("C2", "#1A237E"), "Confidential"),
+              ),
+            ),
           ),
         )
       ),
