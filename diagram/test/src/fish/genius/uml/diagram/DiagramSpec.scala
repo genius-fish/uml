@@ -459,12 +459,31 @@ object DiagramSpec extends ZIOSpecDefault:
           d.prims.collect { case _ @Prim.Box(_, _, _, _, _, Ink.Layer(n), _, _, Role.Inked(m), _) if n == m => n }
         val box   = d.scene.elements.find(_.key == SceneId("domain")).get
         val code  = d.prims.collect { case t @ Prim.Text(_, "M", _, _, Emphasis.Inked(_), _, _) => t }.head
+        val pill  = d.prims.collect {
+          case b @ Prim.Box(_, _, _, _, _, Ink.Layer("am-fill-f57c00"), _, _, Role.Inked(_), _) => b
+        }.head
+        val name  = d.prims.collect { case t @ Prim.Text(_, "Sales domain", _, _, _, _, _) => t }.head
+        val nameW = Measure(Diagram.Style().typeface).width(name.text, name.size, name.weight)
         assertTrue(
           pills.sorted == List("am-fill-1565c0", "am-fill-f57c00"),
           d.colours.contains("am-fill-1565c0"),
           // in the header: the container's top band, at its right
           code.baseline._2 > box.y + box.d / 2 - 0.6,
           code.baseline._1 > box.x,
+          // the header's name, set from the left, ends before the pill
+          name.baseline._1 + nameW <= pill.x + 1e-6,
+          // a code counts as many characters as it shows: ß in capitals is SS, and three
+          // symbols outside the basic plane are three, each drawn whole
+          CornerTag("ß", "#000000").validCode.contains("SS"),
+          CornerTag("ßßß", "#000000").validCode.isEmpty, {
+            val stars = "\uD83D\uDFE2\uD83D\uDFE1\uD83D\uDD34"
+            val drawn = Diagram.draw(graph.copy(
+              nodes = graph.nodes.map(_.copy(tag = Some(CornerTag(stars, "#FFFFFF")))),
+              legend = None,
+            ))
+              .toOption.get.prims.collect { case Prim.Text(_, t, _, _, Emphasis.Inked(_), _, _) => t }
+            drawn.size == 3 && drawn.forall(t => t.codePointCount(0, t.length) == 1)
+          },
           d.prims.exists { case Prim.Text(_, "Invest", _, _, _, _, _) => true; case _ => false },
         )
       ,
@@ -901,20 +920,28 @@ object DiagramSpec extends ZIOSpecDefault:
         val named                    = Diagram.draw(said).toOption.get
         val inked                    = Diagram.draw(tinted).toOption.get
         val centre                   = halo(plain).head.centre
-        // the route's halfway point lies on it: within the halo of the sign
-        val pts                      = line(plain).points
-        val onLine                   = pts.zip(pts.drop(1)).exists((a, b) =>
-          val (x0, x1, y0, y1) = (math.min(a._1, b._1), math.max(a._1, b._1), math.min(a._2, b._2), math.max(a._2, b._2))
-          centre._1 >= x0 - 1e-6 && centre._1 <= x1 + 1e-6 && centre._2 >= y0 - 1e-6 && centre._2 <= y1 + 1e-6
-        )
-        val words                    = named.prims.collect { case Prim.Text(at, "stock changed", _, _, _, _, _) => at }
+        // on the route, both without a label (halfway) and with one (just before it)
+        def on(d: Diagram.Drawing, c: Pt) =
+          val pts = line(d).points
+          pts.zip(pts.drop(1)).exists((a, b) =>
+            val (x0, x1, y0, y1) =
+              (math.min(a._1, b._1), math.max(a._1, b._1), math.min(a._2, b._2), math.max(a._2, b._2))
+            c._1 >= x0 - 1e-6 && c._1 <= x1 + 1e-6 && c._2 >= y0 - 1e-6 && c._2 <= y1 + 1e-6
+          )
+        val words = named.prims.collect { case Prim.Text(at, "stock changed", _, _, _, _, _) => at }
+        val patch                         = named.prims.collect {
+          case b @ Prim.Box(_, _, _, _, _, Ink.Paper, _, false, Role.Patch(_), _) => b
+        }.head
+        val hc                            = halo(named).head
         assertTrue(
           sign(plain).size == 1,
           halo(plain).size == 1,
-          onLine,
-          // before the label: its halo to the left of where the words start
+          on(plain, centre),
+          // with a label: still on its line (a vertical one here), clear of the label's patch
           words.nonEmpty,
-          halo(named).head.centre._1 < words.head._1,
+          on(named, hc.centre),
+          hc.centre._2 - hc.r >= patch.y + patch.h - 1e-6 || hc.centre._2 + hc.r <= patch.y + 1e-6 ||
+          hc.centre._1 + hc.r <= patch.x + 1e-6 || hc.centre._1 - hc.r >= patch.x + patch.w - 1e-6,
           // on a coloured line, the sign in the line's colour
           sign(inked).forall(_.role == Role.Inked("am-fill-1f6feb")),
           sign(inked).forall(_.fill == Ink.Layer("am-fill-1f6feb")),

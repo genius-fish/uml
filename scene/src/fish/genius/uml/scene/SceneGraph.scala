@@ -123,9 +123,11 @@ object Outline:
 // hex digits.
 final case class CornerTag(code: String, fill: String):
 
+  // counted in characters as drawn, after the capitals (ß becomes SS)
   def validCode: Option[String] =
-    Option(code.trim).filter(c => c.nonEmpty && c.codePointCount(0, c.length) <= CornerTag.MAX_CODE)
-      .map(_.toUpperCase)
+    Option(code.trim.toUpperCase).filter(c =>
+      c.nonEmpty && c.codePointCount(0, c.length) <= CornerTag.MAX_CODE
+    )
 
   def validFill: Option[String] =
     Option(fill.stripPrefix("#")).filter(_.matches("[0-9A-Fa-f]{6}")).map(_.toUpperCase)

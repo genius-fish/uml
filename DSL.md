@@ -1227,9 +1227,10 @@ font's glyph, so TikZ, SVG and PNG draw the same outline, and its weight scales 
 0.57 pt at a badge's 0.24 cm, 0.45 pt in the legend.
 
 An edge's `sign` (`SceneEdge.sign`, a `Glyph`) stands at the middle of its line, on a
-disc of the field it lies on so the line stops short of it; just before the line's label
-when it has one, so the two read together; in the line's colour when it has its own. The
-API styles are meant for it:
+disc of the field it lies on so the line stops short of it; when the line has a label,
+on the line just before it, so the two read together; in the line's colour when it has
+its own. The legend does not list it by itself: give it a `Badge` there as for any sign.
+The API styles are meant for it:
 
 ```scala
 SceneEdge(SceneId("e1"), SceneId("shop"), SceneId("api"), RelationshipType.Flow,
@@ -1545,4 +1546,6 @@ steps), not one of tens of thousands. Tasks wrap narrower
 `Options.pageWidth`, but a task's name never takes more than two lines: a task whose
 name would take three widens until it takes two (up to 6 cm). The name is set at
 `Style.nameSize`, the size of box text in the other diagrams, so a process that keeps
-within the page prints its tasks as large as the views beside it.
+within the page prints its tasks as large as the views beside it. `pageWidth` is therefore a
+target, not a bound: a process with many long-named tasks side by side can come out
+wider, and its caller decides how to fit it.

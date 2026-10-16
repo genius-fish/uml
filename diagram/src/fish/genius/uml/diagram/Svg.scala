@@ -212,7 +212,10 @@ object Extent:
       case Prim.Text(at, _, _, _, _, _, _)        => List(at)
       case Prim.Connector(ps, _, _, _, _)         => ps
       case Prim.Curve(segments, _, _)             => segments.flatMap(Seg.points)
-      case Prim.Path(segments, _, _, _, _)        => segments.flatMap(Seg.points)
+      case Prim.Path(segments, _, w, _, _)        =>
+        segments.flatMap(Seg.points).flatMap(p =>
+          List((p._1 - w / 2, p._2 - w / 2), (p._1 + w / 2, p._2 + w / 2))
+        )
       case Prim.Image(x, y, w, h, _, _)           => List((x, y), (x + w, y + h))
     if points.isEmpty then (0.0, 0.0, 1.0, 1.0)
     else

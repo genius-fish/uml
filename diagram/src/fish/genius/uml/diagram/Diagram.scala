@@ -191,8 +191,10 @@ object Diagram:
   end draw
 
   // A sign at the middle of a line, on a disc of the field it lies on so the line stops
-  // short of it; just before the line's label when it has one, so the two read together.
-  // On a line in a colour of its own the sign is in that colour too.
+  // short of it; when the line has a label, on the line just before it (back along the
+  // route from the point nearest the label, by as much of the label as lies along it), so
+  // the two read together and the sign stays on its line whichever way the line runs. On a
+  // line in a colour of its own the sign is in that colour too.
   private def signOnLine(
     glyph: Glyph,
     points: List[Pt],
@@ -202,33 +204,54 @@ object Diagram:
     field: Pt => Role,
   ): List[Prim] =
     val s      = style.badgeSize
+    val halo   = s * SIGN_HALO
+    val total  = length(points)
     val centre = words.flatMap(extent).reduceOption((a, b) =>
       (math.min(a._1, b._1), math.min(a._2, b._2), math.max(a._3, b._3), math.max(a._4, b._4))
     ) match
-      case Some((x0, y0, _, y1)) => (x0 - GAP - s * SIGN_HALO, (y0 + y1) / 2)
-      case None                  => halfway(points)
+      case Some((x0, y0, x1, y1)) =>
+        val (t, (dx, dy)) = nearest(points, ((x0 + x1) / 2, (y0 + y1) / 2))
+        val along         = math.abs(dx) * (x1 - x0) / 2 + math.abs(dy) * (y1 - y0) / 2
+        at(points, math.max(math.min(halo, total / 2), t - along - GAP - halo))
+      case None                   => at(points, total / 2)
     val ink    = colour.flatMap(fillName)
     val role   = ink.fold(Role.Plain)(Role.Inked(_))
     val sign   = place(Notation.glyph(glyph), centre._1 - s / 2, centre._2 - s / 2, s, role).map:
       case p: Prim.Path =>
         ink.fold(p)(i => if p.fill == Ink.Line then p.copy(fill = Ink.Layer(i)) else p)
       case other        => other
-    Prim.Circle(centre, s * SIGN_HALO, Ink.Paper, Role.Patch(field(centre))) :: sign
+    Prim.Circle(centre, halo, Ink.Paper, Role.Patch(field(centre))) :: sign
 
   end signOnLine
 
-  // the point halfway along a route
-  private def halfway(points: List[Pt]): Pt =
-    val legs  = points.zip(points.drop(1))
-    val total = legs.map((a, b) => math.hypot(b._1 - a._1, b._2 - a._2)).sum
-    legs.foldLeft((total / 2, Option.empty[Pt])):
+  private def length(points: List[Pt]): Double =
+    points.zip(points.drop(1)).map((a, b) => math.hypot(b._1 - a._1, b._2 - a._2)).sum
+
+  // the point a distance d along a route
+  private[diagram] def at(points: List[Pt], d: Double): Pt =
+    points.zip(points.drop(1)).foldLeft((d, Option.empty[Pt])):
       case ((left, found @ Some(_)), _) => (left, found)
       case ((left, None), (a, b))       =>
         val l = math.hypot(b._1 - a._1, b._2 - a._2)
         if left <= l && l > 0 then
           (0.0, Some((a._1 + (b._1 - a._1) * left / l, a._2 + (b._2 - a._2) * left / l)))
         else (left - l, None)
-    ._2.getOrElse(points.headOption.getOrElse((0.0, 0.0)))
+    ._2.getOrElse(points.lastOption.getOrElse((0.0, 0.0)))
+
+  // how far along a route its point nearest p lies, and the direction of the stretch there
+  private def nearest(points: List[Pt], p: Pt): (Double, (Double, Double)) =
+    points.zip(points.drop(1)).foldLeft((0.0, (Double.MaxValue, 0.0, (1.0, 0.0)))):
+      case ((from, best), (a, b)) =>
+        val (vx, vy) = (b._1 - a._1, b._2 - a._2)
+        val l        = math.hypot(vx, vy)
+        if l <= 0 then (from, best)
+        else
+          val k = math.max(0.0, math.min(l, ((p._1 - a._1) * vx + (p._2 - a._2) * vy) / l))
+          val q = (a._1 + vx * k / l, a._2 + vy * k / l)
+          val g = math.hypot(p._1 - q._1, p._2 - q._2)
+          (from + l, if g < best._1 then (g, from + k, (vx / l, vy / l)) else best)
+    ._2 match
+      case (_, t, dir) => (t, dir)
 
   // the disc a sign on a line stands on, against the sign's size
   private val SIGN_HALO = 0.62
@@ -786,8 +809,12 @@ object Diagram:
     measure: Measure,
   ): Double =
     val size = tagText(style)
-    (('0' to '9') ++ ('A' to 'Z') ++ code).map(_.toString)
+    ((('0' to '9') ++ ('A' to 'Z')).map(_.toString) ++ characters(code))
       .map(c => measure.width(c, size, Weight.SemiBold)).max
+
+  // a code's characters, whole: a symbol outside the basic plane is one, not two halves
+  private def characters(code: String): List[String] =
+    code.codePoints.toArray.toList.map(cp => new String(Character.toChars(cp)))
 
   // (width, height) of a tag's pill
   private[diagram] def tagSize(
@@ -797,7 +824,7 @@ object Diagram:
   ): (Double, Double) =
     val size = tagText(style)
     val h    = (CAP_HEIGHT * size + 2 * TAG_AIR_Y) * PT
-    val w    = code.length * tagCell(code, style, measure) + 2 * TAG_AIR_X * PT
+    val w    = characters(code).size * tagCell(code, style, measure) + 2 * TAG_AIR_X * PT
     (Measure.round(math.max(w, h)), Measure.round(h))
 
   // the room a node's tag takes beside its icon; nothing without one
@@ -822,13 +849,14 @@ object Diagram:
     val size     = tagText(style)
     val name     = fillName(fill).get
     val ink      = fillName(tagInk(fill)).get
-    val left     = x + (w - code.length * cell) / 2
+    val chars    = characters(code)
+    val left     = x + (w - chars.size * cell) / 2
     val baseline = y + h / 2 - CAP_HEIGHT * size * PT / 2
     Prim.Box(x, y, w, h, h / 2, Ink.Layer(name), role = Role.Inked(name)) ::
-    code.toList.zipWithIndex.map: (c, i) =>
+    chars.zipWithIndex.map: (c, i) =>
       Prim.Text(
         (left + (i + 0.5) * cell, baseline),
-        c.toString,
+        c,
         size,
         Weight.SemiBold,
         Emphasis.Inked(name = ink),
@@ -1066,8 +1094,18 @@ object Diagram:
       case Prim.Text(at, _, _, _, _, _, _)        => Some((at._1, at._2, at._1, at._2))
       case Prim.Connector(ps, _, _, _, _)         => of(ps)
       case Prim.Curve(segments, _, _)             => of(segments.flatMap(Seg.points))
-      case Prim.Path(segments, _, _, _, _)        => of(segments.flatMap(Seg.points))
+      // its ink reaches half its line beyond its points
+      case Prim.Path(segments, _, w, _, _)        =>
+        of(segments.flatMap(Seg.points)).map(
+          (
+            a,
+            b,
+            c,
+            d,
+          ) => (a - w / 2, b - w / 2, c + w / 2, d + w / 2)
+        )
       case Prim.Image(x, y, w, h, _, _)           => Some((x, y, x + w, y + h))
+    end match
 
   end extent
 
