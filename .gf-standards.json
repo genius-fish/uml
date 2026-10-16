@@ -1,0 +1,15 @@
+{
+  "$schema": "https://github.com/genius-fish/claude-marketplace gf-standards config",
+  "jira": {
+    "enabled": true,
+    "site": "geniusfish",
+    "projectKey": "UML",
+    "labels": ["gf-review"]
+  },
+  "confluence": {
+    "enabled": true,
+    "site": "geniusfish",
+    "spaceKey": "Q",
+    "adrParentPageId": "282263554"
+  }
+}

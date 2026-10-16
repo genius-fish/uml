@@ -127,6 +127,13 @@ emit AST nodes into the context.
 - `PUmlAssertions` provides ZIO Test combinators and `PUmlNode` extension methods for
   structural assertions over the AST (no PlantUML invocation).
 
+## Jira
+
+Work on this repo is tracked in the team-managed Jira project **UML** on the `geniusfish` site
+(https://geniusfish.atlassian.net/browse/UML). Search there before creating a ticket, put the
+key in every commit message, and use fude's Jira tools to write to it. `.gf-standards.json`
+points the review and architecture-plan tooling at the same project.
+
 ## Conventions
 
 - **Formatting/linting are enforced.** `.scalafmt.conf` (maxColumn 100; 120 for `**/test/**`
