@@ -948,6 +948,34 @@ object DiagramSpec extends ZIOSpecDefault:
           sign(plain).forall(_.role == Role.Plain),
         )
       ,
+      test("on a short line a sign stands after the label rather than over it, and on a level one beside it"):
+        // two boxes side by side: a level route, short against its label
+        val graph = SceneGraph(
+          "Short",
+          List(leaf("a", "Shop", ShapeType.ApplicationComponent), leaf("b", "Stock", ShapeType.ApplicationComponent)),
+          List(edge("ab", "a", "b", RelationshipType.Flow).copy(sign = Some(Glyph.Rest), label = Some("stock levels"))),
+        )
+        val d     = Diagram.draw(graph, Diagram.Options(direction = SceneLayout.Direction.Right)).toOption.get
+        val hc    = d.prims.collect { case c @ Prim.Circle(_, _, Ink.Paper, Role.Patch(_)) => c }.head
+        val patch = d.prims.collect { case b @ Prim.Box(_, _, _, _, _, Ink.Paper, _, false, Role.Patch(_), _) =>
+          b
+        }.head
+        val boxes = d.scene.elements.map(e => (e.x - e.w / 2, e.y - e.d / 2, e.x + e.w / 2, e.y + e.d / 2))
+        val pts   = d.prims.collect { case c: Prim.Connector => c }.head.points
+        val on    = pts.zip(pts.drop(1)).exists((a, b) =>
+          hc.centre._1 >= math.min(a._1, b._1) - 1e-6 && hc.centre._1 <= math.max(a._1, b._1) + 1e-6 &&
+          hc.centre._2 >= math.min(a._2, b._2) - 1e-6 && hc.centre._2 <= math.max(a._2, b._2) + 1e-6
+        )
+        assertTrue(
+          on,
+          boxes.forall(b =>
+            hc.centre._1 <= b._1 + 1e-6 || hc.centre._1 >= b._3 - 1e-6 || hc.centre._2 <= b._2 + 1e-6 ||
+            hc.centre._2 >= b._4 - 1e-6
+          ),
+          hc.centre._1 + hc.r <= patch.x + 1e-6 || hc.centre._1 - hc.r >= patch.x + patch.w - 1e-6 ||
+          hc.centre._2 + hc.r <= patch.y + 1e-6 || hc.centre._2 - hc.r >= patch.y + patch.h - 1e-6,
+        )
+      ,
       test("an empty drawing still has an extent"):
         val empty = Diagram.Drawing("Empty", Nil, Scene("Empty", 0, 0, Nil, Nil), Diagram.Style(), "Nimbus Sans", 0)
         assertTrue(Extent.of(empty, 0.1) == (0.0, 0.0, 1.0, 1.0), Svg.document(empty).startsWith("<svg")),

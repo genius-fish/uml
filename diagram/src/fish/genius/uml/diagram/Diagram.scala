@@ -212,7 +212,13 @@ object Diagram:
       case Some((x0, y0, x1, y1)) =>
         val (t, (dx, dy)) = nearest(points, ((x0 + x1) / 2, (y0 + y1) / 2))
         val along         = math.abs(dx) * (x1 - x0) / 2 + math.abs(dy) * (y1 - y0) / 2
-        at(points, math.max(math.min(halo, total / 2), t - along - GAP - halo))
+        // on a route too short for it before the label, after it; failing both, halfway
+        val before        = t - along - GAP - halo
+        val after         = t + along + GAP + halo
+        at(
+          points,
+          if before >= halo then before else if after <= total - halo then after else total / 2,
+        )
       case None                   => at(points, total / 2)
     val ink    = colour.flatMap(fillName)
     val role   = ink.fold(Role.Plain)(Role.Inked(_))

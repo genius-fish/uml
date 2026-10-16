@@ -125,7 +125,7 @@ final case class CornerTag(code: String, fill: String):
 
   // counted in characters as drawn, after the capitals (ß becomes SS)
   def validCode: Option[String] =
-    Option(code.trim.toUpperCase).filter(c =>
+    Option(code.trim.toUpperCase(java.util.Locale.ROOT)).filter(c =>
       c.nonEmpty && c.codePointCount(0, c.length) <= CornerTag.MAX_CODE
     )
 
