@@ -3,6 +3,8 @@ package fish.genius.uml.diagram
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path}
 
+import scala.sys.process.{Process, ProcessLogger}
+
 import zio.test.*
 
 import zio.*
@@ -44,19 +46,19 @@ object DiagramSpec extends ZIOSpecDefault:
     )
 
   private lazy val latexTools = List("pdflatex", "pdftoppm").forall: tool =>
-    scala.util.Try(scala.sys.process.Process(Seq(tool, "-v")).!(scala.sys.process.ProcessLogger(_ => ()))).isSuccess
+    scala.util.Try(Process(Seq(tool, "-v")).!(ProcessLogger(_ => ()))).isSuccess
 
   // a drawing compiled by pdflatex and rasterised at 300 dpi: its blue pixels, and all of them
   private def bluePixels(d: Diagram.Drawing): (Int, Int) =
     val dir = Files.createTempDirectory("bent")
     try
       Files.writeString(dir.resolve("b.tex"), Tikz.standalone(d))
-      val log = scala.sys.process.ProcessLogger(_ => ())
-      scala.sys.process.Process(
+      val log = ProcessLogger(_ => ())
+      Process(
         Seq("pdflatex", "-interaction=nonstopmode", "-halt-on-error", "b.tex"),
         dir.toFile,
       ).!(log)
-      scala.sys.process.Process(Seq("pdftoppm", "-png", "-r", "300", "-singlefile", "b.pdf", "b"), dir.toFile).!(log)
+      Process(Seq("pdftoppm", "-png", "-r", "300", "-singlefile", "b.pdf", "b"), dir.toFile).!(log)
       val png = javax.imageio.ImageIO.read(dir.resolve("b.png").toFile)
       val all = for x <- 0 until png.getWidth; y <- 0 until png.getHeight yield png.getRGB(x, y)
       val ink = all.count: rgb =>
@@ -64,7 +66,7 @@ object DiagramSpec extends ZIOSpecDefault:
         math.abs((rgb & 0xff) - 0xb5) < 24
       (ink, all.size)
     finally
-      Files.list(dir).toArray.foreach(p => Files.deleteIfExists(p.asInstanceOf[Path]))
+      scala.util.Using(Files.list(dir))(_.forEach { p => Files.deleteIfExists(p); () })
       Files.deleteIfExists(dir)
     end try
 
@@ -478,16 +480,16 @@ object DiagramSpec extends ZIOSpecDefault:
           Nil,
         )
         val tex    = Tikz.standalone(Diagram.draw(arrows).toOption.get)
-        val latex  = scala.util.Try(scala.sys.process.Process(Seq("pdflatex", "--version")).!!)
+        val latex  = scala.util.Try(Process(Seq("pdflatex", "--version")).!!)
           .isSuccess
         val built  =
           !latex || {
             val dir = java.nio.file.Files.createTempDirectory("arrows")
             java.nio.file.Files.writeString(dir.resolve("a.tex"), tex)
-            scala.sys.process.Process(
+            Process(
               Seq("pdflatex", "-interaction=nonstopmode", "-halt-on-error", "a.tex"),
               dir.toFile,
-            ).!(scala.sys.process.ProcessLogger(_ => ())) == 0
+            ).!(ProcessLogger(_ => ())) == 0
           }
         assertTrue(
           tex.contains("\\ensuremath{\\leftrightarrow}"),
