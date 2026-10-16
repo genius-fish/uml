@@ -156,6 +156,13 @@ object Tikz:
   ): String =
     s"\\path${options(look(role, fill) ++ List(dash(d, p.weight), extra) ++ pen(p, role, d))} $path;"
 
+  private def segs(segments: List[Seg]): String = segments.map:
+    case Seg.Move(p)        => pt(p)
+    case Seg.Line(p)        => s"-- ${pt(p)}"
+    case Seg.Cubic(a, b, p) => s".. controls ${pt(a)} and ${pt(b)} .. ${pt(p)}"
+    case Seg.Close          => "-- cycle"
+  .mkString(" ")
+
   private def prim(p: Prim, face: Typeface): String = p match
     case Prim.Poly(points, closed, fill, d, role, p)                =>
       val path = points.map(pt).mkString(" -- ") + (if closed then " -- cycle" else "")
@@ -201,16 +208,15 @@ object Tikz:
       s"\\draw${options(List(Some("am link"), dash(d), Some(arrows), colour))} " +
       points.map(pt).mkString(" -- ") + ";"
     case Prim.Curve(segments, fill, evenOdd)                        =>
-      val hex  = Logos.colour(fill)
-      val rgb  = (0 to 2).map(i => Integer.parseInt(hex.substring(2 * i, 2 * i + 2), 16))
-      val ink  = s"fill={rgb,255:red,${rgb(0)};green,${rgb(1)};blue,${rgb(2)}}"
-      val path = segments.map:
-        case Seg.Move(p)        => pt(p)
-        case Seg.Line(p)        => s"-- ${pt(p)}"
-        case Seg.Cubic(a, b, p) => s".. controls ${pt(a)} and ${pt(b)} .. ${pt(p)}"
-        case Seg.Close          => "-- cycle"
-      .mkString(" ")
-      s"\\path${options(List(Some(ink), Option.when(evenOdd)("even odd rule")))} $path;"
+      val hex = Logos.colour(fill)
+      val rgb = (0 to 2).map(i => Integer.parseInt(hex.substring(2 * i, 2 * i + 2), 16))
+      val ink = s"fill={rgb,255:red,${rgb(0)};green,${rgb(1)};blue,${rgb(2)}}"
+      s"\\path${options(List(Some(ink), Option.when(evenOdd)("even odd rule")))} ${segs(segments)};"
+    case Prim.Path(segments, fill, w, role, evenOdd)                =>
+      // after the role's look, so the sign's own weight wins; nothing drawn round it at 0
+      val weight = if w > 0 then s"line width=${f(w / Diagram.PT)}pt" else "draw=none"
+      s"\\path${options(look(role, fill) ++ List(Some(weight), Option.when(evenOdd)("even odd rule")))} " +
+      s"${segs(segments)};"
     case image: Prim.Image                                          =>
       s"\\node[anchor=south west,inner sep=0pt] at ${pt((image.x, image.y))} " +
       s"{\\includegraphics[width=${f(image.w)}cm,height=${f(image.h)}cm]{${fileOf(image)}}};"

@@ -82,6 +82,13 @@ object Svg:
       (s"M ${x(ps.head._1)} ${y(ps.head._2)}" +: steps :+
       s"L ${x(ps.last._1)} ${y(ps.last._2)}").mkString(" ")
     end rounded
+    def path(segments: List[Seg]): String          = segments.map:
+      case Seg.Move(p)        => s"M ${x(p._1)} ${y(p._2)}"
+      case Seg.Line(p)        => s"L ${x(p._1)} ${y(p._2)}"
+      case Seg.Cubic(a, b, p) =>
+        s"C ${x(a._1)} ${y(a._2)} ${x(b._1)} ${y(b._2)} ${x(p._1)} ${y(p._2)}"
+      case Seg.Close          => "Z"
+    .mkString(" ")
     def prim(p: Prim): String                      = p match
       case Prim.Poly(ps, closed, fill, d, role, pen)                  =>
         val tag              = if closed then "polygon" else "polyline"
@@ -127,15 +134,15 @@ object Svg:
           )}"${width(Look.LINK_LINE, d)}${dash(d)}/>""" ::
         Heads.of(con).map(prim)).mkString("\n")
       case Prim.Curve(segments, fill, evenOdd)                        =>
-        val d    = segments.map:
-          case Seg.Move(p)        => s"M ${x(p._1)} ${y(p._2)}"
-          case Seg.Line(p)        => s"L ${x(p._1)} ${y(p._2)}"
-          case Seg.Cubic(a, b, p) =>
-            s"C ${x(a._1)} ${y(a._2)} ${x(b._1)} ${y(b._2)} ${x(p._1)} ${y(p._2)}"
-          case Seg.Close          => "Z"
-        .mkString(" ")
         val rule = if evenOdd then """ fill-rule="evenodd"""" else ""
-        s"""<path d="$d" fill="${hex(Logos.colour(fill))}"$rule stroke="none"/>"""
+        s"""<path d="${path(segments)}" fill="${hex(Logos.colour(fill))}"$rule stroke="none"/>"""
+      case Prim.Path(segments, fill, w, role, evenOdd)                =>
+        val (look, inked) = c.look(role, fill)
+        val stroke        = look.filter(_ => w > 0).fold(""" stroke="none"""")(e =>
+          s""" stroke="${hex(e)}" stroke-width="${f(w * PX)}""""
+        )
+        val rule          = if evenOdd then """ fill-rule="evenodd"""" else ""
+        s"""<path d="${path(segments)}" fill="${inked.map(hex).getOrElse("none")}"$rule$stroke/>"""
       case Prim.Image(ix, iy, w, h, data, mime)                       =>
         s"""<image x="${x(ix)}" y="${y(iy + h)}" width="${len(w)}" height="${len(
             h
@@ -202,6 +209,7 @@ object Extent:
       case Prim.Text(at, _, _, _, _, _, _)        => List(at)
       case Prim.Connector(ps, _, _, _, _)         => ps
       case Prim.Curve(segments, _, _)             => segments.flatMap(Seg.points)
+      case Prim.Path(segments, _, _, _, _)        => segments.flatMap(Seg.points)
       case Prim.Image(x, y, w, h, _, _)           => List((x, y), (x + w, y + h))
     if points.isEmpty then (0.0, 0.0, 1.0, 1.0)
     else

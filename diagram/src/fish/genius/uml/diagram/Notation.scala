@@ -116,6 +116,17 @@ enum Prim derives CanEqual:
     fill: String,
     evenOdd: Boolean = false)
 
+  // an outline of moves, lines and cubic curves, in centimetres, filled with `fill` and
+  // stroked `width` centimetres wide (none when 0) with round caps and joins, both in the
+  // colours its role gives it: a sign, whose weight is part of its drawing, so it scales
+  // with the sign rather than staying a role's line (Signs)
+  case Path(
+    segments: List[Seg],
+    fill: Ink,
+    width: Double,
+    role: Role = Role.Plain,
+    evenOdd: Boolean = false)
+
   // a picture (PNG or JPEG, base64) from its lower left corner, stretched to w × h
   case Image(
     x: Double,
@@ -152,6 +163,13 @@ object Seg:
       case Line(to)        => Line(p(to))
       case Cubic(a, b, to) => Cubic(p(a), p(b), p(to))
       case Close           => Close
+
+  // a segment with every point it names moved by f
+  def map(seg: Seg, f: Pt => Pt): Seg = seg match
+    case Move(to)        => Move(f(to))
+    case Line(to)        => Line(f(to))
+    case Cubic(a, b, to) => Cubic(f(a), f(b), f(to))
+    case Close           => Close
 
   // every point a segment names, its controls included (they bound its curve)
   def points(seg: Seg): List[Pt] = seg match
@@ -524,77 +542,9 @@ object Notation:
     case ShapeType.ApplicationDataObject | ShapeType.BusinessObject | ShapeType.BusinessContract |
       ShapeType.BusinessRepresentation | ShapeType.PhysicalMaterial => Nil
 
-  // A badge's sign, in a unit square with y up, solid in its box's mark colour so it
-  // reads at a small size. The twelve geometric glyphs tell things apart; the globe
-  // and the padlock mark a public and a closed API, the warning and the failure a
-  // health that is degraded or failing.
-  def glyph(g: fish.genius.uml.scene.Glyph): List[Prim] =
-    import fish.genius.uml.scene.Glyph
-    def solid(points: Pt*): Prim = Prim.Poly(points.toList, closed = true, Ink.Line)
-    def around(
-      n: Int,
-      r: Double,
-      turn: Double = 90.0,
-    ): List[Pt]                  = (0 until n).toList.map: i =>
-      val a = math.toRadians(turn + i * 360.0 / n)
-      (0.5 + r * math.cos(a), 0.5 + r * math.sin(a))
-    g match
-      case Glyph.Circle       => List(disc((0.5, 0.5), 0.4))
-      case Glyph.Square       => List(solid((0.12, 0.12), (0.88, 0.12), (0.88, 0.88), (0.12, 0.88)))
-      case Glyph.TriangleUp   => List(solid((0.06, 0.1), (0.94, 0.1), (0.5, 0.92)))
-      case Glyph.Diamond      => List(solid((0.5, 0.02), (0.98, 0.5), (0.5, 0.98), (0.02, 0.5)))
-      case Glyph.Star         =>
-        val outer = around(5, 0.5)
-        val inner = around(5, 0.2, 90.0 + 36.0)
-        List(solid(outer.zip(inner).flatMap((a, b) => List(a, b))*))
-      case Glyph.Hexagon      => List(solid(around(6, 0.46)*))
-      case Glyph.TriangleDown => List(solid((0.06, 0.9), (0.94, 0.9), (0.5, 0.08)))
-      case Glyph.Cross        =>
-        List(
-          solid(
-            (0.36, 0.06),
-            (0.64, 0.06),
-            (0.64, 0.36),
-            (0.94, 0.36),
-            (0.94, 0.64),
-            (0.64, 0.64),
-            (0.64, 0.94),
-            (0.36, 0.94),
-            (0.36, 0.64),
-            (0.06, 0.64),
-            (0.06, 0.36),
-            (0.36, 0.36),
-          )
-        )
-      case Glyph.Pentagon     => List(solid(around(5, 0.48)*))
-      case Glyph.Ring         => List(disc((0.5, 0.5), 0.42), ring((0.5, 0.5), 0.22))
-      case Glyph.Ellipse      => List(Prim.Ellipse((0.5, 0.5), 0.46, 0.26, Ink.Line))
-      case Glyph.Chevron      =>
-        List(solid((0.06, 0.78), (0.5, 0.44), (0.94, 0.78), (0.94, 0.5), (0.5, 0.16), (0.06, 0.5)))
-      case Glyph.Globe        =>
-        List(
-          Prim.Circle((0.5, 0.5), 0.44, Ink.Paper),
-          Prim.Ellipse((0.5, 0.5), 0.2, 0.44),
-          line((0.06, 0.5), (0.94, 0.5)),
-        )
-      case Glyph.Padlock      =>
-        List(
-          line(arc((0.5, 0.6), 0.2, 0.26, 0, 180)*),
-          Prim.Box(0.14, 0.06, 0.72, 0.5, 0.06, Ink.Line),
-        )
-      case Glyph.Warning      =>
-        List(
-          shape((0.04, 0.08), (0.96, 0.08), (0.5, 0.94)),
-          line((0.5, 0.66), (0.5, 0.36)),
-          disc((0.5, 0.22), 0.05),
-        )
-      case Glyph.Failure      =>
-        List(
-          ring((0.5, 0.5), 0.44),
-          line((0.28, 0.28), (0.72, 0.72)),
-          line((0.28, 0.72), (0.72, 0.28)),
-        )
-    end match
+  // A badge's sign, in a unit square with y up, in its box's mark colour: one family,
+  // drawn on one grid at one weight (Signs).
+  def glyph(g: fish.genius.uml.scene.Glyph): List[Prim] = Signs.of(g)
 
   end glyph
 

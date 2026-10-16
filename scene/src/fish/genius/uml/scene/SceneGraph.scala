@@ -31,12 +31,19 @@ enum NodeKind derives CanEqual:
   case OrJunction
 
 // A small sign stamped on a box, such as a padlock for an API that is not public, or
-// one of the geometric glyphs a diagram hands out to tell several things apart. The
-// label says what it stands for, in the legend.
+// one of the geometric glyphs a diagram hands out to tell several things apart; or set
+// at the middle of a line (SceneEdge.sign), such as the style of an API. The label says
+// what it stands for, in the legend. The diagram draws them as one family (Signs).
+//
+// After the twelve geometric glyphs: a public and a closed API, a health that is degraded
+// or failing; what a gap does to an element (added, modified, removed; one retained has
+// no sign), an element being phased out, an open risk and an open decision; and the
+// styles of an API: REST, GraphQL, gRPC, events and batch.
 enum Glyph derives CanEqual:
 
   case Circle, Square, TriangleUp, Diamond, Star, Hexagon, TriangleDown, Cross, Pentagon,
-    Ring, Ellipse, Chevron, Globe, Padlock, Warning, Failure
+    Ring, Ellipse, Chevron, Globe, Padlock, Warning, Failure, GapAdd, GapModify, GapRemove,
+    PhaseOut, Risk, Decision, Rest, GraphQl, Grpc, Event, Batch
 
 // A badge is its logo when it has one (the glyph then stands in only where a logo
 // cannot be drawn), else its glyph.
@@ -176,7 +183,9 @@ final case class SceneEdge(
   relationship: RelationshipType,
   label: Option[String] = None,
   // a colour of its own (hex) for the line and its heads, to set it apart (proposed, say)
-  colour: Option[String] = None)
+  colour: Option[String] = None,
+  // a sign at the middle of the line (an API's style, say), before its label when it has one
+  sign: Option[Glyph] = None)
 
 // A walk through the graph in order, such as the interactions of a sequence diagram:
 // each step goes from one node to another and says what passes between them. The

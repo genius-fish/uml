@@ -244,6 +244,44 @@ object DiagramGallery extends ZIOSpecDefault:
 
   end claim
 
+  // every sign of the family (APP-2260): the geometric glyphs and the marks on boxes,
+  // the API styles at the middle of lines, one with a label, one in a colour, and the
+  // legend that names them all
+  val signs: SceneGraph =
+    def badge(g: Glyph) = Badge(g, g.toString)
+    val api             = List(Glyph.Rest, Glyph.GraphQl, Glyph.Grpc, Glyph.Event, Glyph.Batch)
+    val marks           = Glyph.values.toList.filterNot(api.contains)
+    SceneGraph(
+      "Every sign",
+      List(
+        leaf("geo", "Building block", ShapeType.ApplicationService).copy(badges = marks.take(6).map(badge)),
+        leaf("geo2", "Another block", ShapeType.ApplicationService).copy(badges = marks.slice(6, 12).map(badge)),
+        leaf("api", "Order API", ShapeType.ApplicationComponent).copy(badges = marks.slice(12, 16).map(badge)),
+        leaf("gap", "Legacy checkout", ShapeType.ApplicationComponent).copy(badges = marks.drop(16).map(badge)),
+        leaf("shop", "Web Shop", ShapeType.ApplicationComponent),
+        leaf("stock", "Stock", ShapeType.ApplicationComponent),
+      ),
+      List(
+        edge("e1", "shop", "api", RelationshipType.Flow, Some("orders")).copy(sign = Some(Glyph.Rest)),
+        edge("e2", "api", "stock", RelationshipType.Flow).copy(sign = Some(Glyph.GraphQl)),
+        edge("e3", "stock", "gap", RelationshipType.Flow).copy(sign = Some(Glyph.Event), colour = Some("#1F6FEB")),
+        edge("e4", "gap", "geo", RelationshipType.Flow).copy(sign = Some(Glyph.Batch)),
+        edge("e5", "geo", "geo2", RelationshipType.Serving).copy(sign = Some(Glyph.Grpc)),
+      ),
+      legend = Some(
+        Legend(
+          "Signs",
+          Nil,
+          List(
+            LegendSection("Marks", marks.map(g => LegendItem.Mark(badge(g)))),
+            LegendSection("API styles", api.map(g => LegendItem.Mark(badge(g)))),
+          ),
+        )
+      ),
+    )
+
+  end signs
+
   // townplanner's sample return (TOWN-68, APP-2262): two lanes, a boundary timer with its
   // own branch, a decision, tasks with systems and data; its tasks' names wrapped over
   // three and four lines, and it came out 16 cm wide
@@ -452,6 +490,7 @@ object DiagramGallery extends ZIOSpecDefault:
       "badged" -> DiagramSpec.badged,
       "logos" -> LogoSpec.logos,
       "legend" -> LegendSpec.legended,
+      "signs" -> signs,
     )
 
   private def palette: Map[String, String] =

@@ -349,6 +349,7 @@ object Activity:
       case Prim.Connector(ps, dash, start, end, ink)      =>
         Prim.Connector(ps.map(p), dash, start, end, ink)
       case c: Prim.Curve => c.copy(segments = c.segments.map(Seg.shift(_, dx, dy)))
+      case s: Prim.Path  => s.copy(segments = s.segments.map(Seg.shift(_, dx, dy)))
       case i: Prim.Image => i.copy(x = i.x + dx, y = i.y + dy)
 
   end shift

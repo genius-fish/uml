@@ -151,13 +151,18 @@ object Diagram:
           .filter((e, _) => math.abs(p._1 - e.x) <= e.w / 2 && math.abs(p._2 - e.y) <= e.d / 2)
           .minByOption((e, _) => e.w * e.d)
           .fold(Role.Halo)(_._2)
+      val signs              = graph.edges.flatMap(e => e.sign.map(e.id -> _)).toMap
       val said               = routes.flatMap:
         (
           r,
           points,
           _,
         ) =>
-          r.label.toList.flatMap(l => label(l, labels.get(l.text), points, taken, style, field))
+          val words =
+            r.label.toList.flatMap(l => label(l, labels.get(l.text), points, taken, style, field))
+          words ++ signs.get(r.key).toList.flatMap(g =>
+            signOnLine(g, points, words, r.colour, style, field)
+          )
       val gaps               = crossings(routes.map(r => (r._2, r._3)), field)
       val overflow           = sized.values.map(_.overflow).sum
       // drawn back to front: containers and groupings, then the boxes, then the lines
@@ -175,14 +180,57 @@ object Diagram:
         .flatMap(legend(_, ordered, style, measure))
       val colours =
         (nodes.flatMap(n => n.fill.flatMap(h => fillName(h).map(_ -> hexOf(h)))) ++
-        nodes.flatMap(n => outlineColour(n.outline)) ++
-        legendColours(graph.legend) ++
-        scene.relationships.flatMap(r => r.colour.flatMap(h => fillName(h).map(_ -> hexOf(h)))))
+          nodes.flatMap(n => outlineColour(n.outline)) ++
+          legendColours(graph.legend) ++
+          scene.relationships.flatMap(r => r.colour.flatMap(h => fillName(h).map(_ -> hexOf(h)))))
           .toMap
       Drawing(graph.name, ordered ++ keyed, scene, style, measure.family, overflow, colours)
     end for
 
   end draw
+
+  // A sign at the middle of a line, on a disc of the field it lies on so the line stops
+  // short of it; just before the line's label when it has one, so the two read together.
+  // On a line in a colour of its own the sign is in that colour too.
+  private def signOnLine(
+    glyph: Glyph,
+    points: List[Pt],
+    words: List[Prim],
+    colour: Option[String],
+    style: Style,
+    field: Pt => Role,
+  ): List[Prim] =
+    val s      = style.badgeSize
+    val centre = words.flatMap(extent).reduceOption((a, b) =>
+      (math.min(a._1, b._1), math.min(a._2, b._2), math.max(a._3, b._3), math.max(a._4, b._4))
+    ) match
+      case Some((x0, y0, _, y1)) => (x0 - GAP - s * SIGN_HALO, (y0 + y1) / 2)
+      case None                  => halfway(points)
+    val ink    = colour.flatMap(fillName)
+    val role   = ink.fold(Role.Plain)(Role.Inked(_))
+    val sign   = place(Notation.glyph(glyph), centre._1 - s / 2, centre._2 - s / 2, s, role).map:
+      case p: Prim.Path =>
+        ink.fold(p)(i => if p.fill == Ink.Line then p.copy(fill = Ink.Layer(i)) else p)
+      case other        => other
+    Prim.Circle(centre, s * SIGN_HALO, Ink.Paper, Role.Patch(field(centre))) :: sign
+
+  end signOnLine
+
+  // the point halfway along a route
+  private def halfway(points: List[Pt]): Pt =
+    val legs  = points.zip(points.drop(1))
+    val total = legs.map((a, b) => math.hypot(b._1 - a._1, b._2 - a._2)).sum
+    legs.foldLeft((total / 2, Option.empty[Pt])):
+      case ((left, found @ Some(_)), _) => (left, found)
+      case ((left, None), (a, b))       =>
+        val l = math.hypot(b._1 - a._1, b._2 - a._2)
+        if left <= l && l > 0 then
+          (0.0, Some((a._1 + (b._1 - a._1) * left / l, a._2 + (b._2 - a._2) * left / l)))
+        else (left - l, None)
+    ._2.getOrElse(points.headOption.getOrElse((0.0, 0.0)))
+
+  // the disc a sign on a line stands on, against the sign's size
+  private val SIGN_HALO = 0.62
 
   private val GAP      = 0.06
   private val ICON_AIR = 0.08
@@ -904,6 +952,7 @@ object Diagram:
       case Prim.Text(at, _, _, _, _, _, _)        => Some((at._1, at._2, at._1, at._2))
       case Prim.Connector(ps, _, _, _, _)         => of(ps)
       case Prim.Curve(segments, _, _)             => of(segments.flatMap(Seg.points))
+      case Prim.Path(segments, _, _, _, _)        => of(segments.flatMap(Seg.points))
       case Prim.Image(x, y, w, h, _, _)           => Some((x, y, x + w, y + h))
 
   end extent
@@ -995,6 +1044,8 @@ object Diagram:
       case Prim.Ellipse(c, rx, ry, fill, _) => Prim.Ellipse(p(c), rx * s, ry * s, fill, role)
       case Prim.Box(bx, by, w, h, r, fill, dash, k, _, pen) =>
         Prim.Box(x + bx * s, y + by * s, w * s, h * s, r * s, fill, dash, k, role, pen)
+      case Prim.Path(segments, fill, w, _, evenOdd)         =>
+        Prim.Path(segments.map(Seg.map(_, p)), fill, w * s, role, evenOdd)
       case other                                            => other
 
   end place

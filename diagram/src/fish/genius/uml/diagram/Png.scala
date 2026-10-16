@@ -163,6 +163,14 @@ object Png:
           g.setStroke(stroke(c.weight(role) * pen.weight, d, pen.weight))
           g.draw(shape)
     end paint
+    def outline(segments: List[Seg], evenOdd: Boolean) =
+      val shape = Path2D.Double(if evenOdd then Path2D.WIND_EVEN_ODD else Path2D.WIND_NON_ZERO)
+      segments.foreach:
+        case Seg.Move(p) => shape.moveTo(x(p._1), y(p._2))
+        case Seg.Line(p) => shape.lineTo(x(p._1), y(p._2))
+        case Seg.Cubic(a, b, p) => shape.curveTo(x(a._1), y(a._2), x(b._1), y(b._2), x(p._1), y(p._2))
+        case Seg.Close => shape.closePath()
+      shape
     def draw(p: Prim): Unit = p match
       case Prim.Poly(ps, closed, fill, d, role, pen)                  =>
         paint(path(ps, closed), role, if closed then fill else Ink.Empty, d, outline = true, pen)
@@ -194,15 +202,18 @@ object Png:
         g.draw(path(ps, closed = false, Look.BEND * 2.54 / 72))
         Heads.of(con).foreach(draw)
       case Prim.Curve(segments, fill, evenOdd)                        =>
-        val outline = Path2D.Double(if evenOdd then Path2D.WIND_EVEN_ODD else Path2D.WIND_NON_ZERO)
-        segments.foreach:
-          case Seg.Move(p)        => outline.moveTo(x(p._1), y(p._2))
-          case Seg.Line(p)        => outline.lineTo(x(p._1), y(p._2))
-          case Seg.Cubic(a, b, p) =>
-            outline.curveTo(x(a._1), y(a._2), x(b._1), y(b._2), x(p._1), y(p._2))
-          case Seg.Close          => outline.closePath()
         g.setColor(colour(Logos.colour(fill)))
-        g.fill(outline)
+        g.fill(outline(segments, evenOdd))
+      case Prim.Path(segments, fill, w, role, evenOdd)                =>
+        val (look, inked) = c.look(role, fill)
+        val shape         = outline(segments, evenOdd)
+        inked.foreach: hex =>
+          g.setColor(colour(hex))
+          g.fill(shape)
+        look.filter(_ => w > 0).foreach: hex =>
+          g.setColor(colour(hex))
+          g.setStroke(BasicStroke((w * scale).toFloat, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND))
+          g.draw(shape)
       case Prim.Image(ix, iy, w, h, data, _)                          =>
         scala.util.Try(
           ImageIO.read(java.io.ByteArrayInputStream(java.util.Base64.getDecoder.decode(data)))

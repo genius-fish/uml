@@ -596,9 +596,10 @@ object DiagramSpec extends ZIOSpecDefault:
         def box(drawing: Diagram.Drawing, id: String) = drawing.scene.elements.find(_.key == SceneId(id)).get
         val payments                                  = box(d, "abb2")
         val marks                                     = d.prims.collect:
-          case p @ Prim.Poly(ps, true, Ink.Line, _, Role.Mark("am-application"), _)
-            if ps.forall(q => q._2 < payments.y - payments.d / 2 + 0.5) &&
-            ps.forall(q => math.abs(q._1 - payments.x) < payments.w / 2) => p
+          case _ @Prim.Path(segs, Ink.Line, _, Role.Mark("am-application"), _)
+            if segs.flatMap(Seg.points).forall(q => q._2 < payments.y - payments.d / 2 + 0.5) &&
+            segs.flatMap(Seg.points).forall(q => math.abs(q._1 - payments.x) < payments.w / 2) =>
+            segs.flatMap(Seg.points)
         val words                                     = d.prims.collect:
           case Prim.Text(at, _, _, _, _, _, _)
             if math.abs(at._1 - payments.x) < payments.w / 2 &&
@@ -617,7 +618,7 @@ object DiagramSpec extends ZIOSpecDefault:
         assertTrue(
           box(d, "abb2").d >= box(plain, "abb2").d,
           box(tall, "t").d > box(short, "t").d,
-          marks.flatMap(_.points.map(_._2)).max < words.min - 0.05,
+          marks.flatten.map(_._2).max < words.min - 0.05,
           box(d, "abb2").w >= 6 * Diagram.Style().badgeSize,
           marks.nonEmpty,
           d.overflow == 0,
@@ -699,16 +700,103 @@ object DiagramSpec extends ZIOSpecDefault:
               false,
         )
       ,
-      test("every glyph is drawn inside its unit square"):
-        val inside = Glyph.values.toList.forall: g =>
-          val ps = Notation.glyph(g).flatMap:
-            case Prim.Poly(points, _, _, _, _, _)       => points
-            case Prim.Circle(c, r, _, _)                => List((c._1 - r, c._2 - r), (c._1 + r, c._2 + r))
-            case Prim.Ellipse(c, rx, ry, _, _)          => List((c._1 - rx, c._2 - ry), (c._1 + rx, c._2 + ry))
-            case Prim.Box(x, y, w, h, _, _, _, _, _, _) => List((x, y), (x + w, y + h))
-            case _                                      => Nil
-          ps.nonEmpty && ps.forall(p => p._1 >= -1e-9 && p._1 <= 1 + 1e-9 && p._2 >= -1e-9 && p._2 <= 1 + 1e-9)
-        assertTrue(inside)
+      test("every sign is one family: vector paths at one weight, inside the grid's live area"):
+        // APP-2260: the signs were drawn one by one, solid polygons beside circles and
+        // lines at a role's weight; now each is a path on a 24-unit grid, every line two
+        // units wide, its ink within units 2 to 22, and none of them smaller than 16 units
+        val (lo, hi)          = Signs.LIVE
+        val signs             = Glyph.values.toList.map(g => g -> Notation.glyph(g))
+        def ink(p: Prim.Path) =
+          val half = p.width / 2
+          p.segments.flatMap(Seg.points).flatMap(q =>
+            List((q._1 - half, q._2 - half), (q._1 + half, q._2 + half))
+          )
+        val within            = signs.forall((_, prims) =>
+          prims.forall:
+            case p: Prim.Path =>
+              ink(p).forall(q => q._1 >= lo - 1e-9 && q._1 <= hi + 1e-9 && q._2 >= lo - 1e-9 && q._2 <= hi + 1e-9)
+            case _            => false
+        )
+        val weights           = signs.flatMap(_._2).collect { case p: Prim.Path if p.width > 0 => p.width }.distinct
+        val large             = signs.forall: (_, prims) =>
+          val qs = prims.collect { case p: Prim.Path => p }.flatMap(ink)
+          math.max(qs.map(_._1).max - qs.map(_._1).min, qs.map(_._2).max - qs.map(_._2).min) >= 16.0 / Signs.GRID - 1e-9
+        assertTrue(
+          signs.forall(_._2.nonEmpty),
+          within,
+          weights == List(2.0 / 24),
+          large,
+          // a sign is ink, never a letter in a font
+          signs.flatMap(_._2).forall(_.isInstanceOf[Prim.Path]),
+        )
+      ,
+      test("a sign keeps its weight as it scales: on a box, in the legend, in TikZ, SVG and PNG"):
+        val glyphs         = Glyph.values.toList
+        val graph          = SceneGraph(
+          "Signs",
+          List(leaf("all", "Every sign", ShapeType.ApplicationComponent).copy(badges =
+            glyphs.map(g => Badge(g, g.toString))
+          )),
+          Nil,
+          legend = Some(Legend("Signs", glyphs.map(g => Badge(g, g.toString)))),
+        )
+        val d              = Diagram.draw(graph).toOption.get
+        val paths          = d.prims.collect { case p: Prim.Path => p }
+        val style          = Diagram.Style()
+        // on the box a sign is badgeSize across, in the legend LEGEND_SCALE of it
+        val onBox          = style.badgeSize * Signs.STROKE
+        val inKey          = onBox * 0.8
+        val tikz           = Tikz.picture(d)
+        val svg            = Svg.document(d)
+        def pt(cm: Double) =
+          String.format(java.util.Locale.ROOT, "%.3f", Double.box(cm / Diagram.PT)).replaceAll("\\.?0+$", "")
+        def px(cm: Double) =
+          String.format(java.util.Locale.ROOT, "%.2f", Double.box(cm * 96 / 2.54)).replaceAll("\\.?0+$", "")
+        assertTrue(
+          paths.nonEmpty,
+          paths.filter(_.width > 0).map(_.width).distinct.forall(w =>
+            math.abs(w - onBox) < 1e-9 || math.abs(w - inKey) < 1e-9
+          ),
+          tikz.contains(s"line width=${pt(onBox)}pt"),
+          svg.contains(s"""stroke-width="${px(onBox)}""""),
+          Png.image(d).nonEmpty,
+          d.overflow == 0,
+        )
+      ,
+      test("a sign stands at the middle of its line, on the field, before the line's label"):
+        val bare                     = SceneGraph(
+          "Api",
+          List(leaf("a", "Shop", ShapeType.ApplicationComponent), leaf("b", "Stock", ShapeType.ApplicationComponent)),
+          List(edge("ab", "a", "b", RelationshipType.Flow).copy(sign = Some(Glyph.Event))),
+        )
+        val said                     = bare.copy(edges = bare.edges.map(_.copy(label = Some("stock changed"))))
+        val tinted                   = bare.copy(edges = bare.edges.map(_.copy(colour = Some("#1F6FEB"))))
+        def sign(d: Diagram.Drawing) = d.prims.collect { case p @ Prim.Path(_, _, _, _, _) => p }
+        def halo(d: Diagram.Drawing) = d.prims.collect { case c @ Prim.Circle(_, _, Ink.Paper, Role.Patch(_)) => c }
+        def line(d: Diagram.Drawing) = d.prims.collect { case c: Prim.Connector => c }.head
+        val plain                    = Diagram.draw(bare).toOption.get
+        val named                    = Diagram.draw(said).toOption.get
+        val inked                    = Diagram.draw(tinted).toOption.get
+        val centre                   = halo(plain).head.centre
+        // the route's halfway point lies on it: within the halo of the sign
+        val pts                      = line(plain).points
+        val onLine                   = pts.zip(pts.drop(1)).exists((a, b) =>
+          val (x0, x1, y0, y1) = (math.min(a._1, b._1), math.max(a._1, b._1), math.min(a._2, b._2), math.max(a._2, b._2))
+          centre._1 >= x0 - 1e-6 && centre._1 <= x1 + 1e-6 && centre._2 >= y0 - 1e-6 && centre._2 <= y1 + 1e-6
+        )
+        val words                    = named.prims.collect { case Prim.Text(at, "stock changed", _, _, _, _, _) => at }
+        assertTrue(
+          sign(plain).size == 1,
+          halo(plain).size == 1,
+          onLine,
+          // before the label: its halo to the left of where the words start
+          words.nonEmpty,
+          halo(named).head.centre._1 < words.head._1,
+          // on a coloured line, the sign in the line's colour
+          sign(inked).forall(_.role == Role.Inked("am-fill-1f6feb")),
+          sign(inked).forall(_.fill == Ink.Layer("am-fill-1f6feb")),
+          sign(plain).forall(_.role == Role.Plain),
+        )
       ,
       test("an empty drawing still has an extent"):
         val empty = Diagram.Drawing("Empty", Nil, Scene("Empty", 0, 0, Nil, Nil), Diagram.Style(), "Nimbus Sans", 0)
