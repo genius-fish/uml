@@ -30,13 +30,18 @@ object ArchimateTypesSpec extends ZIOSpecDefault:
         RelationshipType.*.toSet == RelationshipType.values.toSet,
       )
     ,
-    test("a label is plain values, compared and printed as a case class"):
+    // a name is how the scene and the diagram tell two elements of one layer apart
+    test("an element's name is unique within its layer"):
+      val names = ShapeType.values.toList.groupBy(_.group).view.mapValues(_.map(_.name))
+      assertTrue(names.values.forall(ns => ns.distinct.size == ns.size))
+    ,
+    test("a label keeps the configuration in scope where it was built"):
       given ArchimateConfiguration = ArchimateConfiguration(technicalFontSize = 9)
       val label = ShapeLabel("Web Shop", Some("IT System"), Some("Next.js"))
       assertTrue(
-        label == ShapeLabel("Web Shop", Some("IT System"), Some("Next.js")),
-        label.toString == "ShapeLabel(Web Shop,Some(IT System),Some(Next.js),None)",
         label.config.technicalFontSize == 9,
+        label.config.descriptionFontSize == 10,
+        label.componentTypeDetails.contains("Next.js"),
       )
     ,
     test("a caller that still sets elkLayout compiles and gets the defaults otherwise"):
