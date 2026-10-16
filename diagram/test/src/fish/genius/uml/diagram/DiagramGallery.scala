@@ -244,6 +244,72 @@ object DiagramGallery extends ZIOSpecDefault:
 
   end claim
 
+  // townplanner's sample return (TOWN-68, APP-2262): two lanes, a boundary timer with its
+  // own branch, a decision, tasks with systems and data; its tasks' names wrapped over
+  // three and four lines, and it came out 16 cm wide
+  val returns: Activity.Graph =
+    import Activity.*
+    Graph(
+      "Handle a return",
+      List(
+        Lane("customer", "Customer", Some(ShapeType.BusinessActor)),
+        Lane("service", "Customer service", Some(ShapeType.BusinessRole)),
+      ),
+      List(
+        Node("requested", "Return requested", Kind.Start(Trigger.Message), Some("customer")),
+        Node("send", "Send the parcel back", Kind.Work(Task.User), Some("customer"), Some("[Web storefront]")),
+        Node(
+          "inspect",
+          "Inspect the parcel",
+          Kind.Work(Task.User),
+          Some("service"),
+          data = List(Datum("Order")),
+        ),
+        Node(
+          "days",
+          "Ten days pass",
+          Kind.Boundary(Trigger.Timer, interrupting = false),
+          Some("service"),
+          host = Some("inspect"),
+        ),
+        Node("reminded", "Customer reminded", Kind.Intermediate(Trigger.Message, throwing = true), Some("service")),
+        Node("sent", "Reminder sent", Kind.End(Trigger.Plain), Some("service")),
+        Node("fit", "Can it be resold?", Kind.Gateway(Gate.Exclusive), Some("service")),
+        Node(
+          "restock",
+          "Restock the item",
+          Kind.Work(Task.Service),
+          Some("service"),
+          Some("[Catalogue service]"),
+          data = List(Datum("Product", output = true)),
+        ),
+        Node("dispose", "Dispose of the item", Kind.Work(Task.Manual), Some("service")),
+        Node(
+          "refund",
+          "Refund to the original tender",
+          Kind.Work(Task.Service),
+          Some("service"),
+          Some("[Checkout service]"),
+          data = List(Datum("Order", output = true)),
+        ),
+        Node("refunded", "Refunded", Kind.End(Trigger.Plain), Some("service")),
+      ),
+      List(
+        Flow("requested", "send"),
+        Flow("send", "inspect"),
+        Flow("days", "reminded"),
+        Flow("reminded", "sent"),
+        Flow("inspect", "fit"),
+        Flow("fit", "restock", Some("yes")),
+        Flow("fit", "dispose", Some("no"), default = true),
+        Flow("restock", "refund"),
+        Flow("dispose", "refund"),
+        Flow("refund", "refunded"),
+      ),
+    )
+
+  end returns
+
   // a shipment at BPMN's Analytic level: a pool drawn as a black box that messages go
   // to and come from, a non-interrupting timer and an error on the edge of a task and
   // of an expanded sub-process, a multi-instance task inside it, a transaction, a
@@ -412,6 +478,10 @@ object DiagramGallery extends ZIOSpecDefault:
         ("shipment", Right(Activity.draw(shipment))),
         ("symbols", Right(Activity.draw(symbols, Activity.Options(pageWidth = 30)))),
         ("claim", Right(Activity.draw(claim))),
+        (
+          "returns-innovenso",
+          Right(Activity.draw(returns, Activity.Options(Diagram.Style(typeface = Typeface.montserrat)))),
+        ),
         (
           "order-innovenso",
           Right(Activity.draw(order, Activity.Options(Diagram.Style(typeface = Typeface.montserrat)))),

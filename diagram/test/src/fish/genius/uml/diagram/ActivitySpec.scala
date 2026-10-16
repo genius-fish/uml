@@ -110,7 +110,48 @@ object ActivitySpec extends ZIOSpecDefault:
         def wide(d: Diagram.Drawing) =
           val (a, _, b, _) = Extent.of(d, 0); b - a
         val roomy                    = Activity.draw(DiagramGallery.order, Activity.Options(pageWidth = 30.0))
-        assertTrue(wide(drawn) < wide(roomy)) // on 13 cm the tasks narrow, with room they keep their widest
+        val narrow                   = Activity.draw(DiagramGallery.order, Activity.Options(pageWidth = 9.0))
+        // lanes as wide as their widest row (APP-2262) hold the order on 13 cm at the widest
+        // tasks; on 9 cm the tasks narrow
+        assertTrue(wide(drawn) == wide(roomy), wide(narrow) < wide(roomy))
+      ,
+      test("the return's tasks say their names on two lines at most, at box-text size, on the page"):
+        // townplanner's sample (APP-2262): every track in a lane was as wide as its widest
+        // node with its data, so the drawing came out 16 cm wide on the narrowest tasks,
+        // their names over three and four lines, and the dossier printed it smaller still
+        val style        = Diagram.Style(typeface = Typeface.montserrat)
+        val returns      = Activity.draw(DiagramGallery.returns, Activity.Options(style))
+        val (a, _, b, _) = Extent.of(returns, 0)
+        val names        = List(
+          "Send the parcel back",
+          "Inspect the parcel",
+          "Restock the item",
+          "Dispose of the item",
+          "Refund to the original tender",
+        )
+        // the name's lines inside each task's box, set as a task's name is
+        val lines        = names.map: name =>
+          val box = task(returns, name.split(" ").head)
+          name -> texts(returns).filter(t =>
+            t.weight == Weight.Medium && box.x < t.baseline._1 && t.baseline._1 < box.x + box.w &&
+            box.y < t.baseline._2 && t.baseline._2 < box.y + box.h
+          )
+        assertTrue(
+          b - a <= 13.0 + 1e-6,
+          lines.forall((_, ls) => ls.nonEmpty && ls.size <= 2),
+          lines.forall((name, ls) => ls.map(_.text).mkString(" ") == name),
+          lines.flatMap(_._2).forall(_.size == style.nameSize),
+          returns.overflow == 0,
+          // a boundary event stands on its host's edge, so only the task boxes are compared
+          lines.map(_._1.split(" ").head).combinations(2).forall:
+            case List(p, q) =>
+              val (u, v) = (task(returns, p), task(returns, q))
+              u.x + u.w <= v.x || v.x + v.w <= u.x || u.y + u.h <= v.y || v.y + v.h <= u.y
+            case _          =>
+              true
+          ,
+          through(returns).isEmpty,
+        )
       ,
       test("two identical flows are drawn once"):
         val twice = Activity.draw(order.copy(flows = order.flows :+ order.flows.head))

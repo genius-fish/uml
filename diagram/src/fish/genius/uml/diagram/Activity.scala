@@ -143,6 +143,8 @@ object Activity:
   private val TASK_WIDTHS  = List(2.4, 2.0)
   private val TASK_MIN_W   = 1.9
   private val TASK_MIN_H   = 0.8
+  private val TASK_MAX_W   = 6.0         // the widest a task grows to keep its name on two lines
+  private val WIDEN        = 0.1
   private val EVENT_R      = 0.2
   private val GATE         = 0.27        // half a gateway's diagonal
   private val BESIDE       = 0.1         // from an event or gateway to its name
@@ -546,17 +548,22 @@ object Activity:
       notes: List[Line],
       feet: List[Option[Marker]],
     ): Sized =
-      val noteW  = notes.map(lineWidth).maxOption.fold(0.0)(_ + NOTE_GAP + 0.1)
-      val noteH  = leading(notes)
-      val icon   = iconOf(task).isDefined || task == Task.Send || task == Task.Receive
+      val noteW            = notes.map(lineWidth).maxOption.fold(0.0)(_ + NOTE_GAP + 0.1)
+      val noteH            = leading(notes)
+      val icon             = iconOf(task).isDefined || task == Task.Send || task == Task.Receive
       // the name keeps clear of the icon on its side only, and is centred in the room
       // left beside it
-      val clear  = if icon then 2 * style.padding + style.iconSize * ICON + 0.05
+      val clear            = if icon then 2 * style.padding + style.iconSize * ICON + 0.05
       else 2 * style.padding
-      val room   = taskWidth - clear
+      // a name over more than two lines at this width widens its task until it takes two:
+      // a narrow column of three or four short lines reads badly, and printed smaller
+      // still when the page cannot hold the drawing (APP-2262)
+      def named(w: Double) = measure.wrap(n.label, w - clear, style.nameSize, Weight.Medium)
+      val width  = Iterator.iterate(taskWidth)(_ + WIDEN).takeWhile(_ <= TASK_MAX_W + 1e-9)
+        .find(w => named(w).size <= 2).getOrElse(TASK_MAX_W)
+      val room   = width - clear
       val lines  =
-        measure.wrap(n.label, room, style.nameSize, Weight.Medium)
-          .map(Line(_, style.nameSize, Weight.Medium)) ++
+        named(width).map(Line(_, style.nameSize, Weight.Medium)) ++
         n.detail.toList.flatMap(d =>
           measure.wrap(d, room, style.captionSize).map(Line(
             _,
@@ -705,17 +712,15 @@ object Activity:
 
     end set
 
-    // how many nodes of a row share a lane at most, and how wide a track is there; a
-    // lane without nodes (a pool drawn as a black box) is narrow
-    private val tracks: Vector[Int] =
-      lanes.indices.toVector.map: li =>
-        cells.filter(laneIndex(_) == li).groupBy(n => rank(n.id)).values.map(_.size).maxOption
-          .getOrElse(1)
+    // the room a node takes in its row, what stands beside it included, with the gap to
+    // the next; a lane is as wide as its widest row needs, so a row of three narrow nodes
+    // does not take three times the widest node there, its data and notes with it
+    private def need(n: Node): Double = sets(n.id).left + sets(n.id).right + TRACK_GAP
 
-    private val trackW: Vector[Double] =
+    private val rowNeed: Vector[Double] =
       lanes.indices.toVector.map: li =>
-        cells.filter(laneIndex(_) == li).map(n => sets(n.id).left + sets(n.id).right)
-          .maxOption.map(_ + TRACK_GAP).getOrElse(BLACK_BOX_W)
+        cells.filter(laneIndex(_) == li).groupBy(n => rank(n.id)).values.map(_.map(need).sum)
+          .maxOption.getOrElse(BLACK_BOX_W)
 
     private def headerLines(lane: Option[Lane]): List[Line] =
       lane.toList.flatMap(l =>
@@ -727,7 +732,7 @@ object Activity:
       lanes.zipWithIndex.toVector.map: (lane, li) =>
         val head = headerLines(lane).map(lineWidth).maxOption.fold(0.0)(_ + 2 * style.padding +
         (if lane.exists(_.shape.isDefined) then 2 * (style.iconSize + 0.1) else 0.0))
-        math.max(head, 2 * LANE_PAD + tracks(li) * trackW(li))
+        math.max(head, 2 * LANE_PAD + rowNeed(li))
 
     private val laneX: Vector[Double] = laneW.scanLeft(0.0)(_ + _).dropRight(1)
 
@@ -759,7 +764,7 @@ object Activity:
 
     // where each node stands: row by row, a lane's nodes of one row ordered under the
     // nodes they come from (in their order when they come from none drawn yet), and
-    // centred on the lane's tracks; a boundary event on its host's bottom edge
+    // in slots across the lane; a boundary event on its host's bottom edge
     val at: Map[String, Pt] =
       val placed = mutable.Map.empty[String, Pt]
       val into   = forward.groupBy(_.to)
@@ -777,22 +782,23 @@ object Activity:
               case Nil => Double.MaxValue
               case xs  => xs.sum / xs.size
           val ordered          = here.sortBy(n => (under(n), index(n.id)))
-          val offset           = (tracks(li) - ordered.size) / 2.0
+          // each node a slot as wide as it needs, the lane's room to spare shared out
+          // evenly, so the slots fill the lane
+          val inner            = laneW(li) - 2 * LANE_PAD
+          val spare            = (inner - ordered.map(need).sum) / ordered.size
+          val starts           = ordered.map(need(_) + spare).scanLeft(laneX(li) + LANE_PAD)(_ + _)
           ordered.zipWithIndex.foreach: (n, k) =>
-            // a node's shape on the track's middle, or under the one node of its lane it
+            // a node's shape on its slot's middle, or under the one node of its lane it
             // comes from, so a straight run stays straight; moved left only as far as what
             // stands beside it (an event's name, a note, data) needs to keep within the
-            // track; a gateway on the middle, its question above
+            // slot; a gateway on the middle, its question above
             val s      = sets(n.id)
-            val middle = laneX(li) + LANE_PAD + (offset + k + 0.5) * trackW(li)
-            // the room it may take: its track, or the lane when it is alone on its row there
+            val middle = (starts(k) + starts(k + 1)) / 2
+            // the room it may take: its slot, or the lane when it is alone on its row there
             val alone  = ordered.size == 1
-            val low    =
-              if alone then laneX(li) + LANE_PAD
-              else laneX(li) + LANE_PAD + (offset + k) * trackW(li) + TRACK_GAP / 2
+            val low    = if alone then laneX(li) + LANE_PAD else starts(k) + TRACK_GAP / 2
             val edge   =
-              if alone then laneX(li) + laneW(li) - LANE_PAD
-              else laneX(li) + LANE_PAD + (offset + k + 1) * trackW(li) - TRACK_GAP / 2
+              if alone then laneX(li) + laneW(li) - LANE_PAD else starts(k + 1) - TRACK_GAP / 2
             val above  = into.getOrElse(n.id, Nil).map(_.from).distinct match
               case List(id)
                 if cells.exists(c => c.id == hosts.getOrElse(id, id) && laneIndex(c) == li) =>
@@ -801,7 +807,7 @@ object Activity:
             val x      = n.kind match
               case Kind.Gateway(_) => middle
               case _               =>
-                val right = laneX(li) + LANE_PAD + (offset + k + 1) * trackW(li) - TRACK_GAP / 2
+                val right = starts(k + 1) - TRACK_GAP / 2
                 val fit = math.max((s.left - s.right) / 2, math.min(0.0, right - middle - s.right))
                 above.filter(a => a - s.left >= low - 1e-9 && a + s.right <= edge + 1e-9)
                   .getOrElse(middle + fit)
