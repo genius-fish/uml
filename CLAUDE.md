@@ -2,7 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-`genius-uml` is a composable, type-safe PlantUML DSL and renderer for Scala 3, built with Mill.
+`genius-uml` draws ArchiMate views, sequences and processes for Scala 3: a `SceneGraph` laid out
+by ELK and drawn natively as TikZ, SVG and PNG (Java2D), or in 3D for Blender. Built with Mill.
 
 ## Commands
 
@@ -20,40 +21,38 @@ make publishLocal     # publish to ~/.ivy2/local
 Working with a single module or test (Mill targets, not wrapped by the Makefile):
 
 ```sh
-./mill render.test                         # run one module's tests
-./mill render.test.compile                 # compile only one module's tests
-./mill render.reformat                     # format a single module
-./mill render.test.reformat                # format that module's test sources
-./mill render.fix                          # scalafix a single module
+./mill diagram.test                        # run one module's tests
+./mill diagram.test.compile                # compile only one module's tests
+./mill diagram.reformat                    # format a single module
+./mill diagram.test.reformat               # format that module's test sources
+./mill diagram.fix                         # scalafix a single module
 ```
 
 ZIO Test has no per-test CLI filter here; narrow to a spec by running its module's
-test suite (`./mill render.test`) and reading the named `+`/`-` lines in the output.
+test suite (`./mill diagram.test`) and reading the named `+`/`-` lines in the output.
 
-Running the examples (each is a `ZIOAppDefault`). Without env vars they only print
-PlantUML source to stdout; `PLANTUML_AVAILABLE=1` also renders real files via the
-bundled PlantUML jar:
+Running the examples (each is a `ZIOAppDefault`):
 
 ```sh
-PLANTUML_AVAILABLE=1 ./mill examples.runMain fish.genius.uml.examples.ArchimateExample
-make examples        # renders every example as SVG (also: examples-eps/-png/-latex)
+./mill examples.runMain fish.genius.uml.examples.DiagramExample  # out/diagram/examples: .tex .svg .png
+./mill examples.runMain fish.genius.uml.examples.SceneExample    # out/scene/examples: JSON + builder
+make examples                                                     # both
 ```
-
-`PLANTUML_FORMAT=svg|eps|png|latex|latex_no_preamble` selects the output format.
 
 ## Architecture
 
-The pipeline is **DSL → immutable `PUmlNode` AST → PlantUML `String` → rendered file**.
+The pipeline is **`SceneGraph` → ELK layout (`SceneLayout`) → geometry (`Prim`) → TikZ / SVG /
+PNG**, and from the same layout **→ 3D `Scene` (JSON) → Blender / three.js**. Nothing shells out
+to a renderer; the only external program is Blender, for the 3D stills and videos.
 
 ### Modules (`build.mill`)
 
-- **`core`** — the DSL and AST. **Zero runtime dependencies**: no ZIO, no os-lib, no
-  PlantUML jar (only `sourcecode`). Anything touching the filesystem, ZIO, or PlantUML
-  belongs in `render`, not here. This boundary is the most important architectural
-  constraint in the repo.
-- **`render`** — depends on `core`. ZIO 2 service that turns the AST into SVG/PNG/EPS/
-  LaTeX via the PlantUML jar.
-- **`testkit`** — depends on `core`. Golden-file and structural assertions for ZIO Test.
+- **`core`** — the ArchiMate vocabulary (`fish.genius.uml.dsl.archimate`): `ShapeType`,
+  `ShapeGroup`, `RelationshipType`, `ShapeLabel`, `ArchimateConfiguration`. **Zero
+  dependencies.** The scene and the diagram match on its enums exhaustively, so a new case
+  does not compile until both draw it. townplanner builds against these types (it passes
+  `ArchimateConfiguration(elkLayout = true)`, which no longer does anything): change their
+  shape only in a major release.
 - **`scene`** — depends on `core` (for `ShapeType` and `RelationshipType`), ELK and zio-json.
   Lays an ArchiMate `SceneGraph` out as a 3D `Scene` (`SceneLayout`) and ships the Blender
   builder and three.js shapes as resources (`SceneBuilder`). Its own rules are in DSL.md,
@@ -72,60 +71,15 @@ The pipeline is **DSL → immutable `PUmlNode` AST → PlantUML `String` → ren
 - **`diagram`** — depends on `scene`. Draws a `SceneGraph` as a flat ArchiMate diagram with the
   scene's ELK layout (the four flat-diagram options of `SceneLayout.Options`), boxes sized to
   what they say in the diagram's font, and the notation as plain geometry (`Prim`), written by
-  `Tikz`, `Svg` and `Png` (Java2D). DSL.md, "Diagrams: ArchiMate drawn flat". Set
+  `Tikz`, `Svg` and `Png` (Java2D). `Sequence` and `Activity` draw sequences and BPMN
+  processes in the same look, as the same `Diagram.Drawing`. DSL.md, "Diagrams: ArchiMate drawn flat". Set
   `DIAGRAM_OUT=dir` when running `DiagramSpec` to get the sample as `.tex`, `.svg` and `.png`.
-- **`examples`** — depends on `core`, `render` and `scene`. Runnable end-to-end showcases.
-
-### DSL capture (the non-obvious part — `core/.../dsl/`)
-
-The DSL is built on Scala 3 **context functions** plus a per-scope mutable builder, not a
-global or a monad:
-
-- `block(body)` allocates a fresh `PUmlCtx` (a mutable `ArrayBuffer[PUmlNode]` + a
-  `Counters` for deterministic alias generation), supplies it as a `given`, runs the body,
-  and collapses the buffer into one `PUmlNode`. Each `block` is an isolated scope, so
-  concurrent renders are race-free by construction.
-- Helpers like `shape(...)`, `relationship(...)`, `step(...)` take the `PUmlCtx` implicitly,
-  build an AST node, and append it to the enclosing context's buffer.
-- **Marker capabilities** (`InUml`, `InArchimate`, `InSequence`, `InActivity`, ...) are
-  sealed traits introduced as `given`s by the wrapper functions (`uml`, `archimateDiagram`,
-  `sequenceDiagram`, `activityDiagram`) and required via `using` on the helpers. This
-  enforces nesting **at compile time** — e.g. calling `shape(...)` outside an
-  `archimateDiagram { ... }` fails to compile ("no given instance of type InArchimate").
-
-To add a new diagram dialect: define its marker, a wrapper that injects the marker `given`
-and wraps the collected body in a `PUmlNode.Diagram(kind, ...)`, and helper functions that
-emit AST nodes into the context.
-
-### AST and Emit
-
-- `PUmlNode` (`core/.../ast/`) is a small ADT: `Statement`, `Sequence`, `Block(header, body)`,
-  `Diagram(kind, body)`, `Comment`.
-- `Emit.emit(node): String` (`core/.../render/Emit.scala`) is a pure total fold over the AST
-  that produces PlantUML source. **`Emit` lives in `core`**, so source generation needs no
-  rendering dependencies; `render` calls it before handing the string to PlantUML.
-
-### Render path (`render/.../`)
-
-- `PUmlEngine` is a ZIO service with two layers: **`live`** (feeds `Emit.emit` output to
-  PlantUML's `SourceStringReader`, writing into a scoped temp `Workspace` deleted when the
-  `Scope` closes) and **`test`** (writes only the `.puml` source, skipping the PlantUML jar —
-  used by unit tests that assert on source, not pixels).
-- `PUmlConfig` carries the default format and optional workspace root. `Renderer` is a thin
-  facade (`renderedAsSvg`, etc.).
-- `DiagramOutput.save(...)` copies a render out of the scoped temp dir to a stable, gitignored
-  location: **`out/<format>/<category>/<name>.<suffix>`** where `<format>` is `svg|png|eps|tex`
-  and `<category>` is `test` (use `DiagramOutput.Test`) or `examples` (`DiagramOutput.Examples`).
-  Root is `MILL_WORKSPACE_ROOT`, falling back to cwd. Tests and examples persist their diagrams
-  here; the raw engine output is otherwise transient.
-
-### Testkit
-
-- `Golden.assertMatches(id, actual, resourcesDir)` compares emitted source against a checked-in
-  fixture at `<module>/test/resources/golden/<id>.puml`. Set `ZIO_TEST_UPDATE_GOLDEN=1` to
-  regenerate fixtures instead of failing. Workspace root resolves via `MILL_WORKSPACE_ROOT`.
-- `PUmlAssertions` provides ZIO Test combinators and `PUmlNode` extension methods for
-  structural assertions over the AST (no PlantUML invocation).
+- **`testkit`** — no module deps. `Golden.assertMatches(id, actual, resourcesDir, extension)`
+  compares a rendered string against `<module>/test/resources/golden/<id>.<extension>`
+  (default `txt`); `ZIO_TEST_UPDATE_GOLDEN=1` regenerates the fixtures instead of failing.
+  Workspace root resolves via `MILL_WORKSPACE_ROOT`.
+- **`examples`** — depends on `core`, `scene` and `diagram`. `DiagramExample` and
+  `SceneExample`, runnable end-to-end; output goes to the gitignored `out/`.
 
 ## Jira
 

@@ -15,7 +15,7 @@ import zio.*
  * intentionally.
  *
  * Convention: golden files live at
- * `<module>/test/resources/golden/<id>.<extension>` (default `puml`). Use
+ * `<module>/test/resources/golden/<id>.<extension>` (default `txt`). Use
  * [[Golden.moduleResources]] to derive the path from the workspace root.
  */
 object Golden:
@@ -47,7 +47,7 @@ object Golden:
     id: String,
     actual: String,
     resourcesDir: os.Path,
-    extension: String = "puml",
+    extension: String = "txt",
     update: Boolean = shouldUpdate,
   ): ZIO[Any, java.io.IOException, TestResult] =
     val path = resourcesDir / "golden" / s"$id.$extension"

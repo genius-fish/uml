@@ -2,7 +2,7 @@ SHELL = /bin/bash
 
 .PHONY: clean fix fmt compile prepare build test validate deps publishLocal publish \
         release-prepare release-finalize release-abort release-status \
-        examples examples-eps examples-png examples-latex examples-clean
+        examples examples-clean
 
 # ---------------------------------------------------------------------------
 # Build
@@ -34,40 +34,23 @@ deps:
 	./mill mill.scalalib.Dependency/showUpdates
 
 # ---------------------------------------------------------------------------
-# Examples — runs every `fish.genius.uml.examples.*` ZIOAppDefault.
-# Set PLANTUML_AVAILABLE=1 to additionally render through the live engine.
-# Set PLANTUML_FORMAT=svg|eps|png|latex|latex_no_preamble to pick the format.
+# Examples: DiagramExample writes a flat diagram as .tex, .svg and .png to
+# out/diagram/examples; SceneExample writes a 3D scene's JSON and the Blender builder to
+# out/scene/examples.
 # ---------------------------------------------------------------------------
 
 EXAMPLES = \
-	ArchimateExample \
-	ActivityExample \
-	SequenceExample
-
-# $(call render-examples,<format-label>) — runs every example with
-# PLANTUML_AVAILABLE=1 and the given PLANTUML_FORMAT (lowercase).
-define render-examples
-	@for ex in $(EXAMPLES); do \
-		echo "=== Rendering $$ex ($(1)) ==="; \
-		PLANTUML_AVAILABLE=1 PLANTUML_FORMAT=$(1) \
-			./mill examples.runMain fish.genius.uml.examples.$$ex || exit $$?; \
-	done
-endef
+	DiagramExample \
+	SceneExample
 
 examples:
-	$(call render-examples,svg)
-
-examples-eps:
-	$(call render-examples,eps)
-
-examples-png:
-	$(call render-examples,png)
-
-examples-latex:
-	$(call render-examples,latex)
+	@for ex in $(EXAMPLES); do \
+		echo "=== $$ex ==="; \
+		./mill examples.runMain fish.genius.uml.examples.$$ex || exit $$?; \
+	done
 
 examples-clean:
-	rm -f *-example.svg *-example.png *-example.eps *-example.tex *-example.atxt *-example.utxt
+	rm -rf out/diagram/examples out/scene/examples
 
 # ---------------------------------------------------------------------------
 # Publishing

@@ -1,24 +1,29 @@
 # genius-uml
 
-A composable, type-safe PlantUML DSL and renderer for Scala 3.
+ArchiMate views, sequences and processes for Scala 3, laid out by ELK and drawn natively
+as TikZ (for LaTeX), SVG and PNG, or in 3D for Blender and three.js.
+
+A view is a value, a `SceneGraph`. `SceneLayout` lays it out with the Eclipse Layout
+Kernel; `Diagram.draw` turns the layout into plain geometry, which `Tikz`, `Svg` and
+`Png` (Java2D) write out. The same layout feeds the 3D scene, so a document's diagram
+and a flyover show the same landscape in the same places.
 
 ## Modules
 
-| Module     | Purpose                                                                |
-| ---------- | ---------------------------------------------------------------------- |
-| `core`     | Pure DSL + AST. No ZIO, no filesystem, no subprocess.                  |
-| `render`   | ZIO 2 service that turns AST into SVG / PNG / EPS / LaTeX via PlantUML.|
-| `testkit`  | Golden-file and structural assertions for ZIO Test.                    |
-| `scene`    | An ArchiMate graph laid out as a 3D scene (ELK), plus its Blender builder: stills, highlights, passports on glass panes, and flyovers through a flow as video. |
-| `diagram`  | The same graph as a flat ArchiMate diagram without PlantUML: the scene's ELK layout, drawn natively as TikZ, SVG or PNG. |
-| `examples` | Runnable end-to-end showcases (Archimate, sequence, activity).         |
+| Module     | Purpose |
+| ---------- | ------- |
+| `core`     | The ArchiMate vocabulary: element, layer and relationship types, box labels. No dependencies. |
+| `scene`    | `SceneGraph`, the ELK layout, and the 3D scene with its Blender builder: stills, highlights, passports on glass panes, and flyovers through a flow as video. |
+| `diagram`  | The graph drawn flat (`Diagram`), plus sequence (`Sequence`) and activity (`Activity`) diagrams in the same look, written as TikZ, SVG or PNG. |
+| `testkit`  | Golden-file assertions for ZIO Test. |
+| `examples` | `DiagramExample` and `SceneExample`, runnable. |
 
 ## Stack
 
 - Mill 1.1.5
 - Scala 3.8.3
-- ZIO 2.1.25
-- PlantUML 1.2025.2
+- ELK 0.12.0
+- ZIO 2.1.25 (scene's JSON, testkit)
 
 ## Build
 
@@ -28,101 +33,56 @@ make test           # ./mill __.test.testForked
 make fmt            # ./mill __.reformat
 make fix            # ./mill __.fix       (scalafix)
 make validate       # fix + fmt + compile + test
+make examples       # runs DiagramExample and SceneExample into out/
 make publishLocal   # to ~/.ivy2/local
 ```
 
 ## Quick start
 
 ```scala
-import fish.genius.uml.dsl.*
-import fish.genius.uml.dsl.archimate.*
+import fish.genius.uml.diagram.*
+import fish.genius.uml.dsl.archimate.RelationshipType.*
 import fish.genius.uml.dsl.archimate.ShapeType.*
-import fish.genius.uml.render.{Emit, PUmlEngine}
-import zio.*
+import fish.genius.uml.scene.*
 
-given ArchimateConfiguration = ArchimateConfiguration()
-
-val diagram = block:
-  uml:
-    archimate:
-      val customer  = shape(BusinessActor, label("Customer"))
-      val webStore  = shape(ApplicationComponent, label("Web Store"))
-      relationship(RelationshipType.Serving)(webStore)(customer)
-
-// 1) Inspect the rendered PlantUML source as a String:
-println(Emit.emit(diagram))
-
-// 2) Render to a real SVG (requires the PlantUML jar on the classpath):
-val program = ZIO.scoped(PUmlEngine.renderSvg(diagram))
-Unsafe.unsafe(implicit u => Runtime.default.unsafe.run(
-  program.provide(PUmlEngine.live)
-))
-```
-
-## Rendered output
-
-`PUmlEngine.render` writes into a scoped temp workspace that is deleted when
-the `Scope` closes — copy the file out if you want to keep it. `DiagramOutput`
-does exactly that, persisting renders to a stable, well-known location:
-
-```
-out/<format>/<category>/<name>.<suffix>
-```
-
-- `<format>` — the file suffix without the dot: `svg`, `png`, `eps`, `tex`.
-- `<category>` — `test` for diagrams produced by the test suites,
-  `examples` for the runnable examples (`DiagramOutput.Test` /
-  `DiagramOutput.Examples`).
-- `<root>` — the Mill workspace root (`MILL_WORKSPACE_ROOT`), falling back to
-  the current working directory.
-
-```scala
-import fish.genius.uml.render.{DiagramOutput, PUmlEngine}
-import net.sourceforge.plantuml.FileFormat
-import zio.*
-
-// Renders and persists to <root>/out/svg/examples/web-store.svg
-val program = ZIO.scoped(
-  DiagramOutput.save(diagram, DiagramOutput.Examples, "web-store", FileFormat.SVG)
+val graph = SceneGraph(
+  "Web store",
+  List(
+    SceneNode(SceneId("customer"), NodeKind.Element(BusinessActor), "Customer"),
+    SceneNode(SceneId("store"), NodeKind.Element(ApplicationComponent), "Web Store",
+      caption = Some("[IT System: Next.js]")),
+  ),
+  List(SceneEdge(SceneId("serves"), SceneId("store"), SceneId("customer"), Serving)),
 )
+
+Diagram.draw(graph).map: drawing =>
+  os.write.over(os.pwd / "web-store.tex", Tikz.standalone(drawing)) // pdflatex
+  os.write.over(os.pwd / "web-store.svg", Svg.document(drawing))
+  os.write.over(os.pwd / "web-store.png", Png.image(drawing))
 ```
 
-So the test suites leave their diagrams under `out/svg/test`, `out/png/test`,
-`out/eps/test`, … and the examples under `out/svg/examples`,
-`out/png/examples`, …. The whole `out/` tree is git-ignored.
-
-Run an example and have it render (needs the PlantUML jar, which ships with the
-`render` module):
-
-```sh
-PLANTUML_AVAILABLE=1 ./mill examples.runMain \
-  fish.genius.uml.examples.ArchimateExample
-# PLANTUML_FORMAT=png|eps|svg|latex|latex_no_preamble selects the format
-```
+`Tikz.picture` gives the bare `tikzpicture` to set inside a document of your own.
+[DSL.md](DSL.md) is the reference: the graph, the look, badges, logos, legends, the
+notation, the layout options, sequences, activities and the 3D scene.
 
 ## Testing
 
-Add `testkit` to a test module's deps and you get:
+`testkit` compares a rendered string against a checked-in fixture:
 
 ```scala
-import fish.genius.uml.testkit.PUmlAssertions.*
 import fish.genius.uml.testkit.Golden
 
-assertTrue(
-  diagram.countStatement("@startuml") == 1,
-  diagram.statementsContaining("rectangle").nonEmpty,
-)
-
-// Golden-file assertion. Set ZIO_TEST_UPDATE_GOLDEN=1 to regenerate:
-test("a small archimate diagram matches the golden"):
+test("the landscape's TikZ matches the golden"):
   Golden.assertMatches(
-    id           = "archimate-minimal",
-    actual       = Emit.emit(diagram),
-    resourcesDir = Golden.moduleResources("core"),
-    extension    = "puml",
+    id           = "landscape",
+    actual       = Tikz.picture(drawing),
+    resourcesDir = Golden.moduleResources("diagram"),
+    extension    = "tex",
   )
 ```
 
+Set `ZIO_TEST_UPDATE_GOLDEN=1` to regenerate the fixtures.
+
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT, see [LICENSE](LICENSE).

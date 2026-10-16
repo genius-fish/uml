@@ -1,14 +1,9 @@
 package fish.genius.uml.dsl.archimate
 
 /**
- * Every Archimate 3 element. Each case knows its layer ([[ShapeGroup]]) and
- * its sprite-pack name; together they form the `<$archimate/<prefix>-<name>>`
- * sprite reference that PlantUML resolves into the correct icon.
- *
- * The mass-objects (`Object`, `Contract`, `DataObject`, `Representation`,
- * `Artifact`, `Material`) get a `----` separator drawn into their label by
- * [[ShapeType.decorate]] so they render with Archimate's traditional
- * top-edge styling.
+ * Every Archimate 3 element, with its layer ([[ShapeGroup]]) and a short name within
+ * that layer. The scene and the flat diagram match on it exhaustively, so a new case
+ * does not compile until it has a shape and an icon there.
  */
 enum ShapeType(val group: ShapeGroup, val name: String):
 
@@ -87,24 +82,6 @@ enum ShapeType(val group: ShapeGroup, val name: String):
   case ImplementationPlateau extends ShapeType(ShapeGroup.Implementation, "plateau")
   case ImplementationEvent extends ShapeType(ShapeGroup.Implementation, "event")
   case ImplementationGap extends ShapeType(ShapeGroup.Implementation, "gap")
-
-  /** The PlantUML sprite reference used inside the rectangle stereotype. */
-  def icon: String = s"$$archimate/${group.prefix}-$name"
-
-  /**
-   * Mass-objects in Archimate render with a horizontal separator at the top
-   * of the label box; this prepends the `----` marker that PlantUML expects
-   * to draw it.
-   */
-  def decorate(
-    label: ShapeLabel
-  )(
-    using ArchimateConfiguration
-  ): ShapeLabel = this match
-    case ApplicationDataObject | BusinessObject | BusinessContract |
-      BusinessRepresentation | TechnologyArtifact | PhysicalMaterial =>
-      label.copy(name = "----\\n " + label.name)
-    case _ => label
 
 end ShapeType
 

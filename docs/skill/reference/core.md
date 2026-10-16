@@ -1,88 +1,54 @@
-# core — DSL foundations, AST, markers
+# core — the ArchiMate vocabulary
 
-Package `fish.genius.uml.dsl` unless noted. Everything builds a `PUmlNode`;
-nothing here touches IO.
+Package `fish.genius.uml.dsl.archimate` (the `genius-uml-core` module). No
+dependencies. The scene and the diagram match on these enums exhaustively.
 
-## The AST and the renderer
+## `ShapeType`
 
-`PUmlNode` (in `fish.genius.uml.ast`) is the total enum every helper emits:
+Every ArchiMate 3 element, as `ShapeType(group: ShapeGroup, name: String)`.
 
-| Case | Renders to |
+| Layer | Cases |
 | --- | --- |
-| `Statement(value: String)` | a single literal PlantUML line, verbatim |
-| `Sequence(children: Vector[PUmlNode])` | a flat run of siblings |
-| `Block(header: String, body: PUmlNode)` | `header { body }` |
-| `Diagram(kind: String, body: PUmlNode)` | `@start<kind> body @end<kind>` |
-| `Comment(text: String)` | `' text` on its own line |
+| Strategy | `StrategyResource`, `StrategyCapability`, `StrategyValueStream`, `StrategyCourseOfAction` |
+| Business | `BusinessActor`, `BusinessRole`, `BusinessCollaboration`, `BusinessInterface`, `BusinessProcess`, `BusinessFunction`, `BusinessInteraction`, `BusinessEvent`, `BusinessService`, `BusinessObject`, `BusinessContract`, `BusinessRepresentation`, `BusinessProduct`, `BusinessLocation` |
+| Application | `ApplicationComponent`, `ApplicationService`, `ApplicationCollaboration`, `ApplicationInterface`, `ApplicationFunction`, `ApplicationInteraction`, `ApplicationProcess`, `ApplicationEvent`, `ApplicationDataObject` |
+| Technology | `TechnologyNode`, `TechnologyDevice`, `TechnologySystemSoftware`, `TechnologyCollaboration`, `TechnologyInterface`, `TechnologyPath`, `TechnologyCommunicationNetwork`, `TechnologyFunction`, `TechnologyProcess`, `TechnologyInteraction`, `TechnologyEvent`, `TechnologyService`, `TechnologyArtifact` |
+| Physical | `PhysicalFacility`, `PhysicalEquipment`, `PhysicalDistributionNetwork`, `PhysicalMaterial` |
+| Motivation | `MotivationStakeholder`, `MotivationDriver`, `MotivationAssessment`, `MotivationGoal`, `MotivationOutcome`, `MotivationPrinciple`, `MotivationRequirement`, `MotivationConstraint`, `MotivationMeaning`, `MotivationValue` |
+| Implementation | `ImplementationWorkPackage`, `ImplementationDeliverable`, `ImplementationPlateau`, `ImplementationEvent`, `ImplementationGap` |
 
-`PUmlNode.empty` is the empty sequence. `fish.genius.uml.render.Emit.emit(node):
-String` is the only renderer — a pure, total tree fold.
+`ShapeType.application`, `strategy`, `business`, `technology`, `physical`,
+`motivation`, `implementation` list each layer; `ShapeType.*` lists all of them.
 
-## Entry points
+## `ShapeGroup`
 
-| Signature | Summary |
-| --- | --- |
-| `block(body: PUml[Unit]): PUmlNode` | run a body in a fresh scope; return the AST (the user-facing entry point) |
-| `uml(body: (PUmlCtx, InUml) ?=> Unit): PUml[Unit]` | the `@startuml … @enduml` envelope; introduces `InUml` |
-| `diagram(kind: String)(body: (PUmlCtx, InUml) ?=> Unit): PUml[Unit]` | `@start<kind> … @end<kind>` for non-UML kinds (gantt, mindmap, wbs, …) |
+`Application`, `Strategy`, `Business`, `Technology`, `Physical`, `Motivation`,
+`Implementation`. The scene stacks planes by layer; the diagram colours by layer
+(`am-business`, `am-application`, …).
 
-`PUmlCtx` is the scope buffer (carries `counters: Counters` for deterministic
-alias allocation). `type PUml[A] = PUmlCtx ?=> A` is "DSL code that emits into the
-ambient context". Helpers receive the context via `using`; user code never
-constructs it.
+## `RelationshipType`
 
-## Marker capabilities
+`Composition`, `Aggregation`, `Assignment`, `Serving`, `Flow`, `Specialization`,
+`Association`, `DirectedAssociation`, `Realization`, `Triggering`, `Access`,
+`ReadAccess`, `WriteAccess`, `ReadWriteAccess`, `Influence`; `RelationshipType.*`
+lists them. The diagram's `Notation` decides line, dash, head and tail.
 
-Sealed traits (in `object markers`) with package-private singletons — user code
-cannot fabricate one. A producer binds the marker in the body it opens; consumers
-demand it via `using`.
+## `ShapeLabel` and `ArchimateConfiguration`
 
-| Marker | Introduced by | Required by |
-| --- | --- | --- |
-| `InUml` | `uml { }` / `diagram(kind) { }` | every domain DSL helper |
-| `InArchimate` | `archimateDiagram { }` | `shape`, `boundary`, `relationship`, … |
-| `InBoundary` | archimate `boundary { }` | nested boundaries |
-| `InSequence` | `sequenceDiagram { }` | participants, `step`, control groups |
-| `InBox` | sequence `box { }` | participant declarations inside a box |
-| `InGroup` | a sequence `alt`/`opt`/`loop`/… | internal group nesting |
-| `InActivity` | `activityDiagram { }` | `action`, `start`, `stop`, `note`, … |
+```scala
+final case class ShapeLabel(
+  name: String,
+  componentType: Option[String] = None,
+  componentTypeDetails: Option[String] = None,
+  description: Option[String] = None,
+)(using val config: ArchimateConfiguration)
 
-## Primitives
+final case class ArchimateConfiguration(
+  technicalFontSize: Int = 12,
+  descriptionFontSize: Int = 10,
+  elkLayout: Boolean = false)
+```
 
-| Signature | Emits |
-| --- | --- |
-| `statement(value: String): PUml[Unit]` | a single literal line |
-| `statements(text: String): PUml[Unit]` | one `Statement` per non-empty line |
-| `comment(text: String): PUml[Unit]` | `' comment` |
-| `expression(build: Alias => String): PUml[Alias]` | a header line built from a fresh alias; returns it |
-| `expressionWithBody(build: Alias => String)(body): PUml[Alias]` | a `header { body }` block bound to a fresh alias |
-| `headerBlock(header: String)(body): PUml[Unit]` | `header { body }` without an alias |
-| `when(cond: Boolean)(body): PUml[Unit]` | conditionally evaluate the body |
-| `emit(node: PUmlNode)(using PUmlCtx): Unit` | low-level: append an AST node |
-
-## Alias
-
-`Alias` is an opaque `String` — a PlantUML-safe identifier. You rarely build one:
-domain helpers allocate and **return** aliases (`val a = shape(…)`), and you pass
-those to `relationship` / `step`.
-
-- `Alias(raw: String)` — sanitise an arbitrary string into a lower-case alias.
-- `Alias.unsafe(value)` — trust an already-safe string.
-- `Alias.fresh(using PUmlCtx)` — allocate a unique `a<index>` from the counter.
-- `.value` — extract the underlying string.
-
-## Skinparams & SVG icons (`dsl/skin.scala`)
-
-`skinParam(stereotype: String, properties: SkinParamProperty*)(using PUmlCtx,
-InUml)` emits a `skinparam <stereotype> { … }` block (no-op if no properties).
-
-The `SkinParamProperty` enum covers the common typed knobs: `FontColor`,
-`BorderColor`, `BackgroundColor`, `Color`, `FontSize(pt)`, `Shadowing(bool)`,
-`StereotypeFontSize(pt)`, `BorderDashed/Dotted/Plain/Bold`,
-`StereoTypeAlignmentLeft/Right/Center`, `RoundCorner(r)`, `DiagonalCorner(r)`,
-`BorderThickness(pt)`, `EntrySeparatorColor(hex)`, and the escape hatch
-`SkinProp(name, value)`. Each has `.name`, `.value`, `.line`.
-
-`svgIcon(svg: String, name=None, description=None)(using PUmlCtx, InUml):
-SvgIcon` registers an SVG sprite and returns a handle (`SvgIcon(name: Alias,
-description: Option[String])`) you can attach to ArchiMate labels/legends.
+Plain values for what a box says, for code that builds labels before it builds a
+`SceneNode` (its `label`, `caption`, `note`). A default configuration is always in
+scope. `elkLayout` has no effect and stays for source compatibility.

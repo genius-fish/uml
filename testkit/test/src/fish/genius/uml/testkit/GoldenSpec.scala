@@ -16,7 +16,7 @@ object GoldenSpec extends ZIOSpecDefault:
             ZIO.attempt(os.temp.dir(prefix = "golden-test-")).orDie
           )(p => ZIO.attempt(os.remove.all(p)).orDie)
           result  <- Golden.assertMatches("first", "hello", tmp, update = true)
-          written <- ZIO.attempt(os.read(tmp / "golden" / "first.puml")).orDie
+          written <- ZIO.attempt(os.read(tmp / "golden" / "first.txt")).orDie
         yield result && assertTrue(written == "hello")
     ,
     test("update=false against missing file fails with FileNotFoundException"):

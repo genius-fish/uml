@@ -1,61 +1,33 @@
-# testing — testkit
+# testing — testkit and the repo's habits
 
-Package `fish.genius.uml.testkit` (the `genius-uml-testkit` module). The pure-AST
-design makes testing fast: assert against the rendered string or the tree, no
-PlantUML jar required. Built on ZIO Test.
-
-## Structural assertions
-
-Extension methods on `PUmlNode` (use with `assertTrue`):
-
-| Method | Returns |
-| --- | --- |
-| `countStatement(needle): Int` | statements whose text contains `needle` |
-| `hasBlock(headerNeedle): Boolean` | whether some block header contains `headerNeedle` |
-| `statements: List[String]` | all statements in document order |
-| `statementsContaining(needle): List[String]` | statements containing `needle` |
-| `diagramKinds: List[String]` | all diagram kinds in order (e.g. `List("uml")`) |
-
-ZIO Test `Assertion[PUmlNode]` combinators (use with `assert(value)(…)`):
-`containsStatement(needle)`, `containsBlock(headerNeedle)`,
-`statementCountIs(needle, expected)`, `hasDiagramKind(kind)`.
-
-```scala
-import fish.genius.uml.testkit.PUmlAssertions.*
-
-assertTrue(
-  diagram.countStatement("@startuml") == 1,
-  diagram.statementsContaining("rectangle").nonEmpty,
-  diagram.diagramKinds == List("uml"),
-)
-```
+Package `fish.genius.uml.testkit` (the `genius-uml-testkit` module), on ZIO Test.
 
 ## Golden files
 
-`Golden.assertMatches` compares a rendered string to
-`<resourcesDir>/golden/<id>.<extension>` (default extension `puml`):
-
 ```scala
-import fish.genius.uml.testkit.Golden
-
-test("a small archimate diagram matches the golden"):
-  Golden.assertMatches(
-    id           = "archimate-minimal",
-    actual       = Emit.emit(diagram),
-    resourcesDir = Golden.moduleResources("core"),
-    extension    = "puml",
-  )
+Golden.assertMatches(
+  id: String,
+  actual: String,
+  resourcesDir: os.Path,
+  extension: String = "txt",
+  update: Boolean = Golden.shouldUpdate,
+): ZIO[Any, IOException, TestResult]
 ```
 
-Signature: `assertMatches(id, actual, resourcesDir, extension="puml",
-update=shouldUpdate)`. Set `ZIO_TEST_UPDATE_GOLDEN=1` to (re)generate the golden
-after an intentional output change (`Golden.shouldUpdate` reads it; when set, the
-file is written and the assertion passes vacuously). `Golden.moduleResources(module)`
-resolves the per-module test-resources dir; `Golden.workspaceRoot` honours
-`MILL_WORKSPACE_ROOT` (else cwd).
+Compares `actual` with `<resourcesDir>/golden/<id>.<extension>`.
+`ZIO_TEST_UPDATE_GOLDEN=1` (or `update = true`) writes the fixture instead. A missing
+fixture fails with a hint. `Golden.moduleResources("diagram")` is
+`<workspace>/diagram/test/resources` (`MILL_WORKSPACE_ROOT`, else `os.pwd`).
 
-## Rendering in tests without PlantUML
+## Testing drawings
 
-Provide `PUmlEngine.test` instead of `live` to exercise the render path without
-invoking PlantUML — it writes the `.puml` source to a scoped temp file. Most
-tests don't even need that: assert on `Emit.emit(doc)` directly.
+- Assert on the `Drawing` itself: `drawing.scene.elements` (boxes with `x`, `y`, `w`,
+  `d`), `drawing.scene.relationships` (ports, bends, labels), `drawing.overflow`.
+  Geometry checks (no two boxes overlap, every edge drawn, labels off boxes) catch
+  layout regressions that a golden file only shows as a diff.
+- Assert on the writers' text for what each must carry: `Tikz.picture` defines its
+  colours and escapes `&`; `Svg.document` escapes entities; `Png.image` starts with
+  the PNG signature.
+- `DIAGRAM_OUT=dir` with `./mill diagram.test` writes the sample as `.tex`, `.svg`,
+  `.png` to look at.
+- The 3D builder runs headless in `SceneBlenderSpec` only with `BLENDER_AVAILABLE=1`.

@@ -1,27 +1,26 @@
 package fish.genius.uml.dsl.archimate
 
-import fish.genius.uml.dsl.archimate.Edge.{EdgePrefix, EdgeSuffix}
-
 /**
- * The fifteen Archimate 3 relationship types, each with the PlantUML
- * connector tokens that surround the [[Edge]] direction.
+ * The fifteen Archimate 3 relationship types. How each one is drawn (line, dash,
+ * head and tail) is the diagram's `Notation`; the 3D builder knows them by
+ * `SceneNames`.
  */
-enum RelationshipType(val prefix: EdgePrefix, val suffix: EdgeSuffix):
-  case Composition extends RelationshipType("*-", "-")
-  case Aggregation extends RelationshipType("o-", "-")
-  case Assignment extends RelationshipType("0-", "->>")
-  case Serving extends RelationshipType("-", "->")
-  case Flow extends RelationshipType(".", ".>>")
-  case Specialization extends RelationshipType("-", "-|>")
-  case Association extends RelationshipType("=", "=")
-  case DirectedAssociation extends RelationshipType("=", "=>")
-  case Realization extends RelationshipType("~", "~|>")
-  case Triggering extends RelationshipType("-", "->>")
-  case Access extends RelationshipType("~", "~")
-  case ReadAccess extends RelationshipType("<-", "~")
-  case WriteAccess extends RelationshipType("~", "->")
-  case ReadWriteAccess extends RelationshipType("<~", "~>")
-  case Influence extends RelationshipType(".", ".>")
+enum RelationshipType:
+  case Composition
+  case Aggregation
+  case Assignment
+  case Serving
+  case Flow
+  case Specialization
+  case Association
+  case DirectedAssociation
+  case Realization
+  case Triggering
+  case Access
+  case ReadAccess
+  case WriteAccess
+  case ReadWriteAccess
+  case Influence
 end RelationshipType
 
 object RelationshipType:

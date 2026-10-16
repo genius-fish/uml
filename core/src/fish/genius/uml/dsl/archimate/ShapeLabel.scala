@@ -1,16 +1,11 @@
 package fish.genius.uml.dsl.archimate
 
-import fish.genius.uml.dsl.SvgIcon
-
 /**
- * Build-time configuration for an [[ShapeLabel]]: tweaks the type-/description
- * font sizes used inside Archimate shape captions.
+ * Font sizes for the caption lines under a box's name, carried as a `given` so a caller
+ * sets them once for a whole view.
  *
- * `elkLayout` switches the diagram's layout engine from GraphViz/Smetana to
- * the Eclipse Layout Kernel bundled with the PlantUML jar (emits
- * `!pragma layout elk` in the preamble). ELK usually produces tidier layouts
- * for large Archimate diagrams, at the cost of ignoring some GraphViz-specific
- * layout hints.
+ * `elkLayout` has no effect: every layout is ELK's since 2.0.0 (UML-1). It stays so
+ * callers that set it keep compiling; it goes in a later major.
  */
 final case class ArchimateConfiguration(
   technicalFontSize: Int = 12,
@@ -18,64 +13,19 @@ final case class ArchimateConfiguration(
   elkLayout: Boolean = false)
 
 object ArchimateConfiguration:
-  /** Sensible defaults — useful when callers don't want to spell one out. */
+  /** Sensible defaults, for callers that do not want to spell one out. */
   given default: ArchimateConfiguration = ArchimateConfiguration()
 
 /**
- * A stereotype attached to a shape so multiple shapes can share a styling
- * (e.g. `<<phaseout>>` for components on the way out).
+ * What a box says: its name, an optional `[Type: details]` line and an optional
+ * description. Plain values; how they are set in type is the diagram's concern.
  *
- * Usually constructed via `defineStereoType`, which also emits the matching
- * `skinparam rectangle<<...>>` block and registers the stereotype for
- * inclusion in a [[legend]].
- */
-final case class ShapeStereoType(
-  name: String,
-  description: Option[String],
-  legendColor: Option[String])
-
-/**
- * Optional explicit fill colour for a single shape (overrides the layer's
- * default colour from [[ShapeGroup]]).
- */
-final case class ShapeColor(hex: Option[String] = None)
-
-/**
- * The composite caption rendered inside an Archimate shape: name, optional
- * `[Type: details]` line, optional description sub-line, optional inline
- * SVG-icon row.
- *
- * The font sizes for the type and description lines come from the implicit
- * [[ArchimateConfiguration]].
+ * The configuration it was built under travels with it as [[config]].
  */
 final case class ShapeLabel(
   name: String,
   componentType: Option[String] = None,
   componentTypeDetails: Option[String] = None,
   description: Option[String] = None,
-  tags: List[SvgIcon] = Nil,
 )(
-  using config: ArchimateConfiguration):
-
-  private val tagsLabel: String =
-    if tags.nonEmpty then
-      "\\n\\n" + tags.iterator.map(icon => s"<$$${icon.name.value}>").mkString
-    else ""
-
-  private val descriptionLabel: String = description
-    .map(s => s"\\n\\n <size:${config.descriptionFontSize}>$s</size>")
-    .getOrElse("")
-
-  private val typeDetailsLabel: String =
-    componentTypeDetails.map(i => s": $i").getOrElse("")
-
-  private val typeLabel: String = componentType
-    .map(s => s"\\n\\n<size:${config.technicalFontSize}>[$s$typeDetailsLabel]</size>")
-    .getOrElse("")
-
-  /** The final caption string ready to be spliced into a PlantUML statement. */
-  val output: String = s"$name$typeLabel$descriptionLabel$tagsLabel"
-
-  override def toString: String = output
-
-end ShapeLabel
+  using val config: ArchimateConfiguration)
