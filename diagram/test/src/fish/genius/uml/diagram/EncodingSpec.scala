@@ -169,6 +169,21 @@ object EncodingSpec extends ZIOSpecDefault:
     "Unknown" -> "not a colour",
   )
 
+  // a badge whose text is a sentence, and a faded box whose outline has a colour of its own
+  val long = SceneGraph(
+    "Long",
+    List(
+      leaf("crm", "CRM", ShapeType.ApplicationComponent).copy(badges =
+        List(Badge(Glyph.Risk, "Risk", text = Some("The vendor stops support for this release in 2027")))
+      ),
+      leaf("old", "Legacy", ShapeType.ApplicationComponent).copy(
+        faded = true,
+        outline = Some(Outline(Stroke.Dashed, colour = Some("#D9534F"))),
+      ),
+    ),
+    Nil,
+  )
+
   val heatMap = SceneGraph(
     "Heat",
     List(leaf("cap", "Billing", ShapeType.StrategyCapability).copy(fill = Some("#B2182B"))),
@@ -224,6 +239,21 @@ object EncodingSpec extends ZIOSpecDefault:
             Tikz.picture(d).contains("06/2027"),
             Svg.document(d).contains("R-12"),
             Png.image(d).nonEmpty,
+          )
+        ,
+        test("a text longer than twelve characters is cut and ends in an ellipsis, so its box keeps its width"):
+          val d     = drawn(long)
+          val shown =
+            Badge(Glyph.Risk, "Risk", text = Some("The vendor stops support for this release in 2027")).shownText
+          val texts = d.prims.collect { case t: Prim.Text => t.text }
+          assertTrue(
+            shown.contains("The vendor\u2026"),
+            texts.contains("The vendor\u2026"),
+            box(d, "crm").w < 3.5,
+            Badge(Glyph.Risk, "Risk", text = Some("06/2027")).shownText.contains("06/2027"),
+            Badge(Glyph.Risk, "Risk", text = Some("abcdefghijkl")).shownText.contains("abcdefghijkl"),
+            Badge(Glyph.Risk, "Risk", text = Some("\uD83D\uDE80" * 13)).shownText.contains("\uD83D\uDE80" * 11 +
+              "\u2026"),
           )
         ,
         test("the legend names the badge by its label only, and a blank text draws as none"):
@@ -320,6 +350,12 @@ object EncodingSpec extends ZIOSpecDefault:
               case Prim.Box(_, _, _, _, _, _, _, _, Role.Element("am-application"), Pen.Normal) => true
               case _                                                                            => false,
           )
+        ,
+        test("a faded box whose outline has a colour of its own keeps that colour for its edge"):
+          val d    = drawn(long)
+          val fill = Look.faded(Look.Faded.Fill, "am-application")
+          val pens = d.prims.collect { case Prim.Box(_, _, _, _, _, _, _, _, Role.Element(`fill`), pen) => pen }
+          assertTrue(pens == List(Pen(ink = Some("am-fill-d9534f"))))
         ,
         test("the legend draws a faded sample, in a shape's layer with its icon or on paper"):
           val d       = drawn(gap)
@@ -457,7 +493,7 @@ object EncodingSpec extends ZIOSpecDefault:
           val runs   =
             for
               (look, palette) <- looks
-              graph           <- List(gap, volumes, retiring, heatMap)
+              graph           <- List(gap, volumes, retiring, heatMap, long)
             yield (look, graph.name, compiles(drawn(graph), palette))
           val failed = runs.filterNot(_._3._1).map(r => s"${r._1} ${r._2}: ${r._3._2}")
           assertTrue(failed.isEmpty)

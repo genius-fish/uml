@@ -1222,7 +1222,8 @@ A badge's `text` (`Badge(glyph, label, text = Some("06/2027"))`) is a short word
 after its sign, at the caption's size in the muted ink, its capitals centred on the sign: a
 phase-out's date, a risk's code or count. The row counts it, so the box widens for it, and
 the next badge stands a little further off so each sign reads with its own text. A blank
-text is none. The legend names the badge by its label alone.
+text is none, and one longer than 12 characters (`Badge.MAX_TEXT`) is cut to end in
+an ellipsis, so one badge cannot push its box out of its row. The legend names the badge by its label alone.
 
 The signs are one family (`Signs`): each is drawn on a grid of 24 units, every line 2
 units wide with round caps and joins, its ink within units 2 to 22, sized optically (a

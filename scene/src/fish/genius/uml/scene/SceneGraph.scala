@@ -48,12 +48,22 @@ enum Glyph derives CanEqual:
 // A badge is its logo when it has one (the glyph then stands in only where a logo
 // cannot be drawn), else its glyph. text is a short word set right after it on the box
 // (a phase-out's date, a risk's code or count); the legend names the badge by its label
-// alone, since the text differs from box to box.
+// alone, since the text differs from box to box. A text longer than MAX_TEXT characters is
+// cut and ends in an ellipsis, so one badge cannot widen its box out of its row.
 final case class Badge(
   glyph: Glyph,
   label: String,
   logo: Option[Logo] = None,
-  text: Option[String] = None)
+  text: Option[String] = None):
+
+  // the text as a diagram sets it: trimmed, none when blank, cut to MAX_TEXT characters
+  def shownText: Option[String] =
+    text.map(_.trim).filter(_.nonEmpty).map: t =>
+      if t.codePointCount(0, t.length) <= Badge.MAX_TEXT then t
+      else t.substring(0, t.offsetByCodePoints(0, Badge.MAX_TEXT - 1)).trim + "\u2026"
+
+object Badge:
+  val MAX_TEXT = 12
 
 // A logo as a diagram draws it: filled outlines in SVG path syntax, in the coordinates
 // of its own view box (y running down, as in SVG), each in its colour (hex); or a

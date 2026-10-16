@@ -818,7 +818,7 @@ object Diagram:
     badges.dropRight(1).map(b => if badgeText(b).isDefined then BADGE_WORD_GAP else BADGE_GAP)
 
   // a badge's text as it is set, when it has one that says anything
-  private def badgeText(b: Badge): Option[String] = b.text.map(_.trim).filter(_.nonEmpty)
+  private def badgeText(b: Badge): Option[String] = b.shownText
 
   // the width a badge takes in a box's row: its mark, and its text after it
   private def badgeWidth(
