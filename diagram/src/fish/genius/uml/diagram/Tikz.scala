@@ -195,7 +195,9 @@ object Tikz:
       s"\\fontsize{${f(size)}}{${f(size * 1.2)}}\\selectfont] at ${pt((x, at._2))} {${escape(text)}};"
     case Prim.Connector(points, d, start, end, ink)                 =>
       val arrows = s"arrows={${start.map(head).getOrElse("")}-${end.map(head).getOrElse("")}}"
-      val colour = ink.map(i => s"draw=$i,fill=$i")
+      // the draw colour only: a filled tip takes it already, and fill= on a \\draw fills the
+      // polygon a bent path encloses (APP-2257)
+      val colour = ink.map(i => s"draw=$i")
       s"\\draw${options(List(Some("am link"), dash(d), Some(arrows), colour))} " +
       points.map(pt).mkString(" -- ") + ";"
     case Prim.Curve(segments, fill, evenOdd)                        =>

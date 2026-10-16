@@ -410,6 +410,51 @@ object DiagramSpec extends ZIOSpecDefault:
           !d.colours.keySet.exists(_.contains("red")),
         )
       ,
+      test("a coloured connector with a bend fills nothing in TikZ, and its filled head keeps its colour"):
+        // an L of 4 cm by 3 cm in blue: filled, its path would cover 6 cm²
+        def bent(head: Option[Head])             =
+          val l = Prim.Connector(List((0.0, 3.0), (0.0, 0.0), (4.0, 0.0)), Dash.Solid, None, head, Some("am-fill-2f6db5"))
+          Diagram.Drawing(
+            "Bent",
+            List(l),
+            Scene("Bent", 4, 3, Nil, Nil),
+            Diagram.Style(),
+            "Nimbus Sans",
+            0,
+            Map("am-fill-2f6db5" -> "2F6DB5"),
+          )
+        val tex                                  = Tikz.standalone(bent(Some(Head.FilledTriangle)))
+        val line                                 = tex.linesIterator.find(_.startsWith("\\draw[am link")).getOrElse("")
+        val tools                                = List("pdflatex", "pdftoppm").forall: tool =>
+          scala.util.Try(scala.sys.process.Process(Seq(tool, "-v")).!(scala.sys.process.ProcessLogger(_ =>
+            ()
+          ))).isSuccess
+        // the compiled picture's blue pixels, and all of them
+        def blue(d: Diagram.Drawing): (Int, Int) =
+          val dir = java.nio.file.Files.createTempDirectory("bent")
+          java.nio.file.Files.writeString(dir.resolve("b.tex"), Tikz.standalone(d))
+          val log = scala.sys.process.ProcessLogger(_ => ())
+          scala.sys.process.Process(
+            Seq("pdflatex", "-interaction=nonstopmode", "-halt-on-error", "b.tex"),
+            dir.toFile,
+          ).!(log)
+          scala.sys.process.Process(Seq("pdftoppm", "-png", "-r", "300", "-singlefile", "b.pdf", "b"), dir.toFile).!(log)
+          val png = javax.imageio.ImageIO.read(dir.resolve("b.png").toFile)
+          val all = for x <- 0 until png.getWidth; y <- 0 until png.getHeight yield png.getRGB(x, y)
+          val ink = all.count: rgb =>
+            math.abs(((rgb >> 16) & 0xff) - 0x2f) < 24 && math.abs(((rgb >> 8) & 0xff) - 0x6d) < 24 &&
+            math.abs((rgb & 0xff) - 0xb5) < 24
+          (ink, all.size)
+        end blue
+        val (headed, all)                        = if tools then blue(bent(Some(Head.FilledTriangle))) else (0, 0)
+        val (bare, _)                            = if tools then blue(bent(None)) else (0, 0)
+        assertTrue(
+          line.contains("draw=am-fill-2f6db5"),
+          !line.contains("fill="),
+          // a line and a head, never the plane under the L; the filled head adds blue of its own
+          !tools || (headed < all / 10 && bare > 200 && headed - bare > 60),
+        )
+      ,
       test("arrows and symbols are written as math, so pdflatex compiles them"):
         val arrows = SceneGraph(
           "Arrows",
