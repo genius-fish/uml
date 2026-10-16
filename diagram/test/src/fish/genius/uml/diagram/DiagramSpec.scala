@@ -368,6 +368,28 @@ object DiagramSpec extends ZIOSpecDefault:
           red,
         )
       ,
+      test("a heavier dotted outline grows its dots and their gaps, and the SVG stays well-formed XML"):
+        val g    = SceneGraph(
+          "dotted",
+          List(leaf("a", "A", ShapeType.ApplicationComponent).copy(outline = Some(Outline(Stroke.Dotted, 2.0)))),
+          List(),
+        )
+        val d    = Diagram.draw(g).toOption.get
+        val svg  = Svg.document(d)
+        val xml  = scala.util.Try(
+          javax.xml.parsers.DocumentBuilderFactory.newInstance().newDocumentBuilder()
+            .parse(java.io.ByteArrayInputStream(svg.getBytes(StandardCharsets.UTF_8)))
+        )
+        val tikz = Tikz.standalone(d)
+        val png  = javax.imageio.ImageIO.read(java.io.ByteArrayInputStream(Png.image(d, 100)))
+        assertTrue(
+          xml.isSuccess,
+          svg.contains("stroke-width=\"2.53\" filter=\"url(#shadow)\" stroke-dasharray=\"0 5.07\""),
+          tikz.contains("dash pattern=on 0pt off 3.8pt,line width=1.9pt"),
+          !tikz.contains("line width=1.1pt"),
+          png.getWidth > 0,
+        )
+      ,
       test("an outline's weight is kept between 0 and 4, and a colour that is not hex is left out"):
         val cases = List(
           Outline(weight = -1) -> Pen.Normal,

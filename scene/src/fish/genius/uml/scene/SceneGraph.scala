@@ -75,7 +75,9 @@ enum Logo derives CanEqual:
 
 end Logo
 
-// How a line is drawn: whole, in dashes or in dots.
+// How a line is drawn: whole, in dashes or in dots. The diagram module has its own Dash,
+// the same three, which it maps this to (Diagram.dashOf): scene cannot depend on diagram,
+// and diagram's stays its own so a drawing's prims need nothing from the graph.
 enum Stroke derives CanEqual:
   case Solid, Dashed, Dotted
 

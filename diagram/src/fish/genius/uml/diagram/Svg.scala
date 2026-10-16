@@ -27,10 +27,16 @@ object Svg:
       case Dash.Solid  => ""
       case Dash.Dashed =>
         s""" stroke-dasharray="${f(Look.DASH_ON * scale * PT)} ${f(Look.DASH_OFF * scale * PT)}""""
-      case Dash.Dotted =>
-        s""" stroke-dasharray="0 ${f(Look.DOT_GAP * scale * PT)}" stroke-width="${f(
-            Look.DOT_LINE * scale * PT
-          )}""""
+      case Dash.Dotted => s""" stroke-dasharray="0 ${f(Look.DOT_GAP * scale * PT)}""""
+    // a line's width: a dotted line's is its dots', which the pen scales as it does a dash;
+    // written once, since an element with the same attribute twice is not XML
+    def width(
+      base: Double,
+      d: Dash,
+      scale: Double = 1.0,
+    ): String                                      =
+      val points = if d == Dash.Dotted then Look.DOT_LINE * scale else base * scale
+      s""" stroke-width="${f(points * PT)}""""
     val layers                                     = drawing.prims.collect:
       case Prim.Box(_, _, _, _, _, _, _, _, Role.Element(layer), _) => layer
       case Prim.Poly(_, _, _, _, Role.Element(layer), _)            => layer
@@ -40,6 +46,7 @@ object Svg:
       fill: Ink,
       stroke: Boolean = true,
       pen: Pen = Pen.Normal,
+      d: Dash = Dash.Solid,
     ): String                                      =
       val (look, inked) = c.look(role, fill)
       val edge          = look.map(e => pen.ink.fold(e)(c.of))
@@ -47,9 +54,7 @@ object Svg:
         case Role.Element(layer) if fill != Ink.Empty => s"url(#fall-$layer)"
         case _                                        => inked.map(hex).getOrElse("none")
       val drawn         = if stroke then
-        edge.map(e =>
-          s""" stroke="${hex(e)}" stroke-width="${f(c.weight(role) * pen.weight * PT)}""""
-        ).getOrElse(
+        edge.map(e => s""" stroke="${hex(e)}"${width(c.weight(role), d, pen.weight)}""").getOrElse(
           """ stroke="none""""
         )
       else """ stroke="none""""
@@ -81,7 +86,7 @@ object Svg:
       case Prim.Poly(ps, closed, fill, d, role, pen)                  =>
         val tag              = if closed then "polygon" else "polyline"
         val (fillAttr, rest) =
-          paint(role, if closed then fill else Ink.Empty, pen = pen) -> dash(d, pen.weight)
+          paint(role, if closed then fill else Ink.Empty, pen = pen, d = d) -> dash(d, pen.weight)
         s"""<$tag points="${points(ps)}" $fillAttr$rest/>"""
       case Prim.Circle(cc, r, fill, role)                             =>
         s"""<circle cx="${x(cc._1)}" cy="${y(cc._2)}" r="${len(r)}" ${paint(role, fill)}/>"""
@@ -93,7 +98,7 @@ object Svg:
       case Prim.Box(bx, by, w, h, r, fill, d, stroke, role, pen)      =>
         s"""<rect x="${x(bx)}" y="${y(by + h)}" width="${len(w)}" height="${len(h)}" rx="${len(
             r
-          )}" ${paint(role, fill, stroke, pen)}${dash(d, pen.weight)}/>"""
+          )}" ${paint(role, fill, stroke, pen, d)}${dash(d, pen.weight)}/>"""
       case Prim.Text(at, text, size, weight, tone, centred, backdrop) =>
         val anchor = if centred then "middle" else "start"
         val face   = weight match
@@ -119,7 +124,7 @@ object Svg:
       case con @ Prim.Connector(ps, d, _, _, ink)                     =>
         (s"""<path d="${rounded(ps)}" fill="none" stroke="${hex(
             ink.fold(c.line)(c.of)
-          )}" stroke-width="${f(Look.LINK_LINE * PT)}"${dash(d)}/>""" ::
+          )}"${width(Look.LINK_LINE, d)}${dash(d)}/>""" ::
         Heads.of(con).map(prim)).mkString("\n")
       case Prim.Curve(segments, fill, evenOdd)                        =>
         val d    = segments.map:
