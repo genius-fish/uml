@@ -15,34 +15,41 @@ object Svg:
   private val MARGIN = 0.15
 
   def document(drawing: Diagram.Drawing, palette: Map[String, String] = Map.empty): String =
-    val c                             = Look.colours(palette ++ drawing.colours)
-    val measure                       = Measure(drawing.style.typeface)
-    val (minX, minY, maxX, maxY)      = Extent.of(drawing, MARGIN)
-    def x(v: Double)                  = f((v - minX) * PX)
-    def y(v: Double)                  = f((maxY - v) * PX)
-    def len(v: Double)                = f(v * PX)
-    def hex(h: String)                = s"#$h"
-    def points(ps: List[Pt])          = ps.map(q => s"${x(q._1)},${y(q._2)}").mkString(" ")
-    def dash(d: Dash): String         = d match
+    val c                        = Look.colours(palette ++ drawing.colours)
+    val measure                  = Measure(drawing.style.typeface)
+    val (minX, minY, maxX, maxY) = Extent.of(drawing, MARGIN)
+    def x(v: Double)             = f((v - minX) * PX)
+    def y(v: Double)             = f((maxY - v) * PX)
+    def len(v: Double)           = f(v * PX)
+    def hex(h: String)           = s"#$h"
+    def points(ps: List[Pt])     = ps.map(q => s"${x(q._1)},${y(q._2)}").mkString(" ")
+    def dash(d: Dash, scale: Double = 1.0): String = d match
       case Dash.Solid  => ""
-      case Dash.Dashed => s""" stroke-dasharray="${f(2.8 * PT)} ${f(1.8 * PT)}""""
+      case Dash.Dashed =>
+        s""" stroke-dasharray="${f(Look.DASH_ON * scale * PT)} ${f(Look.DASH_OFF * scale * PT)}""""
       case Dash.Dotted =>
-        s""" stroke-dasharray="0 ${f(1.9 * PT)}" stroke-width="${f(Look.DOT_LINE * PT)}""""
-    val layers                        = drawing.prims.collect:
-      case Prim.Box(_, _, _, _, _, _, _, _, Role.Element(layer)) => layer
-      case Prim.Poly(_, _, _, _, Role.Element(layer))            => layer
+        s""" stroke-dasharray="0 ${f(Look.DOT_GAP * scale * PT)}" stroke-width="${f(
+            Look.DOT_LINE * scale * PT
+          )}""""
+    val layers                                     = drawing.prims.collect:
+      case Prim.Box(_, _, _, _, _, _, _, _, Role.Element(layer), _) => layer
+      case Prim.Poly(_, _, _, _, Role.Element(layer), _)            => layer
     .distinct
     def paint(
       role: Role,
       fill: Ink,
       stroke: Boolean = true,
-    ): String                         =
-      val (edge, inked) = c.look(role, fill)
+      pen: Pen = Pen.Normal,
+    ): String                                      =
+      val (look, inked) = c.look(role, fill)
+      val edge          = look.map(e => pen.ink.fold(e)(c.of))
       val filled        = role match
         case Role.Element(layer) if fill != Ink.Empty => s"url(#fall-$layer)"
         case _                                        => inked.map(hex).getOrElse("none")
       val drawn         = if stroke then
-        edge.map(e => s""" stroke="${hex(e)}" stroke-width="${f(c.weight(role) * PT)}"""").getOrElse(
+        edge.map(e =>
+          s""" stroke="${hex(e)}" stroke-width="${f(c.weight(role) * pen.weight * PT)}""""
+        ).getOrElse(
           """ stroke="none""""
         )
       else """ stroke="none""""
@@ -53,7 +60,7 @@ object Svg:
       s"""fill="$filled"$drawn$shadow"""
     end paint
     // a polyline with its bends rounded, as TikZ's rounded corners draws it
-    def rounded(ps: List[Pt]): String =
+    def rounded(ps: List[Pt]): String              =
       val r     = Look.BEND * 2.54 / 72
       val steps = ps.indices.drop(1).dropRight(1).map: i =>
         val (a, v, b) = (ps(i - 1), ps(i), ps(i + 1))
@@ -70,10 +77,11 @@ object Svg:
       (s"M ${x(ps.head._1)} ${y(ps.head._2)}" +: steps :+
       s"L ${x(ps.last._1)} ${y(ps.last._2)}").mkString(" ")
     end rounded
-    def prim(p: Prim): String         = p match
-      case Prim.Poly(ps, closed, fill, d, role)                       =>
+    def prim(p: Prim): String                      = p match
+      case Prim.Poly(ps, closed, fill, d, role, pen)                  =>
         val tag              = if closed then "polygon" else "polyline"
-        val (fillAttr, rest) = paint(role, if closed then fill else Ink.Empty) -> dash(d)
+        val (fillAttr, rest) =
+          paint(role, if closed then fill else Ink.Empty, pen = pen) -> dash(d, pen.weight)
         s"""<$tag points="${points(ps)}" $fillAttr$rest/>"""
       case Prim.Circle(cc, r, fill, role)                             =>
         s"""<circle cx="${x(cc._1)}" cy="${y(cc._2)}" r="${len(r)}" ${paint(role, fill)}/>"""
@@ -82,10 +90,10 @@ object Svg:
             role,
             fill,
           )}/>"""
-      case Prim.Box(bx, by, w, h, r, fill, d, stroke, role)           =>
+      case Prim.Box(bx, by, w, h, r, fill, d, stroke, role, pen)      =>
         s"""<rect x="${x(bx)}" y="${y(by + h)}" width="${len(w)}" height="${len(h)}" rx="${len(
             r
-          )}" ${paint(role, fill, stroke)}${dash(d)}/>"""
+          )}" ${paint(role, fill, stroke, pen)}${dash(d, pen.weight)}/>"""
       case Prim.Text(at, text, size, weight, tone, centred, backdrop) =>
         val anchor = if centred then "middle" else "start"
         val face   = weight match
@@ -129,7 +137,7 @@ object Svg:
           )}" preserveAspectRatio="none" href="data:${escape(mime)};base64,${escape(
             data
           )}" xlink:href="data:${escape(mime)};base64,${escape(data)}"/>"""
-    val defs                          =
+    val defs                                       =
       layers.map(l =>
         s"""<linearGradient id="fall-$l" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${hex(
             c.top(l)
@@ -182,14 +190,14 @@ object Extent:
 
   def of(drawing: Diagram.Drawing, margin: Double): (Double, Double, Double, Double) =
     val points = drawing.prims.flatMap:
-      case Prim.Poly(ps, _, _, _, _)     => ps
+      case Prim.Poly(ps, _, _, _, _, _)  => ps
       case Prim.Circle(c, r, _, _)       => List((c._1 - r, c._2 - r), (c._1 + r, c._2 + r))
       case Prim.Ellipse(c, rx, ry, _, _) => List((c._1 - rx, c._2 - ry), (c._1 + rx, c._2 + ry))
-      case Prim.Box(x, y, w, h, _, _, _, _, _) => List((x, y), (x + w, y + h))
-      case Prim.Text(at, _, _, _, _, _, _)     => List(at)
-      case Prim.Connector(ps, _, _, _, _)      => ps
-      case Prim.Curve(segments, _, _)          => segments.flatMap(Seg.points)
-      case Prim.Image(x, y, w, h, _, _)        => List((x, y), (x + w, y + h))
+      case Prim.Box(x, y, w, h, _, _, _, _, _, _) => List((x, y), (x + w, y + h))
+      case Prim.Text(at, _, _, _, _, _, _)        => List(at)
+      case Prim.Connector(ps, _, _, _, _)         => ps
+      case Prim.Curve(segments, _, _)             => segments.flatMap(Seg.points)
+      case Prim.Image(x, y, w, h, _, _)           => List((x, y), (x + w, y + h))
     if points.isEmpty then (0.0, 0.0, 1.0, 1.0)
     else
       (

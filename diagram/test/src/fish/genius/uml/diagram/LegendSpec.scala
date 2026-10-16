@@ -74,7 +74,7 @@ object LegendSpec extends ZIOSpecDefault:
 
   // the legend's frame, and what lies in it
   private def frameOf(d: Diagram.Drawing) =
-    d.prims.collectFirst { case b @ Prim.Box(_, _, _, _, _, Ink.Paper, _, true, Role.Plain) => b }
+    d.prims.collectFirst { case b @ Prim.Box(_, _, _, _, _, Ink.Paper, _, true, Role.Plain, _) => b }
 
   private lazy val frame = frameOf(drawing).get
 
@@ -83,11 +83,11 @@ object LegendSpec extends ZIOSpecDefault:
     p._2 <= frame.y + frame.h + 1e-9
 
   private def below(p: Prim): Boolean = p match
-    case Prim.Text(at, _, _, _, _, _, _)         => within(at)
-    case b @ Prim.Box(x, y, w, h, _, _, _, _, _) => b != frame && within((x, y)) && within((x + w, y + h))
-    case Prim.Connector(ps, _, _, _, _)          => ps.forall(within)
-    case Prim.Curve(segs, _, _)                  => segs.flatMap(Seg.points).forall(within)
-    case _                                       => false
+    case Prim.Text(at, _, _, _, _, _, _)            => within(at)
+    case b @ Prim.Box(x, y, w, h, _, _, _, _, _, _) => b != frame && within((x, y)) && within((x + w, y + h))
+    case Prim.Connector(ps, _, _, _, _)             => ps.forall(within)
+    case Prim.Curve(segs, _, _)                     => segs.flatMap(Seg.points).forall(within)
+    case _                                          => false
 
   private def chain(n: Int): SceneGraph =
     SceneGraph(
@@ -181,7 +181,7 @@ object LegendSpec extends ZIOSpecDefault:
       ,
       test("an element type is a small box in its layer's colour; a relationship a line with its ends"):
         val legendBoxes = drawing.prims.filter(below).collect:
-          case Prim.Box(_, _, w, _, _, _, _, _, Role.Element(layer)) if w < 1 => layer
+          case Prim.Box(_, _, w, _, _, _, _, _, Role.Element(layer), _) if w < 1 => layer
         val lines       = drawing.prims.filter(below).collect:
           case Prim.Connector(_, dash, start, end, _) => (dash, start, end)
         assertTrue(
@@ -192,6 +192,37 @@ object LegendSpec extends ZIOSpecDefault:
             Notation.ends(RelationshipType.Serving),
             Notation.ends(RelationshipType.Realization),
           ),
+        )
+      ,
+      test("an outline stands in the legend as a small box with that edge, in a layer or on paper"):
+        val proposed = Outline(Stroke.Dashed, 2.0, Some("#D9534F"))
+        val g        = legended.copy(legend =
+          Some(Legend(
+            "Legend",
+            Nil,
+            List(LegendSection(
+              "State",
+              List(
+                LegendItem.Outlined(proposed, "Proposed", Some(ShapeType.ApplicationComponent)),
+                LegendItem.Outlined(proposed, "Proposed, any layer"),
+              ),
+            )),
+          ))
+        )
+        val d        = Diagram.draw(g).toOption.get
+        val frame    = frameOf(d).get
+        val pen      = Pen(2.0, Some("am-fill-d9534f"))
+        val samples  = d.prims.collect:
+          case Prim.Box(_, _, w, _, _, fill, Dash.Dashed, true, role, `pen`) if w < 1 => (fill, role)
+        assertTrue(
+          samples.toSet == Set(
+            (Ink.Layer("am-application"), Role.Element("am-application")),
+            (Ink.Paper, Role.Plain),
+          ),
+          d.colours.get("am-fill-d9534f").contains("D9534F"),
+          Tikz.standalone(d).contains("draw=am-fill-d9534f,line width=1pt"),
+          d.prims.exists { case t: Prim.Text => t.text == "Proposed, any layer"; case _ => false },
+          frame.w > 0,
         )
       ,
       test("a logo stands in the legend in its own colour"):

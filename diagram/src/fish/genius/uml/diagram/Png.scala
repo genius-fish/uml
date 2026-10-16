@@ -39,22 +39,26 @@ object Png:
         RenderingHints.VALUE_FRACTIONALMETRICS_ON,
       )
       g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE)
-    def stroke(width: Double, d: Dash)           = d match
+    def stroke(
+      width: Double,
+      d: Dash,
+      scale: Double = 1.0,
+    )                                            = d match
       case Dash.Solid  => BasicStroke(pt(width), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND)
       case Dash.Dashed => BasicStroke(
           pt(width),
           BasicStroke.CAP_ROUND,
           BasicStroke.JOIN_ROUND,
           10f,
-          Array(pt(2.8), pt(1.8)),
+          Array(pt(Look.DASH_ON * scale), pt(Look.DASH_OFF * scale)),
           0f,
         )
       case Dash.Dotted => BasicStroke(
-          pt(Look.DOT_LINE),
+          pt(Look.DOT_LINE * scale),
           BasicStroke.CAP_ROUND,
           BasicStroke.JOIN_ROUND,
           10f,
-          Array(0.01f, pt(1.9)),
+          Array(0.01f, pt(Look.DOT_GAP * scale)),
           0f,
         )
     def path(
@@ -80,12 +84,12 @@ object Png:
       shape
     end path
     def shapeOf(p: Prim): Option[java.awt.Shape] = p match
-      case Prim.Poly(ps, closed, _, _, _)          => Some(path(ps, closed))
-      case Prim.Circle(cc, r, _, _)                =>
+      case Prim.Poly(ps, closed, _, _, _, _)          => Some(path(ps, closed))
+      case Prim.Circle(cc, r, _, _)                   =>
         Some(Ellipse2D.Double(x(cc._1 - r), y(cc._2 + r), 2 * r * scale, 2 * r * scale))
-      case Prim.Ellipse(cc, rx, ry, _, _)          =>
+      case Prim.Ellipse(cc, rx, ry, _, _)             =>
         Some(Ellipse2D.Double(x(cc._1 - rx), y(cc._2 + ry), 2 * rx * scale, 2 * ry * scale))
-      case Prim.Box(bx, by, bw, bh, r, _, _, _, _) =>
+      case Prim.Box(bx, by, bw, bh, r, _, _, _, _, _) =>
         Some(RoundRectangle2D.Double(
           x(bx),
           y(by + bh),
@@ -94,19 +98,20 @@ object Png:
           2 * r * scale,
           2 * r * scale,
         ))
-      case _                                       => None
+      case _                                          => None
 
     // the shadows first, on a layer of their own, blurred and laid under the drawing
     val shade   = BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB)
     val sg      = shade.createGraphics()
     setup(sg)
     drawing.prims.foreach:
-      case p @ (Prim.Box(_, _, _, _, _, _, _, _, Role.Element(_)) | Prim.Poly(
+      case p @ (Prim.Box(_, _, _, _, _, _, _, _, Role.Element(_), _) | Prim.Poly(
           _,
           true,
           _,
           _,
           Role.Element(_),
+          _,
         )) =>
         sg.setColor(java.awt.Color(0f, 0f, 0f, Look.SHADOW_ALPHA.toFloat))
         val t = sg.getTransform
@@ -132,8 +137,10 @@ object Png:
       fill: Ink,
       d: Dash,
       outline: Boolean,
+      pen: Pen = Pen.Normal,
     ): Unit                 =
-      val (edge, inked) = c.look(role, fill)
+      val (look, inked) = c.look(role, fill)
+      val edge          = look.map(e => pen.ink.fold(e)(c.of))
       role match
         case Role.Element(layer) if fill != Ink.Empty =>
           val b = shape.getBounds2D
@@ -153,18 +160,18 @@ object Png:
       if outline then
         edge.foreach: hex =>
           g.setColor(colour(hex))
-          g.setStroke(stroke(c.weight(role), d))
+          g.setStroke(stroke(c.weight(role) * pen.weight, d, pen.weight))
           g.draw(shape)
     end paint
     def draw(p: Prim): Unit = p match
-      case Prim.Poly(ps, closed, fill, d, role)                       =>
-        paint(path(ps, closed), role, if closed then fill else Ink.Empty, d, outline = true)
+      case Prim.Poly(ps, closed, fill, d, role, pen)                  =>
+        paint(path(ps, closed), role, if closed then fill else Ink.Empty, d, outline = true, pen)
       case Prim.Circle(_, _, fill, role)                              =>
         shapeOf(p).foreach(paint(_, role, fill, Dash.Solid, outline = true))
       case Prim.Ellipse(_, _, _, fill, role)                          =>
         shapeOf(p).foreach(paint(_, role, fill, Dash.Solid, outline = true))
-      case Prim.Box(_, _, _, _, _, fill, d, edge, role)               =>
-        shapeOf(p).foreach(paint(_, role, fill, d, edge))
+      case Prim.Box(_, _, _, _, _, fill, d, edge, role, pen)          =>
+        shapeOf(p).foreach(paint(_, role, fill, d, edge, pen))
       case Prim.Text(at, text, size, weight, tone, centred, backdrop) =>
         val font  = faces.font(weight).deriveFont(pt(size))
         g.setFont(font)

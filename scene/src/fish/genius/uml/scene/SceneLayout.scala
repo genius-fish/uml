@@ -214,6 +214,7 @@ object SceneLayout:
           side     <- paneSide
           passport <- node.passport
         yield ScenePane(side, PaneLayout.WIDTH, PaneLayout.height(passport), passport),
+      outline = node.outline,
     )
 
   end element

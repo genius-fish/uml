@@ -54,9 +54,9 @@ object SequenceSpec extends ZIOSpecDefault:
       ,
       test("no word stands on a lifeline, and no label on the edge of a field"):
         val lifelines = drawn.prims.collect {
-          case Prim.Poly(List(a, b), false, _, Dash.Dashed, Role.Mark(_)) => (a._1, b._2, a._2)
+          case Prim.Poly(List(a, b), false, _, Dash.Dashed, Role.Mark(_), _) => (a._1, b._2, a._2)
         }
-        val edges     = drawn.prims.collect { case Prim.Box(x, _, w, _, _, _, _, _, Role.Container(_)) =>
+        val edges     = drawn.prims.collect { case Prim.Box(x, _, w, _, _, _, _, _, Role.Container(_), _) =>
           List(x, x + w)
         }.flatten
         val labels    = texts(drawn).filterNot(_.centred).filter(_.size < 7.0).map(rect)
@@ -77,7 +77,7 @@ object SequenceSpec extends ZIOSpecDefault:
         assertTrue(lifelines.nonEmpty, crossed.isEmpty, onEdge.isEmpty)
       ,
       test("a loop's frame holds its messages, and a loop with nothing in it is left out"):
-        val frames = drawn.prims.collect { case Prim.Poly(ps, true, Ink.Empty, Dash.Solid, Role.Plain) =>
+        val frames = drawn.prims.collect { case Prim.Poly(ps, true, Ink.Empty, Dash.Solid, Role.Plain, _) =>
           ps
         }
         val inside = connectors(drawn).filter(_.end.contains(Head.Barb)).filter(_.dash == Dash.Solid)
@@ -102,8 +102,8 @@ object SequenceSpec extends ZIOSpecDefault:
         )
       ,
       test("the parts of a system stand on one field, with the system's name in its header"):
-        val fields = drawn.prims.collect { case b @ Prim.Box(_, _, _, _, _, _, _, _, Role.Container(_)) => b }
-        val heads  = drawn.prims.collect { case b @ Prim.Box(_, _, _, _, _, _, _, _, Role.Element(_)) => b }
+        val fields = drawn.prims.collect { case b @ Prim.Box(_, _, _, _, _, _, _, _, Role.Container(_), _) => b }
+        val heads  = drawn.prims.collect { case b @ Prim.Box(_, _, _, _, _, _, _, _, Role.Element(_), _) => b }
         val shop   = fields.head
         val inShop = heads.count(h => h.x >= shop.x && h.x + h.w <= shop.x + shop.w)
         assertTrue(
@@ -148,7 +148,7 @@ object SequenceSpec extends ZIOSpecDefault:
           ))
         )
         val d              = Sequence.draw(nested)
-        val frames         = d.prims.collect { case Prim.Poly(ps, true, Ink.Empty, Dash.Solid, Role.Plain) =>
+        val frames         = d.prims.collect { case Prim.Poly(ps, true, Ink.Empty, Dash.Solid, Role.Plain, _) =>
           (ps.map(_._1).min, ps.map(_._1).max)
         }
         val guards         = texts(d).filter(t => t.weight == Weight.Italic && t.tone == Emphasis.Muted)
@@ -187,7 +187,7 @@ object SequenceSpec extends ZIOSpecDefault:
           ),
           List(Step.Send("a", "b", "Books it")),
         ))
-        val heads = d.prims.collect { case Prim.Box(_, _, _, _, _, _, _, _, Role.Element(l)) => l }
+        val heads = d.prims.collect { case Prim.Box(_, _, _, _, _, _, _, _, Role.Element(l), _) => l }
         assertTrue(heads == List("am-business", "am-application")),
     )
 

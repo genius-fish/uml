@@ -50,11 +50,29 @@ object Tikz:
 
   private def pt(p: Pt): String = s"(${f(p._1)},${f(p._2)})"
 
-  private def dash(d: Dash): Option[String] = d match
+  private def dash(d: Dash, scale: Double = 1.0): Option[String] = d match
     case Dash.Solid  => None
-    case Dash.Dashed => Some("dash pattern=on 2.8pt off 1.8pt")
+    case Dash.Dashed =>
+      Some(s"dash pattern=on ${f(Look.DASH_ON * scale)}pt off ${f(Look.DASH_OFF * scale)}pt")
     // round caps on a dash of nothing: a line of round dots
-    case Dash.Dotted => Some("dash pattern=on 0pt off 1.9pt,line width=0.95pt")
+    case Dash.Dotted =>
+      Some(
+        s"dash pattern=on 0pt off ${f(Look.DOT_GAP * scale)}pt,line width=${f(Look.DOT_LINE * scale)}pt"
+      )
+
+  // a pen's ink and weight, after the role's look so they win; a dotted line's weight is
+  // its dash's
+  private def pen(
+    p: Pen,
+    role: Role,
+    d: Dash,
+  ): List[Option[String]] =
+    List(
+      p.ink.map(i => s"draw=$i"),
+      Option.when(
+        p.weight != 1.0 && d != Dash.Dotted
+      )(s"line width=${f(Look.weight(role) * p.weight)}pt"),
+    )
 
   private def options(parts: List[Option[String]]): String =
     val all = parts.flatten
@@ -134,23 +152,33 @@ object Tikz:
     d: Dash,
     path: String,
     extra: Option[String] = None,
-  ): String = s"\\path${options(look(role, fill) ++ List(dash(d), extra))} $path;"
+    p: Pen = Pen.Normal,
+  ): String =
+    s"\\path${options(look(role, fill) ++ List(dash(d, p.weight), extra) ++ pen(p, role, d))} $path;"
 
   private def prim(p: Prim, face: Typeface): String = p match
-    case Prim.Poly(points, closed, fill, d, role)                   =>
-      shape(role, fill, d, points.map(pt).mkString(" -- ") + (if closed then " -- cycle" else ""))
+    case Prim.Poly(points, closed, fill, d, role, p)                =>
+      val path = points.map(pt).mkString(" -- ") + (if closed then " -- cycle" else "")
+      shape(role, fill, d, path, p = p)
     case Prim.Circle(c, r, fill, role)                              =>
       shape(role, fill, Dash.Solid, s"${pt(c)} circle[radius=${f(r)}]")
     case Prim.Ellipse(c, rx, ry, fill, role)                        =>
       shape(role, fill, Dash.Solid, s"${pt(c)} ellipse[x radius=${f(rx)},y radius=${f(ry)}]")
-    case Prim.Box(x, y, w, h, r, fill, d, stroke, role)             =>
+    case Prim.Box(x, y, w, h, r, fill, d, stroke, role, p)          =>
       val round = Option.when(r > 0)(s"rounded corners=${f(r)}cm")
       val edge  = if stroke then role
       else
         role match
           case Role.Patch(_) => role
           case _             => Role.Halo
-      shape(edge, fill, d, s"${pt((x, y))} rectangle ${pt((x + w, y + h))}", round)
+      shape(
+        edge,
+        fill,
+        d,
+        s"${pt((x, y))} rectangle ${pt((x + w, y + h))}",
+        round,
+        if stroke then p else Pen.Normal,
+      )
     case Prim.Text(at, text, size, weight, tone, centred, backdrop) =>
       val anchor     = if centred then "base" else "base west"
       val ink        = if tone == Emphasis.Muted then "am-muted" else "am-text"

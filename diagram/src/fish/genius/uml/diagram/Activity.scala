@@ -285,9 +285,16 @@ object Activity:
         )
       case Gate.ParallelEventBased =>
         Prim.Circle((0.5, 0.5), 0.34) :: glyph(Trigger.ParallelMultiple).map:
-          case Prim.Poly(ps, c, f, d, r) =>
-            Prim.Poly(ps.map((x, y) => (0.5 + (x - 0.5) * 0.7, 0.5 + (y - 0.5) * 0.7)), c, f, d, r)
-          case other                     => other
+          case Prim.Poly(ps, c, f, d, r, pen) =>
+            Prim.Poly(
+              ps.map((x, y) => (0.5 + (x - 0.5) * 0.7, 0.5 + (y - 0.5) * 0.7)),
+              c,
+              f,
+              d,
+              r,
+              pen,
+            )
+          case other                          => other
     end match
 
   end mark
@@ -330,13 +337,14 @@ object Activity:
   ): List[Prim] =
     def p(pt: Pt): Pt = (pt._1 + dx, pt._2 + dy)
     prims.map:
-      case Prim.Poly(ps, closed, fill, dash, role) => Prim.Poly(ps.map(p), closed, fill, dash, role)
-      case Prim.Circle(c, r, fill, role)           => Prim.Circle(p(c), r, fill, role)
-      case Prim.Ellipse(c, rx, ry, fill, role)     => Prim.Ellipse(p(c), rx, ry, fill, role)
-      case Prim.Box(x, y, w, h, r, fill, d, k, role) =>
-        Prim.Box(x + dx, y + dy, w, h, r, fill, d, k, role)
-      case t: Prim.Text                              => t.copy(baseline = p(t.baseline))
-      case Prim.Connector(ps, dash, start, end, ink) =>
+      case Prim.Poly(ps, closed, fill, dash, role, pen)   =>
+        Prim.Poly(ps.map(p), closed, fill, dash, role, pen)
+      case Prim.Circle(c, r, fill, role)                  => Prim.Circle(p(c), r, fill, role)
+      case Prim.Ellipse(c, rx, ry, fill, role)            => Prim.Ellipse(p(c), rx, ry, fill, role)
+      case Prim.Box(x, y, w, h, r, fill, d, k, role, pen) =>
+        Prim.Box(x + dx, y + dy, w, h, r, fill, d, k, role, pen)
+      case t: Prim.Text                                   => t.copy(baseline = p(t.baseline))
+      case Prim.Connector(ps, dash, start, end, ink)      =>
         Prim.Connector(ps.map(p), dash, start, end, ink)
       case c: Prim.Curve => c.copy(segments = c.segments.map(Seg.shift(_, dx, dy)))
       case i: Prim.Image => i.copy(x = i.x + dx, y = i.y + dy)

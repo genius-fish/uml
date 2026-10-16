@@ -17,6 +17,14 @@ enum Ink derives CanEqual:
 enum Dash derives CanEqual:
   case Solid, Dashed, Dotted
 
+// How heavy a shape's edge is and what it is drawn in: weight multiplies the line its role
+// gives it (a dash grows with it), and ink, a layer's colour by name, replaces the role's
+// edge colour. A node's own outline (SceneNode.outline) is drawn with one.
+final case class Pen(weight: Double = 1.0, ink: Option[String] = None) derives CanEqual
+
+object Pen:
+  val Normal: Pen = Pen()
+
 // The end of a connector, at its source or its target.
 enum Head derives CanEqual:
   case FilledDiamond, OpenDiamond, Dot, FilledTriangle, OpenTriangle, Barb, OpenDot
@@ -52,7 +60,8 @@ enum Prim derives CanEqual:
     closed: Boolean,
     fill: Ink = Ink.Empty,
     dash: Dash = Dash.Solid,
-    role: Role = Role.Plain)
+    role: Role = Role.Plain,
+    pen: Pen = Pen.Normal)
 
   case Circle(
     centre: Pt,
@@ -77,7 +86,8 @@ enum Prim derives CanEqual:
     fill: Ink,
     dash: Dash = Dash.Solid,
     stroke: Boolean = true,
-    role: Role = Role.Plain)
+    role: Role = Role.Plain,
+    pen: Pen = Pen.Normal)
 
   // one line of text on its baseline, centred on x or starting from it, at size points;
   // with a backdrop it stands on its own patch of that role's fill, so a line under it

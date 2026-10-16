@@ -28,6 +28,19 @@ private[diagram] object Look:
   val SHADOW_BLUR  = 0.8
   val SHADOW_ALPHA = 0.17
 
+  // a role's line weight in points, before a pen multiplies it
+  def weight(role: Role): Double = role match
+    case Role.Element(_)   => BOX_LINE
+    case Role.Container(_) => CONTAINER_LINE
+    case Role.Mark(_)      => MARK_LINE
+    case _                 => 0.5
+
+  // a dash's on and off lengths in points, which grow with the pen so a heavier
+  // dashed edge keeps its rhythm; a dot's line weight
+  val DASH_ON  = 2.8
+  val DASH_OFF = 1.8
+  val DOT_GAP  = 1.9
+
   // xcolor's a!p!b on hex colours
   def mix(
     a: String,
@@ -84,11 +97,7 @@ private[diagram] object Look:
       case Role.Plain            => (Some(line), ink(fill))
       case Role.Inked(layer)     => (Some(of(layer)), ink(fill))
 
-    def weight(role: Role): Double = role match
-      case Role.Element(_)   => BOX_LINE
-      case Role.Container(_) => CONTAINER_LINE
-      case Role.Mark(_)      => MARK_LINE
-      case _                 => 0.5
+    def weight(role: Role): Double = Look.weight(role)
 
   end Colours
 

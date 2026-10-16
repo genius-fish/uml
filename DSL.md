@@ -1223,6 +1223,23 @@ its line and its filled heads are drawn in that colour, which the scene carries 
 `SceneRelationship.colour` and the drawing on `Prim.Connector.ink`. A dossier sets a
 proposed flow apart this way.
 
+A node's `outline` (`Outline(dash, weight, colour)`, from `scene`) draws its edge its own
+way and keeps its fill: the layer's colour, or `fill` when one is set. `dash` is a
+`Stroke` (`Solid`, `Dashed` by default, `Dotted`). `weight` multiplies the normal line,
+and the dash lengthens with it so a heavier dashed edge keeps its rhythm. A weight that is
+not a positive number counts as 1, and one above 4 counts as 4. `colour` (six hex digits)
+replaces the edge's ink and is left out when it is not a colour. Every outline form takes
+it (square, rounded, banded, cut), and so do a container's frame and a grouping's. In the
+drawing it is the box's `dash` with a `Pen(weight, ink)` on `Prim.Box` and `Prim.Poly`,
+and the scene's JSON carries it on `SceneElement.outline`. A proposed element is drawn this
+way, and the channel stays open for other meanings (a weight for criticality, say):
+
+```scala
+val proposed = Outline(Stroke.Dashed, weight = 2.0, colour = Some("#D9534F"))
+SceneNode(SceneId("crm"), NodeKind.Element(ShapeType.ApplicationComponent), "CRM",
+  caption = Some("Application Component · voorgesteld"), outline = Some(proposed))
+```
+
 The TikZ writer writes the arrows and math symbols pdflatex's UTF-8 input does not know
 (↔ → ← ↑ ↓ ⇒ ⇐ ⇔ ≤ ≥ ≠ ≈ ± × ÷ ∞ • ✓ ✗) as `\ensuremath{…}`, so a label such as
 "persoon ↔ rol" compiles.
@@ -1238,11 +1255,13 @@ narrow as its height allows) or under a wider one (as low as its width allows). 
 legend never makes a tall diagram taller or a wide one wider. A
 section's items (`LegendItem`) are a badge (`Mark`), an element type (`Shape`: a small
 box in its layer's colour with the type's icon), a relationship (`Line`: a short line
-with that relationship's dash and ends) or a logo (`LogoMark`), each with its text.
+with that relationship's dash and ends), a logo (`LogoMark`) or an outline (`Outlined(outline,
+text, shape = None)`: a small box with that edge, in the shape's layer with its icon when
+a shape is given, on paper otherwise), each with its text.
 Each group's items stand in as many columns as fit the drawing's width, every mark
 centred in a column as wide as the widest of its group. Empty sections are left out,
-and a legend with nothing in it draws none. The 3D scene leaves badges, fill and legend
-out.
+and a legend with nothing in it draws none. The 3D scene leaves badges, fill, outline and
+legend out.
 
 ### Logos
 

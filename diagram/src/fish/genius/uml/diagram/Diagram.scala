@@ -164,9 +164,9 @@ object Diagram:
       // between them, then every word, and the connectors' labels on top
       def isText(p: Prim)    = p.isInstanceOf[Prim.Text]
       def isField(p: Prim)   = p match
-        case Prim.Box(_, _, _, _, _, _, _, _, Role.Container(_)) => true
-        case Prim.Poly(_, _, _, _, Role.Group)                   => true
-        case _                                                   => false
+        case Prim.Box(_, _, _, _, _, _, _, _, Role.Container(_), _) => true
+        case Prim.Poly(_, _, _, _, Role.Group, _)                   => true
+        case _                                                      => false
       val (backs, rest)      = boxes.filterNot(isText).partition(isField)
       val ordered = backs ++ rest ++ routes.map(_._3) ++ gaps ++ boxes.filter(isText) ++ said
       val keyed   = graph.legend
@@ -175,6 +175,8 @@ object Diagram:
         .flatMap(legend(_, ordered, style, measure))
       val colours =
         (nodes.flatMap(n => n.fill.flatMap(h => fillName(h).map(_ -> hexOf(h)))) ++
+        nodes.flatMap(n => outlineColour(n.outline)) ++
+        legendColours(graph.legend) ++
         scene.relationships.flatMap(r => r.colour.flatMap(h => fillName(h).map(_ -> hexOf(h)))))
           .toMap
       Drawing(graph.name, ordered ++ keyed, scene, style, measure.family, overflow, colours)
@@ -565,20 +567,24 @@ object Diagram:
           ),
           closed = true,
           Ink.Empty,
-          Dash.Dashed,
+          node.outline.fold(Dash.Dashed)(o => dashOf(o.dash)),
           Role.Group,
+          penOf(node.outline),
         ) :: heading(x0 + style.padding, tabH, Role.Group)
       case NodeKind.Element(shape) =>
-        val layer   = node.fill.flatMap(fillName).getOrElse(Notation.layer(shape.group))
-        val fill    = Ink.Layer(layer)
-        val role    = if e.container then Role.Container(layer) else Role.Element(layer)
-        val outline = Notation.outline(shape) match
-          case Notation.Outline.Square => List(Prim.Box(x0, y0, e.w, e.d, SQUARE, fill, role = role))
-          case Notation.Outline.Rounded =>
-            List(Prim.Box(x0, y0, e.w, e.d, ROUNDED, fill, role = role))
+        val layer = node.fill.flatMap(fillName).getOrElse(Notation.layer(shape.group))
+        val fill  = Ink.Layer(layer)
+        val role  = if e.container then Role.Container(layer) else Role.Element(layer)
+        val dash  = node.outline.fold(Dash.Solid)(o => dashOf(o.dash))
+        val pen   = penOf(node.outline)
+        def frame(radius: Double) =
+          Prim.Box(x0, y0, e.w, e.d, radius, fill, dash, role = role, pen = pen)
+        val outline               = Notation.outline(shape) match
+          case Notation.Outline.Square  => List(frame(SQUARE))
+          case Notation.Outline.Rounded => List(frame(ROUNDED))
           case Notation.Outline.Banded  =>
             List(
-              Prim.Box(x0, y0, e.w, e.d, SQUARE, fill, role = role),
+              frame(SQUARE),
               Prim.Poly(
                 List((x0, top - style.band), (x0 + e.w, top - style.band)),
                 closed = false,
@@ -601,11 +607,13 @@ object Diagram:
                 ),
                 closed = true,
                 fill,
-                role = role,
+                dash,
+                role,
+                pen,
               )
             )
-        val s       = style.iconSize
-        val icon    =
+        val s                     = style.iconSize
+        val icon                  =
           place(
             Notation.icon(shape),
             x0 + e.w - style.padding - s,
@@ -613,7 +621,7 @@ object Diagram:
             s,
             Role.Mark(layer),
           )
-        val text    =
+        val text                  =
           if e.container then heading(x0 + style.padding, header, Role.Container(layer))
           else
             val lines  =
@@ -633,10 +641,10 @@ object Diagram:
               centred = true,
               gapBefore = noteAt,
             )
-        val badges  =
+        val badges                =
           if e.container then Nil else stamp(node.badges, e.x, y0 + style.padding, style, layer)
         // a leaf's logo in its top left corner, as high as the icon
-        val logo    = node.logo.filterNot(_ => e.container).toList.flatMap: l =>
+        val logo                  = node.logo.filterNot(_ => e.container).toList.flatMap: l =>
           Logos.place(l, x0 + style.padding, top - style.padding - s, logoWidth(node, style), s)
         outline ++ icon ++ logo ++ text ++ badges
     end match
@@ -704,6 +712,25 @@ object Diagram:
     Option.when(hex.stripPrefix("#").matches("[0-9A-Fa-f]{6}"))(s"am-fill-${hexOf(hex).toLowerCase}")
 
   private def hexOf(hex: String): String = hex.stripPrefix("#").toUpperCase
+
+  // a node's own outline as the drawing's dash and pen; its colour a layer of its own,
+  // as a fill is
+  private[diagram] def dashOf(stroke: Stroke): Dash = stroke match
+    case Stroke.Solid  => Dash.Solid
+    case Stroke.Dashed => Dash.Dashed
+    case Stroke.Dotted => Dash.Dotted
+
+  private def outlineColour(outline: Option[Outline]): Option[(String, String)] =
+    outline.flatMap(_.validColour).flatMap(h => fillName(h).map(_ -> h))
+
+  // the colours a legend's outline samples are drawn in
+  private def legendColours(legend: Option[Legend]): List[(String, String)] =
+    legend.toList.flatMap(_.sections).flatMap(_.items).flatMap:
+      case LegendItem.Outlined(o, _, _) => outlineColour(Some(o))
+      case _                            => None
+
+  private[diagram] def penOf(outline: Option[Outline]): Pen =
+    outline.fold(Pen.Normal)(o => Pen(o.effectiveWeight, o.validColour.flatMap(fillName)))
 
   // The legend, smaller than what it explains (LEGEND_SCALE), placed where the drawing
   // keeps room for it: in a corner of the drawing that nothing is drawn in, if one is
@@ -870,14 +897,14 @@ object Diagram:
         ps.map(_._2).max,
       ))
     p match
-      case Prim.Poly(ps, _, _, _, _)           => of(ps)
-      case Prim.Circle(c, r, _, _)             => Some((c._1 - r, c._2 - r, c._1 + r, c._2 + r))
-      case Prim.Ellipse(c, rx, ry, _, _)       => Some((c._1 - rx, c._2 - ry, c._1 + rx, c._2 + ry))
-      case Prim.Box(x, y, w, h, _, _, _, _, _) => Some((x, y, x + w, y + h))
-      case Prim.Text(at, _, _, _, _, _, _)     => Some((at._1, at._2, at._1, at._2))
-      case Prim.Connector(ps, _, _, _, _)      => of(ps)
-      case Prim.Curve(segments, _, _)          => of(segments.flatMap(Seg.points))
-      case Prim.Image(x, y, w, h, _, _)        => Some((x, y, x + w, y + h))
+      case Prim.Poly(ps, _, _, _, _, _)  => of(ps)
+      case Prim.Circle(c, r, _, _)       => Some((c._1 - r, c._2 - r, c._1 + r, c._2 + r))
+      case Prim.Ellipse(c, rx, ry, _, _) => Some((c._1 - rx, c._2 - ry, c._1 + rx, c._2 + ry))
+      case Prim.Box(x, y, w, h, _, _, _, _, _, _) => Some((x, y, x + w, y + h))
+      case Prim.Text(at, _, _, _, _, _, _)        => Some((at._1, at._2, at._1, at._2))
+      case Prim.Connector(ps, _, _, _, _)         => of(ps)
+      case Prim.Curve(segments, _, _)             => of(segments.flatMap(Seg.points))
+      case Prim.Image(x, y, w, h, _, _)           => Some((x, y, x + w, y + h))
 
   end extent
 
@@ -889,6 +916,7 @@ object Diagram:
   private def itemMark(item: LegendItem, style: Style): (Double, Double) = item match
     case LegendItem.Mark(b)           => mark(b, style)
     case LegendItem.Shape(_, _)       => (SHAPE_W, SHAPE_H)
+    case LegendItem.Outlined(_, _, _) => (SHAPE_W, SHAPE_H)
     case LegendItem.Line(_, _)        => (LINE_W, style.badgeSize)
     case LegendItem.LogoMark(logo, _) =>
       val h = style.badgeSize * LOGO_BADGE
@@ -901,19 +929,53 @@ object Diagram:
     y: Double,
     style: Style,
   ): List[Prim] = item match
-    case LegendItem.Mark(b)               => drawMark(b, x, y, style, Role.Mark("am-line"))
-    case LegendItem.Shape(shape, _)       =>
+    case LegendItem.Mark(b)                     => drawMark(b, x, y, style, Role.Mark("am-line"))
+    case LegendItem.Shape(shape, _)             =>
       val layer  = Notation.layer(shape.group)
       val radius =
         if Notation.outline(shape) == Notation.Outline.Rounded then ROUNDED / 2 else SQUARE
       val s      = SHAPE_H * 0.62
       Prim.Box(x, y, SHAPE_W, SHAPE_H, radius, Ink.Layer(layer), role = Role.Element(layer)) ::
       place(Notation.icon(shape), x + (SHAPE_W - s) / 2, y + (SHAPE_H - s) / 2, s, Role.Mark(layer))
-    case LegendItem.Line(relationship, _) =>
+    case LegendItem.Outlined(outline, _, shape) =>
+      val dash = dashOf(outline.dash)
+      val pen  = penOf(Some(outline))
+      shape match
+        case Some(sh) =>
+          val layer  = Notation.layer(sh.group)
+          val radius =
+            if Notation.outline(sh) == Notation.Outline.Rounded then ROUNDED / 2 else SQUARE
+          val s      = SHAPE_H * 0.62
+          Prim.Box(
+            x,
+            y,
+            SHAPE_W,
+            SHAPE_H,
+            radius,
+            Ink.Layer(layer),
+            dash,
+            role = Role.Element(layer),
+            pen = pen,
+          ) ::
+          place(Notation.icon(sh), x + (SHAPE_W - s) / 2, y + (SHAPE_H - s) / 2, s, Role.Mark(layer))
+        case None     =>
+          List(Prim.Box(
+            x,
+            y,
+            SHAPE_W,
+            SHAPE_H,
+            SQUARE,
+            Ink.Paper,
+            dash,
+            role = Role.Plain,
+            pen = pen,
+          ))
+      end match
+    case LegendItem.Line(relationship, _)       =>
       val (dash, start, end) = Notation.ends(relationship)
       val mid                = y + style.badgeSize / 2
       List(Prim.Connector(List((x, mid), (x + LINE_W, mid)), dash, start, end))
-    case LegendItem.LogoMark(logo, _)     =>
+    case LegendItem.LogoMark(logo, _)           =>
       val (w, h) = itemMark(item, style)
       Logos.place(logo, x, y, w, h)
 
@@ -927,13 +989,13 @@ object Diagram:
   ): List[Prim] =
     def p(pt: Pt): Pt = (x + pt._1 * s, y + pt._2 * s)
     prims.map:
-      case Prim.Poly(points, closed, fill, dash, _) =>
-        Prim.Poly(points.map(p), closed, fill, dash, role)
-      case Prim.Circle(c, r, fill, _)               => Prim.Circle(p(c), r * s, fill, role)
+      case Prim.Poly(points, closed, fill, dash, _, pen) =>
+        Prim.Poly(points.map(p), closed, fill, dash, role, pen)
+      case Prim.Circle(c, r, fill, _)                    => Prim.Circle(p(c), r * s, fill, role)
       case Prim.Ellipse(c, rx, ry, fill, _) => Prim.Ellipse(p(c), rx * s, ry * s, fill, role)
-      case Prim.Box(bx, by, w, h, r, fill, dash, k, _) =>
-        Prim.Box(x + bx * s, y + by * s, w * s, h * s, r * s, fill, dash, k, role)
-      case other                                       => other
+      case Prim.Box(bx, by, w, h, r, fill, dash, k, _, pen) =>
+        Prim.Box(x + bx * s, y + by * s, w * s, h * s, r * s, fill, dash, k, role, pen)
+      case other                                            => other
 
   end place
 

@@ -20,7 +20,8 @@ final case class Scene(
 // x and y are the plinth's centre, w and d its footprint, z the height it stands at:
 // the top of its container's plinth, or 0. `shape` is a name in the builder's catalogue.
 // `pane` is the passport beside the plinth, when the node carried one; the floor it takes
-// is kept free by the layout, outside w and d.
+// is kept free by the layout, outside w and d. `outline` is the node's own edge, when it
+// has one (SceneNode.outline).
 final case class SceneElement(
   key: SceneId,
   @jsonField("type") shape: String,
@@ -32,7 +33,8 @@ final case class SceneElement(
   z: Double,
   parent: Option[SceneId],
   container: Boolean,
-  pane: Option[ScenePane] = None)
+  pane: Option[ScenePane] = None,
+  outline: Option[Outline] = None)
 
 // A connector leaves its source through the middle of one plinth side and arrives at
 // the middle of one side of its target; between them it follows `bends`. `clear` is

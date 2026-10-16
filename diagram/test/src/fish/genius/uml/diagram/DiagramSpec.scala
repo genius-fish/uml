@@ -303,6 +303,91 @@ object DiagramSpec extends ZIOSpecDefault:
           d.scene.relationships.find(_.key == SceneId("ab")).flatMap(_.colour).contains("#2F6DB5"),
         )
       ,
+      test("a node with an outline of its own keeps its fill and draws its edge that way"):
+        val proposed = Outline(Stroke.Dashed, 2.0, Some("#D9534F"))
+        def outlined(
+          id: String,
+          shape: ShapeType,
+          fill: Option[String] = None,
+        )            =
+          leaf(id, id.toUpperCase, shape).copy(outline = Some(proposed), fill = fill)
+        val g        = SceneGraph(
+          "proposed",
+          List(
+            outlined("square", ShapeType.ApplicationComponent),
+            outlined("rounded", ShapeType.ApplicationService, fill = Some("#FFE699")),
+            outlined("banded", ShapeType.ApplicationDataObject),
+            outlined("cut", ShapeType.MotivationGoal),
+            leaf("plain", "Plain", ShapeType.ApplicationComponent),
+            SceneNode(
+              SceneId("frame"),
+              NodeKind.Element(ShapeType.ApplicationComponent),
+              "Frame",
+              List(leaf("inner", "Inner", ShapeType.ApplicationFunction)),
+              outline = Some(Outline(Stroke.Dotted)),
+            ),
+          ),
+          Nil,
+        )
+        val d        = Diagram.draw(g).toOption.get
+        val pen      = Pen(2.0, Some("am-fill-d9534f"))
+        val edges    = d.prims.collect:
+          case b: Prim.Box if b.pen == pen  => (b.dash, b.fill, b.role)
+          case p: Prim.Poly if p.pen == pen => (p.dash, p.fill, p.role)
+        val frame    = d.prims.collectFirst { case b @ Prim.Box(_, _, _, _, _, _, _, _, Role.Container(_), _) => b }
+        val plain    = d.prims.collect { case b @ Prim.Box(_, _, _, _, _, _, _, _, Role.Element(_), _) => b }
+          .filter(_.pen == Pen.Normal)
+        val svg      = Svg.document(d)
+        val tikz     = Tikz.standalone(d)
+        val png      = javax.imageio.ImageIO.read(java.io.ByteArrayInputStream(Png.image(d, 100)))
+        val red      = (0 until png.getWidth by 2).exists: x =>
+          (0 until png.getHeight).exists: y =>
+            val rgb = png.getRGB(x, y)
+            math.abs(((rgb >> 16) & 0xff) - 0xd9) < 10 && math.abs(((rgb >> 8) & 0xff) - 0x53) < 10 &&
+            math.abs((rgb & 0xff) - 0x4f) < 10
+        assertTrue(
+          // the four outline forms, each dashed in the pen, in its layer's fill or its own
+          edges.size == 4,
+          edges.forall(_._1 == Dash.Dashed),
+          edges.map(_._2).toSet ==
+          Set(Ink.Layer("am-application"), Ink.Layer("am-fill-ffe699"), Ink.Layer("am-motivation")),
+          edges.forall(e =>
+            e._3 == Role.Element("am-application") || e._3 == Role.Element("am-fill-ffe699") ||
+            e._3 == Role.Element("am-motivation")
+          ),
+          // a container's frame drawn the same way; a node without one as before
+          frame.exists(f => f.dash == Dash.Dotted && f.pen == Pen.Normal),
+          plain.nonEmpty && plain.forall(_.dash == Dash.Solid),
+          d.colours.get("am-fill-d9534f").contains("D9534F"),
+          // twice the box's 0.55pt, and the dash twice as long, in CSS pixels
+          svg.contains("stroke=\"#D9534F\" stroke-width=\"1.47\""),
+          svg.contains("stroke-dasharray=\"7.47 4.8\""),
+          tikz.contains("draw=am-fill-d9534f,line width=1.1pt"),
+          tikz.contains("dash pattern=on 5.6pt off 3.6pt"),
+          tikz.contains("{am-fill-d9534f}{HTML}{D9534F}"),
+          red,
+        )
+      ,
+      test("an outline's weight is kept between 0 and 4, and a colour that is not hex is left out"):
+        val cases = List(
+          Outline(weight = -1) -> Pen.Normal,
+          Outline(weight = Double.NaN) -> Pen.Normal,
+          Outline(weight = 9) -> Pen(4.0),
+          Outline(colour = Some("red")) -> Pen.Normal,
+          Outline(colour = Some("abcdef")) -> Pen(1.0, Some("am-fill-abcdef")),
+        )
+        val g     = SceneGraph(
+          "kept",
+          cases.zipWithIndex.map((c, i) => leaf(s"n$i", s"N$i", ShapeType.ApplicationComponent).copy(outline = Some(c._1))),
+          Nil,
+        )
+        val d     = Diagram.draw(g).toOption.get
+        val pens  = d.prims.collect { case b @ Prim.Box(_, _, _, _, _, _, _, _, Role.Element(_), _) => b.pen }
+        assertTrue(
+          cases.map(_._2).forall(pens.contains),
+          !d.colours.keySet.exists(_.contains("red")),
+        )
+      ,
       test("arrows and symbols are written as math, so pdflatex compiles them"):
         val arrows = SceneGraph(
           "Arrows",
@@ -392,9 +477,9 @@ object DiagramSpec extends ZIOSpecDefault:
           // every head ends on the tip, along the line it closes
           heads.forall((_, prims) =>
             prims.forall:
-              case Prim.Poly(ps, _, _, _, _) => ps.forall(_._1 <= 1.0 + 1e-9)
-              case Prim.Circle(c, r, _, _)   => c._1 + r <= 1.0 + 1e-9
-              case _                         => true
+              case Prim.Poly(ps, _, _, _, _, _) => ps.forall(_._1 <= 1.0 + 1e-9)
+              case Prim.Circle(c, r, _, _)      => c._1 + r <= 1.0 + 1e-9
+              case _                            => true
           ),
         )
       ,
@@ -429,7 +514,7 @@ object DiagramSpec extends ZIOSpecDefault:
         def box(drawing: Diagram.Drawing, id: String) = drawing.scene.elements.find(_.key == SceneId(id)).get
         val payments                                  = box(d, "abb2")
         val marks                                     = d.prims.collect:
-          case p @ Prim.Poly(ps, true, Ink.Line, _, Role.Mark("am-application"))
+          case p @ Prim.Poly(ps, true, Ink.Line, _, Role.Mark("am-application"), _)
             if ps.forall(q => q._2 < payments.y - payments.d / 2 + 0.5) &&
             ps.forall(q => math.abs(q._1 - payments.x) < payments.w / 2) => p
         val words                                     = d.prims.collect:
@@ -462,8 +547,8 @@ object DiagramSpec extends ZIOSpecDefault:
         assertTrue(
           d.colours == Map(name -> "F4C542"),
           d.prims.exists:
-            case Prim.Box(_, _, _, _, _, _, _, _, Role.Element(`name`)) => true
-            case _                                                      =>
+            case Prim.Box(_, _, _, _, _, _, _, _, Role.Element(`name`), _) => true
+            case _                                                         =>
               false
           ,
           Tikz.picture(d).contains(s"\\definecolor{$name}{HTML}{F4C542}"),
@@ -494,19 +579,19 @@ object DiagramSpec extends ZIOSpecDefault:
         val name  = "am-fill-c8e6c9"
         assertTrue(
           d.prims.exists:
-            case Prim.Box(_, _, _, _, _, _, _, _, Role.Container(`name`)) => true
-            case _                                                        =>
+            case Prim.Box(_, _, _, _, _, _, _, _, Role.Container(`name`), _) => true
+            case _                                                           =>
               false
           ,
           d.prims.exists:
-            case Prim.Box(_, _, _, _, _, _, _, _, Role.Patch(Role.Container(`name`))) => true
-            case _                                                                    =>
+            case Prim.Box(_, _, _, _, _, _, _, _, Role.Patch(Role.Container(`name`)), _) => true
+            case _                                                                       =>
               false
           ,
           // a container carries no badges: its signs stay off its header
           !d.prims.exists:
-            case Prim.Poly(_, true, Ink.Line, _, Role.Mark(`name`)) => true
-            case _                                                  => false,
+            case Prim.Poly(_, true, Ink.Line, _, Role.Mark(`name`), _) => true
+            case _                                                     => false,
         )
       ,
       test("the legend names every badge, in a frame that covers no box"):
@@ -514,7 +599,9 @@ object DiagramSpec extends ZIOSpecDefault:
         val said   = d.prims.collect { case Prim.Text(at, text, _, _, _, _, _) => (at, text) }
         val legend = said.filter((_, t) => t.startsWith("Solution ") || t == "Realized by (SBB)")
         val none   = Diagram.draw(badged.copy(legend = None)).toOption.get
-        val frame  = d.prims.collectFirst { case b @ Prim.Box(_, _, _, _, _, Ink.Paper, _, true, Role.Plain) => b }.get
+        val frame  = d.prims.collectFirst { case b @ Prim.Box(_, _, _, _, _, Ink.Paper, _, true, Role.Plain, _) =>
+          b
+        }.get
         def apart(e: SceneElement) =
           e.x + e.w / 2 <= frame.x || e.x - e.w / 2 >= frame.x + frame.w ||
           e.y + e.d / 2 <= frame.y || e.y - e.d / 2 >= frame.y + frame.h
@@ -533,11 +620,11 @@ object DiagramSpec extends ZIOSpecDefault:
       test("every glyph is drawn inside its unit square"):
         val inside = Glyph.values.toList.forall: g =>
           val ps = Notation.glyph(g).flatMap:
-            case Prim.Poly(points, _, _, _, _)       => points
-            case Prim.Circle(c, r, _, _)             => List((c._1 - r, c._2 - r), (c._1 + r, c._2 + r))
-            case Prim.Ellipse(c, rx, ry, _, _)       => List((c._1 - rx, c._2 - ry), (c._1 + rx, c._2 + ry))
-            case Prim.Box(x, y, w, h, _, _, _, _, _) => List((x, y), (x + w, y + h))
-            case _                                   => Nil
+            case Prim.Poly(points, _, _, _, _, _)       => points
+            case Prim.Circle(c, r, _, _)                => List((c._1 - r, c._2 - r), (c._1 + r, c._2 + r))
+            case Prim.Ellipse(c, rx, ry, _, _)          => List((c._1 - rx, c._2 - ry), (c._1 + rx, c._2 + ry))
+            case Prim.Box(x, y, w, h, _, _, _, _, _, _) => List((x, y), (x + w, y + h))
+            case _                                      => Nil
           ps.nonEmpty && ps.forall(p => p._1 >= -1e-9 && p._1 <= 1 + 1e-9 && p._2 >= -1e-9 && p._2 <= 1 + 1e-9)
         assertTrue(inside)
       ,

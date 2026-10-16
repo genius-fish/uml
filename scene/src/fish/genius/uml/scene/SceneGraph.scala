@@ -75,6 +75,37 @@ enum Logo derives CanEqual:
 
 end Logo
 
+// How a line is drawn: whole, in dashes or in dots.
+enum Stroke derives CanEqual:
+  case Solid, Dashed, Dotted
+
+object Stroke:
+
+  given JsonCodec[Stroke] = JsonCodec.string.transformOrFail(
+    raw => Stroke.values.find(_.toString.equalsIgnoreCase(raw)).toRight(s"no stroke named $raw"),
+    _.toString.toLowerCase,
+  )
+
+// A node's edge drawn its own way, to set the node apart without taking its layer's fill
+// (a proposed element, say, or one weighted by how critical it is). weight multiplies the
+// normal line and colour (hex) replaces its ink. A diagram takes a weight that is not a
+// positive number as 1 and one above MAX_WEIGHT as MAX_WEIGHT, and leaves a colour that
+// is not six hex digits out, as it does a fill.
+final case class Outline(
+  dash: Stroke = Stroke.Dashed,
+  weight: Double = 1.0,
+  colour: Option[String] = None):
+
+  def effectiveWeight: Double =
+    if weight.isNaN || weight <= 0 then 1.0 else math.min(weight, Outline.MAX_WEIGHT)
+
+  def validColour: Option[String] =
+    colour.map(_.stripPrefix("#")).filter(_.matches("[0-9A-Fa-f]{6}")).map(_.toUpperCase)
+
+object Outline:
+  val MAX_WEIGHT = 4.0
+  given JsonCodec[Outline] = DeriveJsonCodec.gen
+
 // What a diagram's marks stand for, drawn under it: its badges (entries), and sections
 // of their own, each with a heading, such as the element types, the relationships and
 // the logos a diagram holds.
@@ -86,25 +117,35 @@ final case class Legend(
 final case class LegendSection(title: String, items: List[LegendItem])
 
 // One line of a legend: a badge (its glyph or logo), an element type (a small box in
-// its layer's colour with its icon), a relationship (a short line with its ends), or a
-// logo; each with what it stands for.
+// its layer's colour with its icon), a relationship (a short line with its ends), a
+// logo, or an outline (a small box with that edge: in a shape's layer with its icon
+// when one is given, else on paper); each with what it stands for.
 enum LegendItem derives CanEqual:
   case Mark(badge: Badge)
   case Shape(shape: ShapeType, text: String)
   case Line(relationship: RelationshipType, text: String)
   case LogoMark(logo: fish.genius.uml.scene.Logo, text: String)
 
+  case Outlined(
+    outline: Outline,
+    text: String,
+    shape: Option[ShapeType] = None)
+
   def label: String = this match
-    case Mark(badge)    => badge.label
-    case Shape(_, t)    => t
-    case Line(_, t)     => t
-    case LogoMark(_, t) => t
+    case Mark(badge)       => badge.label
+    case Shape(_, t)       => t
+    case Line(_, t)        => t
+    case LogoMark(_, t)    => t
+    case Outlined(_, t, _) => t
+
+end LegendItem
 
 // caption and note are for a flat diagram, which writes them in the box under the
 // label: the element's type (and technology), and a line or two about it. So are fill,
 // a colour (hex) that sets the box apart from its layer, badges, the signs at its
 // foot, and logo, the product's logo in a leaf's top left corner; the 3D scene leaves
-// them all out.
+// them all out. outline draws the box's edge (a container's frame) its own way, and
+// keeps the fill; the scene's JSON carries it, which the 3D builders leave out for now.
 final case class SceneNode(
   id: SceneId,
   kind: NodeKind,
@@ -115,7 +156,8 @@ final case class SceneNode(
   note: Option[String] = None,
   fill: Option[String] = None,
   badges: List[Badge] = Nil,
-  logo: Option[Logo] = None):
+  logo: Option[Logo] = None,
+  outline: Option[Outline] = None):
   def isContainer: Boolean = children.nonEmpty
 
   // this node and everything standing on it, parents before children

@@ -17,8 +17,8 @@ object ActivitySpec extends ZIOSpecDefault:
   // the shapes of the nodes: task boxes, gateway diamonds and event circles, as boxes
   private def shapes(d: Diagram.Drawing): List[(Double, Double, Double, Double)] =
     d.prims.collect:
-      case Prim.Box(x, y, w, h, _, _, _, _, Role.Element(_))     => (x, y, x + w, y + h)
-      case Prim.Poly(ps, true, _, _, Role.Element(_))            =>
+      case Prim.Box(x, y, w, h, _, _, _, _, Role.Element(_), _)  => (x, y, x + w, y + h)
+      case Prim.Poly(ps, true, _, _, Role.Element(_), _)         =>
         (ps.map(_._1).min, ps.map(_._2).min, ps.map(_._1).max, ps.map(_._2).max)
       case Prim.Circle((x, y), r, _, Role.Element(_)) if r > 0.1 => (x - r, y - r, x + r, y + r)
 
@@ -29,7 +29,7 @@ object ActivitySpec extends ZIOSpecDefault:
   private val shipment = Activity.draw(DiagramGallery.shipment)
 
   private def boxes(d: Diagram.Drawing, role: Role => Boolean) =
-    d.prims.collect { case b @ Prim.Box(_, _, _, _, _, _, _, _, r) if role(r) => b }
+    d.prims.collect { case b @ Prim.Box(_, _, _, _, _, _, _, _, r, _) if role(r) => b }
 
   // the task box whose name starts with `word`
   private def task(d: Diagram.Drawing, word: String): Prim.Box =
@@ -140,7 +140,7 @@ object ActivitySpec extends ZIOSpecDefault:
             if i < j
             if a._1 < b._3 && b._1 < a._3 && a._2 < b._4 && b._2 < a._4
           yield (a, b)
-        val lanes = drawn.prims.collect { case Prim.Box(x, _, w, _, _, Ink.Empty, _, _, Role.Group) =>
+        val lanes = drawn.prims.collect { case Prim.Box(x, _, w, _, _, Ink.Empty, _, _, Role.Group, _) =>
           (x, x + w)
         }
         assertTrue(
@@ -208,8 +208,8 @@ object ActivitySpec extends ZIOSpecDefault:
           flows = order.flows :+ Flow("done", "x"),
         ))
         def lanes(d: Diagram.Drawing) = d.prims.count:
-          case Prim.Box(_, _, _, _, _, Ink.Empty, _, _, Role.Group) => true
-          case _                                                    => false
+          case Prim.Box(_, _, _, _, _, Ink.Empty, _, _, Role.Group, _) => true
+          case _                                                       => false
         assertTrue(lanes(bare) == 0, lanes(loose) == order.lanes.size + 1)
       ,
       test("a flow to an unknown node is left out, and an empty process still draws"):
@@ -260,7 +260,7 @@ object ActivitySpec extends ZIOSpecDefault:
       ,
       test("a boundary event sits on its host's bottom edge, its flow leaving from below"):
         val confirm = task(shipment, "Confirm")
-        val rings   = shipment.prims.collect { case Prim.Poly(ps, true, _, Dash.Dashed, Role.Element(_)) => ps }
+        val rings   = shipment.prims.collect { case Prim.Poly(ps, true, _, Dash.Dashed, Role.Element(_), _) => ps }
         val centres = rings.map(ps => (ps.map(_._1).sum / ps.size, ps.map(_._2).sum / ps.size))
         val timer   = centres.find(c => math.abs(c._2 - confirm.y) < 1e-6)
         val out     = arrows(shipment).map(_.points.head)
@@ -272,8 +272,8 @@ object ActivitySpec extends ZIOSpecDefault:
       ,
       test("what does not interrupt is dashed: a boundary timer, an event sub-process's start"):
         val dashed = shipment.prims.count:
-          case Prim.Poly(_, true, _, Dash.Dashed, Role.Element(_)) => true
-          case _                                                   => false
+          case Prim.Poly(_, true, _, Dash.Dashed, Role.Element(_), _) => true
+          case _                                                      => false
         assertTrue(dashed == 2)
       ,
       test("an expanded sub-process holds its nodes, and an event sub-process stands dotted under the rest"):
@@ -293,7 +293,7 @@ object ActivitySpec extends ZIOSpecDefault:
       ,
       test("a throwing event shows its trigger filled, a catching one open"):
         def one(kind: Kind) = Activity.draw(Graph("One", Nil, List(Node("e", "", kind)), Nil))
-          .prims.collect { case Prim.Poly(_, true, fill, _, Role.Mark(_)) => fill }
+          .prims.collect { case Prim.Poly(_, true, fill, _, Role.Mark(_), _) => fill }
         assertTrue(
           one(Kind.Intermediate(Trigger.Signal, throwing = true)) == List(Ink.Line),
           one(Kind.Intermediate(Trigger.Signal)) == List(Ink.Paper),
@@ -304,7 +304,7 @@ object ActivitySpec extends ZIOSpecDefault:
       test("a multi-instance task has three bars at its foot, a compensation task its two heads"):
         val pick = task(shipment, "Pick")
         val bars = shipment.prims.collect {
-          case Prim.Poly(List(a, b), false, _, _, Role.Mark(_))
+          case Prim.Poly(List(a, b), false, _, _, Role.Mark(_), _)
             if a._1 == b._1 && a._1 > pick.x && a._1 < pick.x + pick.w && a._2 < pick.y + 0.3 && a._2 > pick.y => a
         }
         assertTrue(bars.size == 3)
@@ -338,8 +338,8 @@ object ActivitySpec extends ZIOSpecDefault:
           Nil,
         )
         val d    = Activity.draw(g)
-        val outs = d.prims.collect { case b @ Prim.Box(_, _, _, _, _, _, _, _, Role.Element(_)) => b }
-        val ins  = d.prims.collect { case b @ Prim.Box(_, _, _, _, _, Ink.Empty, _, _, Role.Mark(_)) => b }
+        val outs = d.prims.collect { case b @ Prim.Box(_, _, _, _, _, _, _, _, Role.Element(_), _) => b }
+        val ins  = d.prims.collect { case b @ Prim.Box(_, _, _, _, _, Ink.Empty, _, _, Role.Mark(_), _) => b }
         assertTrue(outs.size == 1, ins.size == 1, d.overflow == 0)
       ,
       test("containers nest, and a message to a node inside one meets the outer frame"):
@@ -419,7 +419,7 @@ object ActivitySpec extends ZIOSpecDefault:
           List(Message("them", "s", Some("order"))),
         ))
         val header =
-          d.prims.collect { case Prim.Poly(List(a, b), false, _, _, Role.Group) if a._2 == b._2 => a._2 }.head
+          d.prims.collect { case Prim.Poly(List(a, b), false, _, _, Role.Group, _) if a._2 == b._2 => a._2 }.head
         val line   = d.prims.collect { case Prim.Connector(ps, Dash.Dashed, _, _, _) => ps }.head
         val label  = texts(d).find(_.text == "order").get
         assertTrue(line.forall(_._2 < header - 0.1), label.baseline._2 + 0.25 < header)
@@ -449,7 +449,7 @@ object ActivitySpec extends ZIOSpecDefault:
         )
       ,
       test("a lane's performer shows by its icon, in its own layer's colour"):
-        val marks = drawn.prims.collect { case Prim.Poly(_, _, _, _, Role.Mark(l)) => l }.toSet
+        val marks = drawn.prims.collect { case Prim.Poly(_, _, _, _, Role.Mark(l), _) => l }.toSet
         assertTrue(marks.contains("am-business")),
     )
 

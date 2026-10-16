@@ -163,7 +163,7 @@ object LogoSpec extends ZIOSpecDefault:
       test("a badge with a logo is its logo; one without keeps its glyph; the legend shows the same"):
         val images = drawing.prims.collect { case i: Prim.Image => i }
         val blue   = drawing.prims.collect { case c @ Prim.Curve(_, "1F6FEB", _) => c }
-        val glyphs = drawing.prims.collect { case p @ Prim.Poly(_, true, Ink.Line, _, Role.Mark(_)) => p }
+        val glyphs = drawing.prims.collect { case p @ Prim.Poly(_, true, Ink.Line, _, Role.Mark(_), _) => p }
         val words  = drawing.prims.collect { case Prim.Text(_, t, _, _, _, _, _) => t }
         assertTrue(
           // Payments' corner logo, Keycloak's badge and its legend entry

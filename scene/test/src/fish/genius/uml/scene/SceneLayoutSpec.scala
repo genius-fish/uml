@@ -140,6 +140,21 @@ object SceneLayoutSpec extends ZIOSpecDefault:
 
   override def spec: Spec[TestEnvironment & Scope, Any] =
     suite("scene / SceneLayout")(
+      test("a node's outline is carried to its element and written in the scene's JSON"):
+        val proposed = Outline(Stroke.Dashed, 2.0, Some("#D9534F"))
+        val outlined =
+          row.copy(nodes = row.nodes.map(n => if n.label == "Middle" then n.copy(outline = Some(proposed)) else n))
+        val laidOut  = SceneLayout.layout(outlined).toOption.get
+        val json     = laidOut.toJson
+        assertTrue(
+          laidOut.elements.find(_.name == "Middle").flatMap(_.outline).contains(proposed),
+          laidOut.elements.filter(_.name != "Middle").forall(_.outline.isEmpty),
+          json.contains(""""outline":{"dash":"dashed","weight":2.0,"colour":"#D9534F"}"""),
+          json.fromJson[Scene].toOption.contains(laidOut),
+          """{"dash":"wavy"}""".fromJson[Outline].isLeft,
+          """{}""".fromJson[Outline].toOption.contains(Outline()),
+        )
+      ,
       test("every node gets a plinth, and no two plinths on one floor overlap"):
         assertTrue(scene.elements.size == graph.allNodes.size, SceneChecks.overlaps(scene).isEmpty)
       ,
